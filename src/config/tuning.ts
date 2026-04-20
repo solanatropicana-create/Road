@@ -53,6 +53,27 @@ export const BLOOM_BRIGHTNESS = 1.0;
 export const BLOOM_BLUR = 8;
 export const BLOOM_QUALITY = 6;
 
+export const CHROMATIC_R_OFFSET: readonly [number, number] = [1.6, 0];
+export const CHROMATIC_G_OFFSET: readonly [number, number] = [0, 0];
+export const CHROMATIC_B_OFFSET: readonly [number, number] = [-1.6, 0];
+
+export const SPEED_LINE_COUNT = 22;
+export const SPEED_LINE_SPEED_MIN = 900;
+export const SPEED_LINE_SPEED_MAX = 1500;
+export const SPEED_LINE_LENGTH_MIN = 40;
+export const SPEED_LINE_LENGTH_MAX = 110;
+export const SPEED_LINE_WIDTH = 2;
+export const SPEED_LINE_COLOR = 0xcfe9ff;
+export const SPEED_LINE_ALPHA_MIN = 0.15;
+export const SPEED_LINE_ALPHA_MAX = 0.55;
+
+export const THRUSTER_LENGTH = 44;
+export const THRUSTER_WIDTH = 22;
+export const THRUSTER_COLOR_INNER = 0xb4faff;
+export const THRUSTER_COLOR_OUTER = 0x00f0ff;
+export const THRUSTER_PULSE_SPEED = 12;
+export const THRUSTER_PULSE_AMOUNT = 0.25;
+
 export const KEY_LEFT: readonly string[] = ['ArrowLeft', 'KeyA'];
 export const KEY_RIGHT: readonly string[] = ['ArrowRight', 'KeyD'];
 export const KEY_RESTART: readonly string[] = ['Space', 'Enter'];

@@ -11,6 +11,12 @@ import {
   PLAYER_START_LANE,
   PLAYER_WIDTH,
   PLAYER_Y,
+  THRUSTER_COLOR_INNER,
+  THRUSTER_COLOR_OUTER,
+  THRUSTER_LENGTH,
+  THRUSTER_PULSE_AMOUNT,
+  THRUSTER_PULSE_SPEED,
+  THRUSTER_WIDTH,
 } from '../config/tuning';
 
 function smoothstep(t: number): number {
@@ -20,14 +26,19 @@ function smoothstep(t: number): number {
 
 export class Player extends Container {
   private body: Graphics;
+  private thruster: Graphics;
   private laneIndex: number = PLAYER_START_LANE;
   private targetLaneIndex: number = PLAYER_START_LANE;
   private lerpStartX: number;
   private lerpStartMs = 0;
   private lerpActive = false;
+  private pulseT = 0;
 
   constructor() {
     super();
+
+    this.thruster = new Graphics();
+    this.addChild(this.thruster);
 
     this.body = new Graphics();
     this.addChild(this.body);
@@ -37,6 +48,28 @@ export class Player extends Container {
     this.x = startX;
     this.y = PLAYER_Y;
     this.lerpStartX = startX;
+  }
+
+  private drawThruster(scale: number): void {
+    const g = this.thruster;
+    g.clear();
+    const baseY = PLAYER_HEIGHT / 2;
+    const len = THRUSTER_LENGTH * scale;
+    const halfW = THRUSTER_WIDTH / 2;
+
+    g.moveTo(-halfW, baseY);
+    g.lineTo(halfW, baseY);
+    g.lineTo(halfW * 0.35, baseY + len);
+    g.lineTo(-halfW * 0.35, baseY + len);
+    g.closePath();
+    g.fill({ color: THRUSTER_COLOR_OUTER, alpha: 0.55 });
+
+    g.moveTo(-halfW * 0.55, baseY);
+    g.lineTo(halfW * 0.55, baseY);
+    g.lineTo(halfW * 0.15, baseY + len * 0.82);
+    g.lineTo(-halfW * 0.15, baseY + len * 0.82);
+    g.closePath();
+    g.fill({ color: THRUSTER_COLOR_INNER, alpha: 0.9 });
   }
 
   private drawBody(): void {
@@ -74,7 +107,11 @@ export class Player extends Container {
     this.lerpActive = true;
   }
 
-  update(nowMs: number): void {
+  update(nowMs: number, dtSec: number): void {
+    this.pulseT += dtSec * THRUSTER_PULSE_SPEED;
+    const pulse = 1 + Math.sin(this.pulseT) * THRUSTER_PULSE_AMOUNT;
+    this.drawThruster(pulse);
+
     if (!this.lerpActive) return;
     const targetX = LANE_X_CENTERS[this.targetLaneIndex]!;
     const t = (nowMs - this.lerpStartMs) / PLAYER_LANE_LERP_MS;

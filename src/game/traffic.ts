@@ -32,7 +32,7 @@ export class TrafficManager {
   constructor() {
     this.container = new Container();
     for (let i = 0; i < TRAFFIC_POOL_SIZE; i++) {
-      const sprite = this.makeCarSprite(TRAFFIC_COLORS[i % TRAFFIC_COLORS.length]!);
+      const sprite = new Graphics();
       sprite.visible = false;
       this.container.addChild(sprite);
       this.pool.push({ sprite, active: false, lane: 0, y: 0 });
@@ -40,21 +40,35 @@ export class TrafficManager {
     this.msUntilNextSpawn = this.randSpawnDelay();
   }
 
-  private makeCarSprite(color: number): Graphics {
-    const g = new Graphics();
+  private drawCar(g: Graphics, color: number, style: number): void {
     const w = TRAFFIC_WIDTH;
     const h = TRAFFIC_HEIGHT;
+    g.clear();
     g.roundRect(-w / 2, -h / 2, w, h, 7)
       .fill({ color: 0x0a0612 })
       .stroke({ color, width: 2.5, alignment: 0.5 });
-    g.roundRect(-w / 2 + 6, -h / 2 + h / 2 - 4, w - 12, h / 2 - 10, 4).fill({
-      color,
-      alpha: 0.3,
-    });
-    g.rect(-w / 2 + 4, h / 2 - 9, 8, 5).fill({ color });
-    g.rect(w / 2 - 12, h / 2 - 9, 8, 5).fill({ color });
-    g.rect(-w / 2 + 6, -h / 2 + 5, w - 12, 3).fill({ color, alpha: 0.9 });
-    return g;
+
+    if (style === 0) {
+      g.roundRect(-w / 2 + 6, 0, w - 12, h / 2 - 10, 4).fill({ color, alpha: 0.32 });
+      g.rect(-w / 2 + 4, h / 2 - 9, 8, 5).fill({ color });
+      g.rect(w / 2 - 12, h / 2 - 9, 8, 5).fill({ color });
+      g.rect(-w / 2 + 6, -h / 2 + 5, w - 12, 3).fill({ color, alpha: 0.9 });
+    } else if (style === 1) {
+      g.roundRect(-w / 2 + 6, -h / 2 + 14, w - 12, h / 2 - 14, 3).fill({
+        color,
+        alpha: 0.22,
+      });
+      g.roundRect(-w / 2 + 6, 6, w - 12, 14, 3).fill({ color, alpha: 0.4 });
+      g.rect(-w / 2 + 4, h / 2 - 9, 10, 5).fill({ color });
+      g.rect(w / 2 - 14, h / 2 - 9, 10, 5).fill({ color });
+      g.rect(-w / 2 + 6, -h / 2 + 5, w - 12, 2).fill({ color, alpha: 0.7 });
+    } else {
+      g.roundRect(-w / 2 + 8, -2, w - 16, h / 2 - 6, 6).fill({ color, alpha: 0.35 });
+      g.rect(-2, -h / 2 + 10, 4, h - 20).fill({ color, alpha: 0.85 });
+      g.rect(-w / 2 + 4, h / 2 - 8, 8, 4).fill({ color });
+      g.rect(w / 2 - 12, h / 2 - 8, 8, 4).fill({ color });
+      g.rect(-w / 2 + 6, -h / 2 + 5, w - 12, 2).fill({ color, alpha: 0.8 });
+    }
   }
 
   private randSpawnDelay(): number {
@@ -80,6 +94,9 @@ export class TrafficManager {
     car.active = true;
     car.lane = lane;
     car.y = -TRAFFIC_HEIGHT / 2;
+    const color = TRAFFIC_COLORS[Math.floor(Math.random() * TRAFFIC_COLORS.length)]!;
+    const style = Math.floor(Math.random() * 3);
+    this.drawCar(car.sprite, color, style);
     car.sprite.visible = true;
     car.sprite.x = LANE_X_CENTERS[lane]!;
     car.sprite.y = car.y;

@@ -1,15 +1,19 @@
 import { Application, Container, Ticker } from 'pixi.js';
-import { AdvancedBloomFilter } from 'pixi-filters';
+import { AdvancedBloomFilter, RGBSplitFilter } from 'pixi-filters';
 import {
   BLOOM_BLUR,
   BLOOM_BRIGHTNESS,
   BLOOM_QUALITY,
   BLOOM_SCALE,
   BLOOM_THRESHOLD,
+  CHROMATIC_B_OFFSET,
+  CHROMATIC_G_OFFSET,
+  CHROMATIC_R_OFFSET,
 } from '../config/tuning';
 import { playerHitsAny } from './collision';
 import { Player } from './player';
 import { Road } from './road';
+import { SpeedLines } from './speedlines';
 import { TrafficManager } from './traffic';
 import { CrashSession, type CrashSessionHooks } from '../systems/crash';
 import { InputManager } from '../systems/input';
@@ -26,6 +30,7 @@ export class GameScene extends Container {
   private app: Application;
   private gameplay: Container;
   private road: Road;
+  private speedLines: SpeedLines;
   private traffic: TrafficManager;
   private player: Player;
   private hud: Hud;
@@ -43,12 +48,14 @@ export class GameScene extends Container {
 
     this.gameplay = new Container();
     this.road = new Road();
+    this.speedLines = new SpeedLines();
     this.traffic = new TrafficManager();
     this.player = new Player();
     this.hud = new Hud();
     this.gameOver = new GameOverScreen();
 
     this.gameplay.addChild(this.road);
+    this.gameplay.addChild(this.speedLines);
     this.gameplay.addChild(this.traffic.container);
     this.gameplay.addChild(this.player);
     this.gameplay.addChild(this.hud);
@@ -60,7 +67,12 @@ export class GameScene extends Container {
       blur: BLOOM_BLUR,
       quality: BLOOM_QUALITY,
     });
-    this.gameplay.filters = [bloom];
+    const chromatic = new RGBSplitFilter({
+      red: [CHROMATIC_R_OFFSET[0], CHROMATIC_R_OFFSET[1]],
+      green: [CHROMATIC_G_OFFSET[0], CHROMATIC_G_OFFSET[1]],
+      blue: [CHROMATIC_B_OFFSET[0], CHROMATIC_B_OFFSET[1]],
+    });
+    this.gameplay.filters = [bloom, chromatic];
 
     this.addChild(this.gameplay);
     this.addChild(this.gameOver);
@@ -96,6 +108,7 @@ export class GameScene extends Container {
 
   restart(): void {
     this.road.reset();
+    this.speedLines.reset();
     this.traffic.reset();
     this.player.reset();
     this.hud.reset();
@@ -115,8 +128,9 @@ export class GameScene extends Container {
     const nowMs = performance.now();
 
     this.road.update(dtSec);
+    this.speedLines.update(dtSec);
     this.traffic.update(dtSec);
-    this.player.update(nowMs);
+    this.player.update(nowMs, dtSec);
 
     const playerBounds = this.player.getBounds2D();
     if (playerHitsAny(playerBounds, this.traffic.activeBounds())) {
