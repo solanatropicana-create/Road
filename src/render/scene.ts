@@ -38,7 +38,7 @@ export class Scene {
     this.worldWrap.addChild(this.world);
     this.world.addChild(this.nebula, this.boundary, this.shipLayer, this.fx.root);
     this.drawBoundary();
-    this.setBloom(true);
+    this.setBloom(false);
   }
 
   bloom = false;
@@ -80,13 +80,13 @@ export class Scene {
   private drawBoundary(): void {
     const g = this.boundary;
     const R = ARENA_RADIUS;
-    const segs = 180;
+    const segs = 360;
     for (let i = 0; i < segs; i += 2) {
       const a0 = (i / segs) * Math.PI * 2;
       const a1 = ((i + 1) / segs) * Math.PI * 2;
       g.moveTo(Math.cos(a0) * R, Math.sin(a0) * R).lineTo(Math.cos(a1) * R, Math.sin(a1) * R);
     }
-    g.stroke({ width: 1.2, color: C.boundary, alpha: 0.5 });
+    g.stroke({ width: 0.35, color: C.boundary, alpha: 0.45 });
     // Soft nebula blobs give a sense of motion and place.
     const n = this.nebula;
     const blobs = [
@@ -97,7 +97,7 @@ export class Scene {
       [210, -200, 150, 0x4a2a6b],
     ] as const;
     for (const [x, y, r, c] of blobs) {
-      for (let k = 6; k >= 1; k--) n.circle(x, y, (r * k) / 6).fill({ color: c, alpha: 0.035 });
+      for (let k = 20; k >= 1; k--) n.circle(x, y, (r * k) / 20).fill({ color: c, alpha: 0.011 });
     }
   }
 

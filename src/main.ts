@@ -90,7 +90,7 @@ async function boot(): Promise<void> {
     $('hud').hidden = false;
     $('keys').innerHTML =
       mode === 'duel'
-        ? '<span><kbd>WASD</kbd> uç</span><span><kbd>Q</kbd><kbd>E</kbd> kay</span><span><kbd>Sol</kbd> top</span><span><kbd>Sağ</kbd> lazer</span><span><kbd>Space</kbd> asistan</span><span><kbd>Shift</kbd> yavaşlat</span><span><kbd>M</kbd> ses</span><span><kbd>R</kbd> yeniden</span><span><kbd>Esc</kbd> menü</span>'
+        ? '<span><kbd>WASD</kbd> uç</span><span><kbd>Q</kbd><kbd>E</kbd> kay</span><span><kbd>Sol</kbd> top</span><span><kbd>Sağ</kbd> lazer</span><span><kbd>Space</kbd> asistan</span><span><kbd>Shift</kbd> yavaşlat</span><span><kbd>M</kbd> ses</span><span><kbd>B</kbd> bloom</span><span><kbd>R</kbd> yeniden</span><span><kbd>Esc</kbd> menü</span>'
         : '<span><kbd>N</kbd> sonraki tur</span><span><kbd>Shift</kbd> yavaşlat</span><span><kbd>Esc</kbd> menü</span>';
     newRound();
   }
@@ -124,8 +124,8 @@ async function boot(): Promise<void> {
   }
 
   // ------------------------------------------------------------- loop
-  app.ticker.add((tk) => {
-    const realDt = Math.min(tk.deltaMS / 1000, 0.1);
+  const frame = (deltaMS: number): void => {
+    const realDt = Math.min(deltaMS / 1000, 0.1);
     state.time += realDt;
     const m = state.match;
 
@@ -265,6 +265,30 @@ async function boot(): Promise<void> {
       crosshair.clear();
     }
     input.endFrame();
+  };
+  app.ticker.add((tk) => frame(tk.deltaMS));
+
+  // Deterministic frame capture for trailers: pause the ticker, then step frames by hand.
+  Object.assign(window as object, {
+    __capture: {
+      pause: () => app.ticker.stop(),
+      frame: (ms: number, render = true) => {
+        frame(ms);
+        if (render) app.render();
+      },
+      start: (mode: Mode, ships: [string, string], seed: number) => {
+        state.mode = mode;
+        state.inMenu = false;
+        $('menu').hidden = true;
+        $('hud').hidden = false;
+        state.match?.destroy();
+        scene.clearWorld();
+        state.match = new Match({ mode, seed, ships });
+        state.snaps = state.match.combatants.map(snapshot);
+        state.round = 1;
+        $('banner').hidden = true;
+      },
+    },
   });
 
   let zoomMul = 1;
