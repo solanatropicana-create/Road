@@ -18,12 +18,18 @@ npm run build:artifact # tek dosyalık sayfa: dist-artifact/kesit.html
 
 ## Kontroller
 
-| Klavye / fare | Dokunmatik |
+Varsayılan **kaptan modu**: nereye gidileceğini ve neyin vurulacağını sen seçersin, gemi bunu kendi iticileriyle yapar.
+
+| Kaptan modu (fare) | Dokunmatik |
 |---|---|
-| `W` `S` ileri/geri, `A` `D` dön, `Q` `E` yana kay | Sol yarıda sürükle: gemi o yöne döner ve yakar |
-| Fare nişan, sol tık top, sağ tık lazer | Sağ yarıya dokunup tut: o noktaya ateş |
-| `Space` uçuş asistanı / drift, `Shift` yavaşlat | ASİSTAN ve YAVAŞ düğmeleri |
-| `R` yeni tur, `N` sonraki tur (izle), `Esc` menü, `M` ses, `B` bloom, tekerlek zoom | MENÜ düğmesi |
+| Sağ tık: oraya git · sağ sürükle: rota çiz · Shift+sağ: rotaya nokta ekle | Boşluğa dokun: git · sürükle: rota çiz |
+| Sağ tık düşmana: kenetlen (mesafeyi koru, etrafında dön) | Düşmana dokun: hedefle ve kenetlen |
+| Sol tık düşman modülü: bütün silahlar oraya | |
+| `Space` durdur (durmuşken emir verilebilir), `1` `2` `3` hız ×½ ×1 ×2, `H` ateşi tut | DURDUR ve HIZ düğmeleri |
+
+**Dümen modu** (`Tab` veya DÜMEN düğmesi): `W` `S` ileri/geri, `A` `D` dön, `Q` `E` yana kay, fare nişan, sol tık top, sağ tık lazer, `F` uçuş asistanı / drift, `Shift` yavaşlat. Dokunmatikte sol yarı yön, sağ yarı nişan ve ateş.
+
+Genel: `R` yeni tur, `N` sonraki tur (izle), `Esc` menü, `M` ses, `B` bloom, tekerlek zoom.
 
 ## Mimari
 

@@ -102,25 +102,8 @@ export class AiPilot {
       vdx *= 42 / sp;
       vdy *= 42 / sp;
     }
-    const ex = vdx - mv.x;
-    const ey = vdy - mv.y;
-    const errV = Math.hypot(ex, ey);
-
-    // Face the enemy to fight; if we are badly off our desired velocity
-    // (e.g. retro thrusters gone), turn and burn along the error instead.
     this.wobble += dt;
-    const burn = errV > 22;
-    const face = burn ? headingOf({ x: ex, y: ey }) : headingOf({ x: rx, y: ry }) + Math.sin(this.wobble * 0.7) * 0.3;
-    const err = wrapAngle(face - me.body.getAngle());
-    inp.turn = clamp(err * 2 - me.body.getAngularVelocity() * 0.5, -1, 1);
-
-    const ang = me.body.getAngle();
-    const c = Math.cos(-ang);
-    const s = Math.sin(-ang);
-    const lx = vdx * c - vdy * s;
-    const ly = vdx * s + vdy * c;
-    inp.thrust = clamp(ly < 0 ? -ly / FLIGHT.vForward : -ly / FLIGHT.vBack, -1, 1);
-    inp.strafe = clamp(lx / FLIGHT.vStrafe, -1, 1);
+    steerVelocity(me, vdx, vdy, headingOf({ x: rx, y: ry }) + Math.sin(this.wobble * 0.7) * 0.3);
 
     // Pick an aim point on the enemy hull.
     this.focusTimer -= dt;
@@ -157,14 +140,9 @@ export class AiPilot {
     inp.aim.y = ay + (pvy - mv.y) * t + ux * n;
 
     inp.fireCannon = dist < 140;
-    if (dist < WEAPONS.laser.range * 0.95) {
-      inp.fireLaser = true;
-      // Lasers are hitscan: aim straight at the point.
-      if (me.count('cannon', true) === 0) {
-        inp.aim.x = ax + -uy * n;
-        inp.aim.y = ay + ux * n;
-      }
-    }
+    // Lasers are hitscan: aim straight at the point.
+    inp.aimLaser = { x: ax + -uy * n, y: ay + ux * n };
+    inp.fireLaser = dist < WEAPONS.laser.range * 0.95;
   }
 
   private pickFocus(tgt: Ship): { x: number; y: number } | null {
@@ -182,8 +160,32 @@ export class AiPilot {
   }
 }
 
+/**
+ * Turn a desired world velocity and facing into stick input. Flight assist then
+ * tracks the velocity with whatever thrusters still work. If we are badly off
+ * the desired velocity (e.g. retro thrusters gone), face along the error and burn.
+ */
+export function steerVelocity(me: Ship, vdx: number, vdy: number, face: number): void {
+  const inp = me.input;
+  const mv = me.body.getLinearVelocity();
+  const ex = vdx - mv.x;
+  const ey = vdy - mv.y;
+  const burn = Math.hypot(ex, ey) > 22;
+  const want = burn ? headingOf({ x: ex, y: ey }) : face;
+  const ang = me.body.getAngle();
+  const err = wrapAngle(want - ang);
+  inp.turn = clamp(err * 2 - me.body.getAngularVelocity() * 0.5, -1, 1);
+  const c = Math.cos(-ang);
+  const s = Math.sin(-ang);
+  const lx = vdx * c - vdy * s;
+  const ly = vdx * s + vdy * c;
+  inp.thrust = clamp(ly < 0 ? -ly / FLIGHT.vForward : -ly / FLIGHT.vBack, -1, 1);
+  inp.strafe = clamp(lx / FLIGHT.vStrafe, -1, 1);
+  inp.assist = true;
+}
+
 /** Time for a projectile of speed s to hit a target at r moving with v. */
-function intercept(rx: number, ry: number, vx: number, vy: number, s: number): number | null {
+export function intercept(rx: number, ry: number, vx: number, vy: number, s: number): number | null {
   const a = vx * vx + vy * vy - s * s;
   const b = 2 * (rx * vx + ry * vy);
   const c = rx * rx + ry * ry;

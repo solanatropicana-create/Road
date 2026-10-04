@@ -132,7 +132,8 @@ export class World {
       if (!t.powered || !s.controllable) continue;
 
       const wp = s.tileWorld(t);
-      const want = wrapAngle(headingOf({ x: inp.aim.x - wp.x, y: inp.aim.y - wp.y }) - ang);
+      const aim = k === 'laser' && inp.aimLaser ? inp.aimLaser : inp.aim;
+      const want = wrapAngle(headingOf({ x: aim.x - wp.x, y: aim.y - wp.y }) - ang);
       const rate = (k === 'cannon' ? WEAPONS.cannon.turnRate : WEAPONS.laser.turnRate) * dt;
       const diff = wrapAngle(want - t.turret);
       t.turret = wrapAngle(t.turret + Math.max(-rate, Math.min(rate, diff)));

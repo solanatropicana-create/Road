@@ -5,6 +5,11 @@ import type { Ship } from '../sim/ship';
 
 export type Mode = 'duel' | 'watch';
 
+/** Anything that writes a ship's input once per simulation tick. */
+export interface Pilot {
+  update(world: World, dt: number): void;
+}
+
 export interface MatchSetup {
   mode: Mode;
   seed: number;
@@ -16,7 +21,7 @@ export interface MatchSetup {
 export class Match {
   world: World;
   combatants: [Ship, Ship];
-  pilots: (AiPilot | null)[];
+  pilots: (Pilot | null)[];
   winner: number | null = null;
   over = false;
   /** Seconds since the round ended. */

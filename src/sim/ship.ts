@@ -12,6 +12,8 @@ export interface ShipInput {
   /** Flight assist requested (needs a working stabilizer). */
   assist: boolean;
   aim: { x: number; y: number };
+  /** Separate aim point for hitscan lasers (no lead needed); falls back to `aim`. */
+  aimLaser?: { x: number; y: number };
   fireCannon: boolean;
   fireLaser: boolean;
 }

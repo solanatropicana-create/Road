@@ -256,6 +256,40 @@
       .slowmo.on {
         opacity: 1;
       }
+      .pausetag {
+        position: fixed;
+        left: 50%;
+        top: calc(env(safe-area-inset-top, 0px) + 96px);
+        transform: translateX(-50%);
+        font-family: var(--font-mono);
+        font-size: 13px;
+        letter-spacing: 0.08em;
+        color: var(--gold);
+        background: var(--panel);
+        border: 1px solid rgba(255, 226, 122, 0.4);
+        border-radius: 99px;
+        padding: 6px 14px;
+        pointer-events: none;
+        white-space: nowrap;
+      }
+      .tip {
+        position: fixed;
+        left: 0;
+        top: 0;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--ink);
+        background: var(--panel);
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        border-radius: 8px;
+        padding: 4px 8px;
+        pointer-events: none;
+        white-space: nowrap;
+      }
+      .pausetag[hidden],
+      .tip[hidden] {
+        display: none;
+      }
       .hurt {
         position: fixed;
         inset: 0;
@@ -433,6 +467,14 @@
         .card .systems {
           display: none;
         }
+        .pausetag {
+          top: auto;
+          bottom: calc(env(safe-area-inset-bottom, 0px) + 78px);
+          white-space: normal;
+          text-align: center;
+          width: max-content;
+          max-width: calc(100vw - 32px);
+        }
         .sheet {
           gap: 14px;
         }
@@ -491,6 +533,8 @@
     <div id="app"></div>
     <div class="slowmo" id="slowmo"></div>
     <div class="hurt" id="hurt"></div>
+    <div class="pausetag" id="pausetag" hidden>DURAKLATILDI · emir verebilirsin · <kbd>Space</kbd> devam</div>
+    <div class="tip" id="tip" hidden></div>
     <div class="hud" id="hud" hidden>
       <div class="card" id="card0"></div>
       <div class="center-top">
@@ -506,8 +550,9 @@
     </div>
     <div class="touchui" id="touchui" hidden>
       <button type="button" id="tMenu" class="tbtn">MENÜ</button>
-      <button type="button" id="tAssist" class="tbtn" aria-pressed="false">ASİSTAN</button>
-      <button type="button" id="tSlow" class="tbtn">YAVAŞ</button>
+      <button type="button" id="tPause" class="tbtn">DURDUR</button>
+      <button type="button" id="tSpeed" class="tbtn">HIZ</button>
+      <button type="button" id="tMode" class="tbtn">DÜMEN</button>
     </div>
     <div class="menu" id="menu">
       <div class="sheet">
@@ -521,19 +566,17 @@
           <button class="btn alt" id="watch" type="button">Yapay zekâları izle</button>
         </div>
         <div class="help">
-          <div><kbd>W</kbd><kbd>S</kbd> ileri / geri</div>
-          <div><kbd>A</kbd><kbd>D</kbd> dön</div>
-          <div><kbd>Q</kbd><kbd>E</kbd> yana kay</div>
-          <div><kbd>Fare</kbd> nişan al</div>
-          <div><kbd>Sol tık</kbd> toplar</div>
-          <div><kbd>Sağ tık</kbd> lazerler</div>
-          <div><kbd>Space</kbd> uçuş asistanı / drift</div>
-          <div><kbd>Shift</kbd> taktik yavaşlatma</div>
-          <div><kbd>Tekerlek</kbd> yakınlaştır</div>
-          <div><kbd>M</kbd> sesi kapat</div>
+          <div><kbd>Sağ tık</kbd> oraya git</div>
+          <div><kbd>Sağ sürükle</kbd> rota çiz</div>
+          <div><kbd>Sağ tık</kbd> düşmana: kenetlen</div>
+          <div><kbd>Sol tık</kbd> düşman modülünü hedefle</div>
+          <div><kbd>Space</kbd> zamanı durdur</div>
+          <div><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> yavaş / normal / hızlı</div>
+          <div><kbd>Tab</kbd> dümene geç (WASD)</div>
+          <div><kbd>Tekerlek</kbd> yakınlaştır · <kbd>M</kbd> ses</div>
         </div>
-        <p class="note touch-only">Dokunmatik: sol yarıda parmağını sürükle, gemi o yöne döner ve yakar. Sağ yarıya dokunup tut: o noktaya ateş eder.</p>
-        <p class="note">Gemiler karolardan yapılır. Vurduğun karo kırılır, üstünden geçen güç hattı kopar, kopan taraftaki sistemler kararır. İticisini kaybeden gemi yalpalar, köprüsü sönen gemi savaş dışı kalır.</p>
+        <p class="note touch-only">Dokunmatik: boşluğa dokun, gemi oraya gider. Parmağını sürükle, çizdiğin rotayı izler. Düşmanın bir parçasına dokun, silahlar oraya kilitlenir.</p>
+        <p class="note">Sen kaptansın: nereye gidileceğini ve neyin vurulacağını sen seçersin, gemi bunu kendi iticileriyle yapmaya çalışır. Gemiler karolardan yapılır. Vurduğun karo kırılır, üstünden geçen güç hattı kopar, kopan taraftaki sistemler kararır. İticisini kaybeden gemi yalpalar, köprüsü sönen gemi savaş dışı kalır.</p>
       </div>
     </div>
     <script type="module" src="/src/main.ts"></script>

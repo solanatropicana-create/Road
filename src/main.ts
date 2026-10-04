@@ -11,6 +11,9 @@ import type { Ship } from './sim/ship';
 import { Sfx } from './game/audio';
 import { Labels } from './render/labels';
 import { WEAPONS } from './sim/defs';
+import { CaptainPilot, type Point } from './game/captain';
+import { AI_PROFILES } from './sim/ai';
+import type { Tile } from './sim/ship';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -63,6 +66,26 @@ async function boot(): Promise<void> {
     hudTimer: 0,
     time: 0,
     inMenu: true,
+    control: 'captain' as 'captain' | 'helm',
+    paused: false,
+    timeScale: 1,
+  };
+  let captain: CaptainPilot | null = null;
+  /** Right-button drag in progress: the route being drawn (world points). */
+  let drag: { sx: number; sy: number; pts: Point[] } | null = null;
+  const KIND_NAME: Record<string, string> = {
+    frame: 'Çerçeve',
+    hull: 'Gövde',
+    armor: 'Zırh',
+    conduit: 'Güç hattı',
+    reactor: 'Reaktör',
+    bridge: 'Köprü',
+    stabilizer: 'Stabilizör',
+    gyro: 'Jiroskop',
+    thruster: 'Ana itici',
+    rcs: 'Manevra iticisi',
+    cannon: 'Top',
+    laser: 'Lazer',
   };
 
   // Debug handle for automated screenshots.
@@ -97,29 +120,89 @@ async function boot(): Promise<void> {
     start('watch');
   });
 
-  let touchSlow = false;
-  const tAssist = $('tAssist');
-  const tSlow = $('tSlow');
-  tAssist.addEventListener('pointerdown', (e) => {
+  const touchSlow = false;
+  const tPause = $('tPause');
+  const tSpeed = $('tSpeed');
+  const tMode = $('tMode');
+  tPause.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    state.assist = !state.assist;
-    tAssist.setAttribute('aria-pressed', String(!state.assist));
-    tAssist.textContent = state.assist ? 'ASİSTAN' : 'DRİFT';
+    state.paused = !state.paused;
   });
-  tSlow.addEventListener('pointerdown', (e) => {
+  tSpeed.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    touchSlow = true;
+    state.timeScale = state.timeScale === 1 ? 2 : state.timeScale === 2 ? 0.5 : 1;
   });
-  const slowOff = () => (touchSlow = false);
-  tSlow.addEventListener('pointerup', slowOff);
-  tSlow.addEventListener('pointercancel', slowOff);
-  tSlow.addEventListener('pointerleave', slowOff);
+  tMode.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    setControl(state.control === 'captain' ? 'helm' : 'captain');
+  });
   $('tMenu').addEventListener('pointerdown', (e) => {
     e.preventDefault();
     toMenu();
   });
   const isTouch = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
   if (isTouch) document.body.classList.add('touch');
+
+  function setControl(c: 'captain' | 'helm'): void {
+    state.control = c;
+    drag = null;
+    const m = state.match;
+    if (m && state.mode === 'duel') {
+      m.pilots[0] = c === 'captain' ? captain : null;
+      m.combatants[0].input.aimLaser = undefined;
+    }
+    input.touchMode = c === 'captain' ? 'gesture' : 'stick';
+    tMode.textContent = c === 'captain' ? 'DÜMEN' : 'KAPTAN';
+    if (state.mode === 'duel') $('keys').innerHTML = c === 'captain' ? KEYS_CAPTAIN : KEYS_HELM;
+  }
+  const KEYS_CAPTAIN =
+    '<span><kbd>Sağ tık</kbd> git</span><span><kbd>Sağ sürükle</kbd> rota çiz</span><span><kbd>Shift</kbd>+<kbd>Sağ</kbd> rotaya ekle</span><span><kbd>Sağ tık</kbd> düşmana: kenetlen</span><span><kbd>Sol tık</kbd> düşman modülü: hedef</span><span><kbd>Space</kbd> durdur</span><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> hız</span><span><kbd>H</kbd> ateşi tut</span><span><kbd>Tab</kbd> dümen</span><span><kbd>Esc</kbd> menü</span>';
+  const KEYS_HELM =
+    '<span><kbd>WASD</kbd> uç</span><span><kbd>Q</kbd><kbd>E</kbd> kay</span><span><kbd>Sol</kbd> top</span><span><kbd>Sağ</kbd> lazer</span><span><kbd>F</kbd> asistan</span><span><kbd>Shift</kbd> yavaşlat</span><span><kbd>Space</kbd> durdur</span><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> hız</span><span><kbd>Tab</kbd> kaptan</span><span><kbd>Esc</kbd> menü</span>';
+
+  /** Enemy tile nearest to a world point (within ~1 tile), for click targeting. */
+  function pickEnemyTile(m: Match, p: Point): Tile | null {
+    const enemy = m.combatants[1];
+    if (!m.world.ships.includes(enemy)) return null;
+    const lp = enemy.body.getLocalPoint(p);
+    let best: Tile | null = null;
+    let bd = 1.1;
+    for (const t of enemy.tiles.values()) {
+      const d = Math.hypot(t.x - lp.x, t.y - lp.y);
+      if (d < bd) {
+        bd = d;
+        best = t;
+      }
+    }
+    return best;
+  }
+
+  function issuePath(points: Point[], append: boolean): void {
+    if (!captain || !points.length) return;
+    if (append && captain.order.kind === 'path') captain.order.points.push(...points);
+    else captain.order = { kind: 'path', points: [...points] };
+  }
+
+  /** Thin a hand-drawn route to points ~4 m apart. */
+  function simplify(pts: Point[]): Point[] {
+    const out: Point[] = [];
+    for (const p of pts) {
+      const l = out[out.length - 1];
+      if (!l || Math.hypot(p.x - l.x, p.y - l.y) > 4) out.push(p);
+    }
+    const last = pts[pts.length - 1];
+    if (last && out[out.length - 1] !== last) out.push(last);
+    return out;
+  }
+
+  function setTarget(m: Match, t: Tile | null): void {
+    if (!captain) return;
+    captain.target = t ? { x: t.x, y: t.y } : null;
+    if (t) {
+      const wp = m.combatants[1].tileWorld(t);
+      labels.add(wp.x, wp.y - 2, `HEDEF: ${KIND_NAME[t.def.kind]!.toUpperCase()}`, 0xffe27a);
+    }
+  }
 
   function start(mode: Mode): void {
     state.mode = mode;
@@ -128,11 +211,11 @@ async function boot(): Promise<void> {
     state.inMenu = false;
     $('menu').hidden = true;
     $('hud').hidden = false;
-    $('touchui').hidden = !(isTouch && mode === 'duel');
-    $('keys').innerHTML =
-      mode === 'duel'
-        ? '<span><kbd>WASD</kbd> uç</span><span><kbd>Q</kbd><kbd>E</kbd> kay</span><span><kbd>Sol</kbd> top</span><span><kbd>Sağ</kbd> lazer</span><span><kbd>Space</kbd> asistan</span><span><kbd>Shift</kbd> yavaşlat</span><span><kbd>M</kbd> ses</span><span><kbd>B</kbd> bloom</span><span><kbd>R</kbd> yeniden</span><span><kbd>Esc</kbd> menü</span>'
-        : '<span><kbd>N</kbd> sonraki tur</span><span><kbd>Shift</kbd> yavaşlat</span><span><kbd>Esc</kbd> menü</span>';
+    $('touchui').hidden = !isTouch;
+    tMode.hidden = mode !== 'duel';
+    $('keys').innerHTML = '<span><kbd>N</kbd> sonraki tur</span><span><kbd>Space</kbd> durdur</span><span><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> hız</span><span><kbd>Esc</kbd> menü</span>';
+    state.paused = false;
+    state.timeScale = 1;
     newRound();
   }
 
@@ -162,6 +245,11 @@ async function boot(): Promise<void> {
     state.killCam = 0;
     state.assist = true;
     $('banner').hidden = true;
+    if (state.mode === 'duel') {
+      const [p, e] = state.match.combatants;
+      captain = new CaptainPilot(p, e, AI_PROFILES[p.blueprintId]?.range ?? 40);
+    } else captain = null;
+    setControl(state.control);
     const c = state.match.combatants[0].body.getWorldCenter();
     scene.cam.x = c.x * 0.5;
     scene.cam.y = c.y * 0.5;
@@ -181,12 +269,44 @@ async function boot(): Promise<void> {
 
       if (input.hit('KeyR') && state.mode === 'duel') newRound();
       if (input.hit('KeyN') && state.mode === 'watch') newRound();
-      if (input.hit('Space')) state.assist = !state.assist;
+      if (input.hit('Space')) state.paused = !state.paused;
+      if (input.hit('Digit1')) state.timeScale = 0.5;
+      if (input.hit('Digit2')) state.timeScale = 1;
+      if (input.hit('Digit3')) state.timeScale = 2;
+      if (input.hit('Tab') && state.mode === 'duel') setControl(state.control === 'captain' ? 'helm' : 'captain');
+      if (input.hit('KeyF')) state.assist = !state.assist;
+      if (input.hit('KeyH') && captain) captain.holdFire = !captain.holdFire;
       if (input.hit('KeyM')) sfx.setMuted(!sfx.muted);
       if (input.hit('KeyB')) scene.setBloom(!scene.bloom);
-      state.slow = input.down('ShiftLeft') || input.down('ShiftRight');
+      const shift = input.down('ShiftLeft') || input.down('ShiftRight');
+      state.slow = shift && state.control === 'helm';
 
-      if (player) {
+      if (player && captain && state.control === 'captain') {
+        // Orders: right-click goes there (or locks onto the enemy), right-drag draws a route.
+        if (input.mouse.rightHit) drag = { sx: input.mouse.x, sy: input.mouse.y, pts: [mouseW] };
+        if (drag && input.mouse.right) {
+          const l = drag.pts[drag.pts.length - 1]!;
+          if (Math.hypot(mouseW.x - l.x, mouseW.y - l.y) > 1.5) drag.pts.push(mouseW);
+        }
+        if (drag && input.mouse.rightUp) {
+          const moved = Math.hypot(input.mouse.x - drag.sx, input.mouse.y - drag.sy) > 10 || drag.pts.length > 3;
+          if (!moved && pickEnemyTile(m, mouseW)) captain.order = { kind: 'engage' };
+          else if (!moved) issuePath([mouseW], shift);
+          else issuePath(simplify(drag.pts), shift);
+          drag = null;
+        }
+        if (input.mouse.leftHit) setTarget(m, pickEnemyTile(m, mouseW));
+        for (const g of input.gestures) {
+          const pts = g.pts.map((p) => scene.screenToWorld(p.x, p.y));
+          const tile = g.tap ? pickEnemyTile(m, pts[0]!) : null;
+          if (tile) {
+            setTarget(m, tile);
+            captain.order = { kind: 'engage' };
+          } else if (g.tap) issuePath([pts[0]!], false);
+          else issuePath(simplify(pts), false);
+        }
+      } else if (player) {
+        player.input.aimLaser = undefined;
         const pi = player.input;
         pi.thrust = input.axis(['KeyS', 'ArrowDown'], ['KeyW', 'ArrowUp']);
         pi.turn = input.axis(['KeyA', 'ArrowLeft'], ['KeyD', 'ArrowRight']);
@@ -225,21 +345,22 @@ async function boot(): Promise<void> {
       }
 
       // Time: hit-stop freezes, kill-cam and Shift slow down.
-      let scale = 1;
-      if (state.slow) scale = 0.25;
+      let scale = state.paused ? 0 : state.timeScale;
+      if (state.slow) scale *= 0.25;
       if (state.killCam > 0) {
         state.killCam -= realDt;
         scale = Math.min(scale, 0.3);
       }
+      $('pausetag').hidden = !state.paused;
       if (state.hitStop > 0) {
         state.hitStop -= realDt;
         scale = 0;
       }
-      $('slowmo').classList.toggle('on', scale > 0 && scale < 1);
+      $('slowmo').classList.toggle('on', (scale > 0 && scale < 1) || state.paused);
 
       state.acc += realDt * scale;
       let steps = 0;
-      while (state.acc >= DT && steps < 6) {
+      while (state.acc >= DT && steps < 8) {
         m.step(DT);
         state.acc -= DT;
         steps++;
@@ -310,7 +431,8 @@ async function boot(): Promise<void> {
         }
       }
       const enemy = m.combatants[1];
-      if (player && player.controllable && m.world.ships.includes(enemy) && enemy.controllable) {
+      drawOrders(m, player, mouseW);
+      if (player && state.control === 'helm' && player.controllable && m.world.ships.includes(enemy) && enemy.controllable) {
         // Fire-control lead pip: where to aim so shells meet the enemy's centre.
         const pc = player.body.getWorldCenter();
         const ec = enemy.body.getWorldCenter();
@@ -419,6 +541,109 @@ async function boot(): Promise<void> {
   };
   (window as unknown as { __focus: (i: number) => void }).__focus = (i: number) => (focusIdx = i);
 
+  /** Dashed line in screen space. */
+  function dashed(g: Graphics, pts: { x: number; y: number }[], color: number, alpha: number, dash = 8, gap = 6): void {
+    let on = true;
+    let left = dash;
+    for (let i = 1; i < pts.length; i++) {
+      let ax = pts[i - 1]!.x;
+      let ay = pts[i - 1]!.y;
+      const bx = pts[i]!.x;
+      const by = pts[i]!.y;
+      let seg = Math.hypot(bx - ax, by - ay);
+      const ux = (bx - ax) / (seg || 1);
+      const uy = (by - ay) / (seg || 1);
+      while (seg > 0) {
+        const step = Math.min(left, seg);
+        const nx = ax + ux * step;
+        const ny = ay + uy * step;
+        if (on) g.moveTo(ax, ay).lineTo(nx, ny);
+        ax = nx;
+        ay = ny;
+        seg -= step;
+        left -= step;
+        if (left <= 0) {
+          on = !on;
+          left = on ? dash : gap;
+        }
+      }
+    }
+    g.stroke({ width: 2, color, alpha, cap: 'round' });
+  }
+
+  /** Captain-mode overlays: route, drag preview, lock ring, target bracket, hover. */
+  function drawOrders(m: Match, player: Ship | null, mouseW: Point): void {
+    const tip = $('tip');
+    tip.hidden = true;
+    if (!player || !captain || state.control !== 'captain') return;
+    const g = crosshair;
+    const pc = player.body.getWorldCenter();
+    const ps = toScreen(pc.x, pc.y);
+    const o = captain.order;
+    if (o.kind === 'path' && player.controllable) {
+      const pts = [ps, ...o.points.map((p) => toScreen(p.x, p.y))];
+      dashed(g, pts, 0x9ff3dc, 0.8);
+      for (const p of pts.slice(1, -1)) g.circle(p.x, p.y, 3).fill({ color: 0x9ff3dc, alpha: 0.8 });
+      const end = pts[pts.length - 1]!;
+      const pulse = 8 + Math.sin(state.time * 5) * 2;
+      g.circle(end.x, end.y, pulse).stroke({ width: 2, color: 0x9ff3dc, alpha: 0.9 });
+      g.circle(end.x, end.y, 2.5).fill({ color: 0x9ff3dc });
+    }
+    const livePts = drag ? drag.pts : input.gesture ? input.gesture.pts.map((p) => scene.screenToWorld(p.x, p.y)) : null;
+    if (livePts && livePts.length > 1) dashed(g, [ps, ...livePts.map((p) => toScreen(p.x, p.y))], 0xe6fff8, 0.55, 5, 5);
+    const enemy = m.combatants[1];
+    if (!m.world.ships.includes(enemy) || !enemy.controllable) return;
+    const ec = enemy.body.getWorldCenter();
+    const es = toScreen(ec.x, ec.y);
+    if (o.kind === 'engage') {
+      const r = captain.range * scene.cam.zoom;
+      const ring: { x: number; y: number }[] = [];
+      for (let i = 0; i <= 64; i++) ring.push({ x: es.x + Math.cos((i / 64) * Math.PI * 2) * r, y: es.y + Math.sin((i / 64) * Math.PI * 2) * r });
+      dashed(g, ring, 0x9ff3dc, 0.3, 6, 8);
+      dashed(g, [ps, es], 0x9ff3dc, 0.25, 4, 8);
+    }
+    const tileBox = (lx: number, ly: number, pad: number) => {
+      const c = [
+        [lx - pad, ly - pad],
+        [lx + pad, ly - pad],
+        [lx + pad, ly + pad],
+        [lx - pad, ly + pad],
+      ].map(([x, y]) => {
+        const w = enemy.body.getWorldPoint({ x: x!, y: y! });
+        return toScreen(w.x, w.y);
+      });
+      return c.flatMap((p) => [p.x, p.y]);
+    };
+    if (captain.target) {
+      // Corner-bracket reticle with a minimum on-screen size, plus the exact tile outline.
+      const w = enemy.body.getWorldPoint(captain.target);
+      const c = toScreen(w.x, w.y);
+      const s = Math.max(16, scene.cam.zoom * 1.1) + Math.sin(state.time * 6) * 2;
+      const k = s * 0.45;
+      const col = captain.holdFire ? 0x8f7cff : 0xffe27a;
+      for (const [sx, sy] of [
+        [-1, -1],
+        [1, -1],
+        [1, 1],
+        [-1, 1],
+      ] as const) {
+        g.moveTo(c.x + sx * s, c.y + sy * (s - k))
+          .lineTo(c.x + sx * s, c.y + sy * s)
+          .lineTo(c.x + sx * (s - k), c.y + sy * s);
+      }
+      g.stroke({ width: 2.5, color: col, alpha: 0.95 });
+      g.poly(tileBox(captain.target.x, captain.target.y, 0.5)).stroke({ width: 1.5, color: col, alpha: 0.8 });
+      dashed(g, [ps, c], col, 0.25, 3, 7);
+    }
+    const hover = input.mouse.inside && !drag ? pickEnemyTile(m, mouseW) : null;
+    if (hover) {
+      g.poly(tileBox(hover.x, hover.y, 0.55)).stroke({ width: 1.5, color: 0xffffff, alpha: 0.7 });
+      tip.hidden = false;
+      tip.textContent = `${KIND_NAME[hover.def.kind]} · %${Math.round((hover.hp / hover.def.hp) * 100)}${hover.def.power < 0 ? (hover.powered ? ' · çalışıyor' : ' · güçsüz') : ''}`;
+      tip.style.transform = `translate(${input.mouse.x + 16}px, ${input.mouse.y + 14}px)`;
+    }
+  }
+
   function cameraTarget(m: Match, player: Ship | null, mouseW: { x: number; y: number }, w: number, h: number) {
     const [a, b] = m.combatants;
     const alive = (s: Ship) => m.world.ships.includes(s);
@@ -471,7 +696,10 @@ async function boot(): Promise<void> {
     renderCard($('card0'), a, state.snaps[0]!, state.mode === 'duel' ? 'Sen' : 'Nane');
     renderCard($('card1'), b, state.snaps[1]!, state.mode === 'duel' ? 'Düşman' : 'Mercan');
     $('score').innerHTML = `<span class="m">${a.name}</span> ${state.score[0]} – ${state.score[1]} <span class="c">${b.name}</span>`;
-    $('sub').textContent = `TUR ${state.round} · ${m.elapsed.toFixed(0)} sn${state.mode === 'watch' ? ' · YZ vs YZ' : ''}`;
+    const speed = state.paused ? 'DURDU' : state.timeScale === 1 ? '×1' : state.timeScale === 2 ? '×2' : '×½';
+    const ctrl = state.mode === 'watch' ? 'YZ vs YZ' : state.control === 'captain' ? 'KAPTAN' : 'DÜMEN';
+    const order = captain && state.control === 'captain' ? ` · ${captain.order.kind === 'path' ? 'ROTADA' : captain.order.kind === 'engage' ? 'KENETLİ' : 'BEKLİYOR'}${captain.holdFire ? ' · ATEŞ TUT' : ''}` : '';
+    $('sub').textContent = `TUR ${state.round} · ${m.elapsed.toFixed(0)} sn · ${ctrl} · ${speed}${order}`;
   }
 }
 

@@ -2,7 +2,13 @@
 export class Input {
   keys = new Set<string>();
   pressed = new Set<string>();
-  mouse = { x: 0, y: 0, left: false, right: false, inside: false };
+  mouse = { x: 0, y: 0, left: false, right: false, inside: false, leftHit: false, rightHit: false, rightUp: false };
+  /** 'stick': twin-stick flying; 'gesture': taps and drags become orders. */
+  touchMode: 'stick' | 'gesture' = 'stick';
+  /** Live touch gesture (screen points) while a finger is down in gesture mode. */
+  gesture: { id: number; pts: { x: number; y: number }[]; t0: number } | null = null;
+  /** Finished gestures, consumed by the game each frame. */
+  gestures: { tap: boolean; pts: { x: number; y: number }[] }[] = [];
   /** Twin-stick touch state: left side moves, right side aims and fires. */
   touch = {
     used: false,
@@ -31,6 +37,10 @@ export class Input {
   private touchDown(e: PointerEvent): void {
     const t = this.touch;
     t.used = true;
+    if (this.touchMode === 'gesture') {
+      if (!this.gesture) this.gesture = { id: e.pointerId, pts: [{ x: e.clientX, y: e.clientY }], t0: performance.now() };
+      return;
+    }
     if (e.clientX < window.innerWidth * 0.45 && t.stickId < 0) {
       t.stickId = e.pointerId;
       t.ox = t.sx = e.clientX;
@@ -44,6 +54,12 @@ export class Input {
 
   private touchMove(e: PointerEvent): void {
     const t = this.touch;
+    const g = this.gesture;
+    if (g && e.pointerId === g.id) {
+      const last = g.pts[g.pts.length - 1]!;
+      if (Math.hypot(e.clientX - last.x, e.clientY - last.y) > 6) g.pts.push({ x: e.clientX, y: e.clientY });
+      return;
+    }
     if (e.pointerId === t.stickId) {
       t.sx = e.clientX;
       t.sy = e.clientY;
@@ -55,6 +71,13 @@ export class Input {
 
   private touchUp(e: PointerEvent): void {
     const t = this.touch;
+    const g = this.gesture;
+    if (g && e.pointerId === g.id) {
+      const a = g.pts[0]!;
+      const far = g.pts.some((p) => Math.hypot(p.x - a.x, p.y - a.y) > 14);
+      this.gestures.push({ tap: !far, pts: g.pts });
+      this.gesture = null;
+    }
     if (e.pointerId === t.stickId) t.stickId = -1;
     if (e.pointerId === t.aimId) t.aimId = -1;
   }
@@ -81,8 +104,14 @@ export class Input {
       if (e.pointerType === 'touch') return this.touchDown(e);
       this.mouse.x = e.clientX;
       this.mouse.y = e.clientY;
-      if (e.button === 0) this.mouse.left = true;
-      if (e.button === 2) this.mouse.right = true;
+      if (e.button === 0) {
+        this.mouse.left = true;
+        this.mouse.leftHit = true;
+      }
+      if (e.button === 2) {
+        this.mouse.right = true;
+        this.mouse.rightHit = true;
+      }
     });
     const up = (e: PointerEvent) => {
       if (e.pointerType === 'touch') this.touchUp(e);
@@ -91,7 +120,10 @@ export class Input {
     window.addEventListener('pointerup', (e) => {
       if (e.pointerType === 'touch') return up(e);
       if (e.button === 0) this.mouse.left = false;
-      if (e.button === 2) this.mouse.right = false;
+      if (e.button === 2 && this.mouse.right) {
+        this.mouse.right = false;
+        this.mouse.rightUp = true;
+      }
     });
     el.addEventListener('contextmenu', (e) => e.preventDefault());
   }
@@ -107,6 +139,8 @@ export class Input {
 
   endFrame(): void {
     this.pressed.clear();
+    this.mouse.leftHit = this.mouse.rightHit = this.mouse.rightUp = false;
+    this.gestures.length = 0;
   }
 
   axis(neg: string[], pos: string[]): number {
