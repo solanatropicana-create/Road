@@ -36,6 +36,6 @@ export const C = {
   shell: 0xfff2a0,
   spark: 0xffd27a,
   heat: 0xff7a3a,
-  smoke: 0x4a4466,
+  smoke: 0x9a90c8,
   boundary: 0x6a5acd,
 };

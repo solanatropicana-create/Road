@@ -151,8 +151,8 @@ export class Fx {
       switch (p.kind) {
         case 'spark':
           a.moveTo(p.x, p.y)
-            .lineTo(p.x - p.vx * 0.03, p.y - p.vy * 0.03)
-            .stroke({ width: p.size, color: p.color, alpha: f, cap: 'round' });
+            .lineTo(p.x - p.vx * 0.018, p.y - p.vy * 0.018)
+            .stroke({ width: p.size * 0.6, color: p.color, alpha: Math.min(1, f * 1.5), cap: 'round' });
           break;
         case 'ember':
           a.circle(p.x, p.y, p.size * (0.5 + f)).fill({ color: p.color, alpha: f });
@@ -164,7 +164,7 @@ export class Fx {
           a.circle(p.x, p.y, p.size * (1 - f) + 0.5).stroke({ width: 0.6 * f + 0.1, color: p.color, alpha: f });
           break;
         case 'smoke':
-          n.circle(p.x, p.y, p.size * (1.6 - f * 0.6)).fill({ color: p.color, alpha: f * 0.35 });
+          n.circle(p.x, p.y, p.size * (2.2 - f * 1.2)).fill({ color: p.color, alpha: f * f * 0.13 });
           break;
         case 'chip': {
           const s = p.size;
@@ -182,20 +182,20 @@ export class Fx {
 
     for (const pr of projectiles) {
       a.moveTo(pr.x, pr.y)
-        .lineTo(pr.x - pr.vx * 0.018, pr.y - pr.vy * 0.018)
-        .stroke({ width: 0.32, color: C.flame, alpha: 0.5, cap: 'round' });
+        .lineTo(pr.x - pr.vx * 0.022, pr.y - pr.vy * 0.022)
+        .stroke({ width: 0.22, color: C.flame, alpha: 0.35, cap: 'round' });
       a.moveTo(pr.x, pr.y)
-        .lineTo(pr.x - pr.vx * 0.01, pr.y - pr.vy * 0.01)
-        .stroke({ width: 0.14, color: C.shell, alpha: 1, cap: 'round' });
+        .lineTo(pr.x - pr.vx * 0.012, pr.y - pr.vy * 0.012)
+        .stroke({ width: 0.1, color: C.shell, alpha: 1, cap: 'round' });
     }
 
     const kb: Beam[] = [];
     for (const b of this.beams) {
       b.life -= dt;
-      const w = 0.25 + Math.random() * 0.15;
-      a.moveTo(b.x1, b.y1).lineTo(b.x2, b.y2).stroke({ width: w * 3, color: C.laser, alpha: 0.25 });
+      const w = 0.1 + Math.random() * 0.06;
+      a.moveTo(b.x1, b.y1).lineTo(b.x2, b.y2).stroke({ width: w * 4, color: C.laser, alpha: 0.22 });
       a.moveTo(b.x1, b.y1).lineTo(b.x2, b.y2).stroke({ width: w, color: C.laserCore, alpha: 0.95 });
-      if (b.hit) a.circle(b.x2, b.y2, 0.6 + Math.random() * 0.4).fill({ color: C.laser, alpha: 0.7 });
+      if (b.hit) a.circle(b.x2, b.y2, 0.35 + Math.random() * 0.3).fill({ color: C.laser, alpha: 0.6 });
       if (b.life > 0) kb.push(b);
     }
     this.beams = kb;

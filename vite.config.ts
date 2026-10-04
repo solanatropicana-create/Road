@@ -10,5 +10,7 @@ export default defineConfig({
     target: 'es2022',
     sourcemap: false,
     chunkSizeWarningLimit: 2000,
+    // One bundle so the artifact build can inline it into a single page.
+    rollupOptions: { output: { inlineDynamicImports: true } },
   },
 });

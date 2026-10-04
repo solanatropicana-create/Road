@@ -305,7 +305,7 @@ export class World {
     const wp = ship.tileWorld(t);
     const v = ship.body.getLinearVelocityFromWorldPoint(wp);
     ship.removeTile(t);
-    this.events.push({ t: 'break', x: wp.x, y: wp.y, vx: v.x, vy: v.y, kind: t.def.kind, team: ship.team, ship: ship.id });
+    this.events.push({ t: 'break', x: wp.x, y: wp.y, vx: v.x, vy: v.y, kind: t.def.kind, team: ship.origin, ship: ship.id });
     if (t.def.explosive) this.explosions.push({ x: wp.x, y: wp.y, energy: t.def.explosive });
   }
 

@@ -6,3 +6,4 @@ dist
 .env
 .env.local
 public/shots/
+dist-artifact

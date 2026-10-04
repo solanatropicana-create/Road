@@ -8,6 +8,8 @@ import { BLUEPRINTS } from './sim/blueprints';
 import { CHAR_MAP } from './sim/defs';
 import { DT } from './sim/world';
 import type { Ship } from './sim/ship';
+import { Sfx } from './game/audio';
+import { WEAPONS } from './sim/defs';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
@@ -26,6 +28,8 @@ async function boot(): Promise<void> {
   const input = new Input(app.canvas);
   const crosshair = new Graphics();
   app.stage.addChild(crosshair);
+  const sfx = new Sfx();
+  let hurt = 0;
 
   const state = {
     mode: 'watch' as Mode,
@@ -45,6 +49,9 @@ async function boot(): Promise<void> {
     inMenu: true,
   };
 
+  // Debug handle for automated screenshots.
+  (window as unknown as { __kesit: unknown }).__kesit = { scene, state };
+
   // ------------------------------------------------------------- menu
   const shipsEl = $('ships');
   for (const bp of BLUEPRINTS) {
@@ -63,8 +70,16 @@ async function boot(): Promise<void> {
     shipsEl.append(b);
     requestAnimationFrame(() => drawPreview(cv, bp.rows));
   }
-  $('play').addEventListener('click', () => start('duel'));
-  $('watch').addEventListener('click', () => start('watch'));
+  $('play').addEventListener('click', () => {
+    sfx.unlock();
+    sfx.ui('click');
+    start('duel');
+  });
+  $('watch').addEventListener('click', () => {
+    sfx.unlock();
+    sfx.ui('click');
+    start('watch');
+  });
 
   function start(mode: Mode): void {
     state.mode = mode;
@@ -75,7 +90,7 @@ async function boot(): Promise<void> {
     $('hud').hidden = false;
     $('keys').innerHTML =
       mode === 'duel'
-        ? '<span><kbd>WASD</kbd> uç</span><span><kbd>Q</kbd><kbd>E</kbd> kay</span><span><kbd>Sol</kbd> top</span><span><kbd>Sağ</kbd> lazer</span><span><kbd>Space</kbd> asistan</span><span><kbd>Shift</kbd> yavaşlat</span><span><kbd>R</kbd> yeniden</span><span><kbd>Esc</kbd> menü</span>'
+        ? '<span><kbd>WASD</kbd> uç</span><span><kbd>Q</kbd><kbd>E</kbd> kay</span><span><kbd>Sol</kbd> top</span><span><kbd>Sağ</kbd> lazer</span><span><kbd>Space</kbd> asistan</span><span><kbd>Shift</kbd> yavaşlat</span><span><kbd>M</kbd> ses</span><span><kbd>R</kbd> yeniden</span><span><kbd>Esc</kbd> menü</span>'
         : '<span><kbd>N</kbd> sonraki tur</span><span><kbd>Shift</kbd> yavaşlat</span><span><kbd>Esc</kbd> menü</span>';
     newRound();
   }
@@ -123,6 +138,7 @@ async function boot(): Promise<void> {
       if (input.hit('KeyR') && state.mode === 'duel') newRound();
       if (input.hit('KeyN') && state.mode === 'watch') newRound();
       if (input.hit('Space')) state.assist = !state.assist;
+      if (input.hit('KeyM')) sfx.setMuted(!sfx.muted);
       state.slow = input.down('ShiftLeft') || input.down('ShiftRight');
 
       if (player) {
@@ -159,6 +175,8 @@ async function boot(): Promise<void> {
         const focus = scene.cam;
         for (const e of m.world.events) {
           scene.fx.handle(e, focus);
+          sfx.handle(e, focus, player?.id ?? null);
+          if (player && (e.t === 'hit' || e.t === 'break' || e.t === 'explode') && 'ship' in e && e.ship === player.id) hurt = Math.min(1, hurt + (e.t === 'break' ? 0.35 : 0.15));
           if (e.t === 'disabled' && m.combatants.some((s) => s.id === e.ship)) state.killCam = 1.3;
         }
         m.world.events.length = 0;
@@ -175,12 +193,22 @@ async function boot(): Promise<void> {
       scene.fx.update(realDt * (scale === 0 ? 0.15 : scale), m.world.projectiles);
       scene.updateCamera(realDt, cameraTarget(m, player, mouseW, app.screen.width, app.screen.height));
 
+      // Continuous audio + hurt vignette
+      let lasers = 0;
+      for (const s of m.combatants) for (const t of s.tiles.values()) if (t.firing) lasers++;
+      let engine = 0;
+      if (player) for (const t of player.tiles.values()) if (t.def.kind === 'thruster' || t.def.kind === 'rcs') engine += t.throttle * (t.def.kind === 'thruster' ? 0.35 : 0.12);
+      sfx.frame(realDt, lasers * (scale > 0 ? 1 : 0), Math.min(1, engine) * (scale > 0 ? 1 : 0));
+      hurt = Math.max(0, hurt - realDt * 1.8);
+      $('hurt').style.opacity = String(hurt * 0.8);
+
       // Round end
       if (m.over) {
         if (m.overTime === 0 || $('banner').hidden) {
           if ($('banner').hidden) {
             if (m.winner !== null && m.winner >= 0) state.score[m.winner]!++;
             showBanner(m);
+            if (state.mode === 'duel') sfx.ui(m.winner === 0 ? 'win' : 'lose');
           }
         }
         if (state.mode === 'watch' && m.overTime > 4.5) newRound();
@@ -188,6 +216,25 @@ async function boot(): Promise<void> {
 
       // Crosshair (duel only)
       crosshair.clear();
+      const enemy = m.combatants[1];
+      if (player && player.controllable && m.world.ships.includes(enemy) && enemy.controllable) {
+        // Fire-control lead pip: where to aim so shells meet the enemy's centre.
+        const pc = player.body.getWorldCenter();
+        const ec = enemy.body.getWorldCenter();
+        const pv = player.body.getLinearVelocity();
+        const ev = enemy.body.getLinearVelocity();
+        const t = leadTime(ec.x - pc.x, ec.y - pc.y, ev.x - pv.x, ev.y - pv.y, WEAPONS.cannon.muzzle);
+        if (t !== null && t < 1.4) {
+          const lx = ec.x + (ev.x - pv.x) * t;
+          const ly = ec.y + (ev.y - pv.y) * t;
+          const sx = (lx - scene.cam.x) * scene.cam.zoom + app.screen.width / 2;
+          const sy = (ly - scene.cam.y) * scene.cam.zoom + app.screen.height / 2;
+          const ex = (ec.x - scene.cam.x) * scene.cam.zoom + app.screen.width / 2;
+          const ey = (ec.y - scene.cam.y) * scene.cam.zoom + app.screen.height / 2;
+          crosshair.moveTo(ex, ey).lineTo(sx, sy).stroke({ width: 1, color: 0xffb9c8, alpha: 0.35 });
+          crosshair.poly([sx, sy - 7, sx + 7, sy, sx, sy + 7, sx - 7, sy]).stroke({ width: 1.5, color: 0xffb9c8, alpha: 0.9 });
+        }
+      }
       if (player && input.mouse.inside) {
         const x = input.mouse.x;
         const y = input.mouse.y;
@@ -218,6 +265,14 @@ async function boot(): Promise<void> {
     input.endFrame();
   });
 
+  let zoomMul = 1;
+  window.addEventListener('wheel', (e) => {
+    zoomMul = Math.max(0.5, Math.min(2.5, zoomMul * (e.deltaY > 0 ? 0.9 : 1.1)));
+  });
+  (window as unknown as { __zoom: (z: number) => void }).__zoom = (z: number) => (zoomMul = z);
+  let focusIdx = -1;
+  (window as unknown as { __focus: (i: number) => void }).__focus = (i: number) => (focusIdx = i);
+
   function cameraTarget(m: Match, player: Ship | null, mouseW: { x: number; y: number }, w: number, h: number) {
     const [a, b] = m.combatants;
     const alive = (s: Ship) => m.world.ships.includes(s);
@@ -232,13 +287,18 @@ async function boot(): Promise<void> {
       cy = ca.y * 0.62 + cb.y * 0.38;
       cx += (mouseW.x - ca.x) * 0.12;
       cy += (mouseW.y - ca.y) * 0.12;
-      extent = Math.max(22, dist * 0.66 + 16);
+      extent = Math.max(18, dist * 0.55 + 11);
     } else {
       cx = (ca.x + cb.x) / 2;
       cy = (ca.y + cb.y) / 2;
-      extent = Math.max(24, dist * 0.56 + 18);
+      extent = Math.max(18, dist * 0.5 + 12);
     }
-    const zoom = Math.max(3.5, Math.min(15, Math.min(w, h) / 2 / extent));
+    if (focusIdx >= 0) {
+      const f = focusIdx === 0 ? ca : cb;
+      cx = f.x;
+      cy = f.y;
+    }
+    const zoom = Math.max(3.5, Math.min(16, Math.min(w, h) / 2 / extent)) * zoomMul;
     return { x: cx, y: cy, zoom };
   }
 
@@ -266,6 +326,19 @@ async function boot(): Promise<void> {
     $('score').innerHTML = `<span class="m">${a.name}</span> ${state.score[0]} – ${state.score[1]} <span class="c">${b.name}</span>`;
     $('sub').textContent = `TUR ${state.round} · ${m.elapsed.toFixed(0)} sn${state.mode === 'watch' ? ' · YZ vs YZ' : ''}`;
   }
+}
+
+function leadTime(rx: number, ry: number, vx: number, vy: number, s: number): number | null {
+  const a = vx * vx + vy * vy - s * s;
+  const b = 2 * (rx * vx + ry * vy);
+  const c = rx * rx + ry * ry;
+  const disc = b * b - 4 * a * c;
+  if (disc < 0 || Math.abs(a) < 1e-6) return null;
+  const sq = Math.sqrt(disc);
+  const t1 = (-b - sq) / (2 * a);
+  const t2 = (-b + sq) / (2 * a);
+  const t = Math.min(t1, t2) > 0 ? Math.min(t1, t2) : Math.max(t1, t2);
+  return t > 0 ? t : null;
 }
 
 /** Small static preview of a blueprint for the menu cards. */

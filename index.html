@@ -252,6 +252,13 @@
       .slowmo.on {
         opacity: 1;
       }
+      .hurt {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        box-shadow: inset 0 0 140px rgba(255, 90, 120, 0.7);
+        opacity: 0;
+      }
 
       /* ---------------- menu */
       .menu {
@@ -401,6 +408,7 @@
   <body>
     <div id="app"></div>
     <div class="slowmo" id="slowmo"></div>
+    <div class="hurt" id="hurt"></div>
     <div class="hud" id="hud" hidden>
       <div class="card" id="card0"></div>
       <div class="center-top">
@@ -434,6 +442,8 @@
           <div><kbd>Sağ tık</kbd> lazerler</div>
           <div><kbd>Space</kbd> uçuş asistanı / drift</div>
           <div><kbd>Shift</kbd> taktik yavaşlatma</div>
+          <div><kbd>Tekerlek</kbd> yakınlaştır</div>
+          <div><kbd>M</kbd> sesi kapat</div>
         </div>
         <p class="note">Gemiler karolardan yapılır. Vurduğun karo kırılır, üstünden geçen güç hattı kopar, kopan taraftaki sistemler kararır. İticisini kaybeden gemi yalpalar, köprüsü sönen gemi savaş dışı kalır.</p>
       </div>
