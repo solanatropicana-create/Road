@@ -367,6 +367,30 @@ async function boot(): Promise<void> {
         frame(ms);
         if (render) app.render();
       },
+      /** Ship portrait: one idle ship at the origin, optionally shot through `shots` times. */
+      showcase: (id: string, shots: number) => {
+        state.mode = 'watch';
+        state.inMenu = false;
+        $('menu').hidden = true;
+        state.match?.destroy();
+        scene.clearWorld();
+        const m = new Match({ mode: 'watch', seed: 7, ships: [id, id] });
+        m.pilots = [null, null];
+        const [a, b] = m.combatants;
+        b.body.setPosition({ x: 5000, y: 5000 });
+        a.body.setPosition({ x: 0, y: 0 });
+        a.body.setAngle(0);
+        a.body.setLinearVelocity({ x: 0, y: 0 });
+        a.body.setAngularVelocity(0);
+        for (let i = 0; i < shots; i++) {
+          const y = [-0.2, 1.1, -1.4, 0.6][i % 4]!;
+          m.world.damageAlongRay(a, { x: a.bounds.minX - 0.55, y }, { x: 1, y: 0.06 * (i - 1) }, 3200, false);
+        }
+        a.body.setAngle(0.35);
+        camLock = { x: 0, y: 0, zoom: 0 };
+        state.match = m;
+        state.snaps = m.combatants.map(snapshot);
+      },
       start: (mode: Mode, ships: [string, string], seed: number) => {
         state.mode = mode;
         state.inMenu = false;
@@ -388,6 +412,11 @@ async function boot(): Promise<void> {
   });
   (window as unknown as { __zoom: (z: number) => void }).__zoom = (z: number) => (zoomMul = z);
   let focusIdx = -1;
+  let camLock: { x: number; y: number; zoom: number } | null = null;
+  (window as unknown as { __camLock: (z: number | null) => void }).__camLock = (z) => {
+    camLock = z === null ? null : { x: 0, y: 0, zoom: z };
+    if (camLock) Object.assign(scene.cam, camLock);
+  };
   (window as unknown as { __focus: (i: number) => void }).__focus = (i: number) => (focusIdx = i);
 
   function cameraTarget(m: Match, player: Ship | null, mouseW: { x: number; y: number }, w: number, h: number) {
@@ -410,6 +439,7 @@ async function boot(): Promise<void> {
       cy = (ca.y + cb.y) / 2;
       extent = Math.max(18, dist * 0.5 + 12);
     }
+    if (camLock) return camLock;
     if (focusIdx >= 0) {
       const f = focusIdx === 0 ? ca : cb;
       cx = f.x;
