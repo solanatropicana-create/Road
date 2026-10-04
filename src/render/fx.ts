@@ -1,5 +1,7 @@
 import { Container, Graphics } from 'pixi.js';
 import type { SimEvent, Projectile } from '../sim/world';
+import type { Ship } from '../sim/ship';
+import { DIR_VEC } from '../sim/defs';
 import { C, TEAM } from './palette';
 import { mix } from './shipView';
 
@@ -113,6 +115,22 @@ export class Fx {
     }
   }
 
+  /** Cosmetic exhaust trails: hot embers leaving every burning nozzle. */
+  trails(ships: Ship[], dt: number): void {
+    for (const s of ships) {
+      for (const t of s.tiles.values()) {
+        if (t.throttle < 0.2 || (t.def.kind !== 'thruster' && t.def.kind !== 'rcs')) continue;
+        const big = t.def.kind === 'thruster';
+        if (Math.random() > t.throttle * dt * (big ? 70 : 25)) continue;
+        const d = DIR_VEC[t.dir]!;
+        const wp = s.body.getWorldPoint({ x: t.x + d.x * 0.9, y: t.y + d.y * 0.9 });
+        const wd = s.body.getWorldVector({ x: d.x, y: d.y });
+        const v = s.body.getLinearVelocityFromWorldPoint(wp);
+        this.p('ember', wp.x, wp.y, v.x + wd.x * 22 + rnd(3), v.y + wd.y * 22 + rnd(3), big ? 0.45 : 0.25, big ? 0.13 : 0.08, Math.random() < 0.5 ? C.flame : C.flameCool);
+      }
+    }
+  }
+
   private p(kind: Particle['kind'], x: number, y: number, vx: number, vy: number, life: number, size: number, color: number): void {
     if (this.parts.length > 2600) return;
     this.parts.push({
@@ -183,7 +201,7 @@ export class Fx {
     for (const pr of projectiles) {
       a.moveTo(pr.x, pr.y)
         .lineTo(pr.x - pr.vx * 0.022, pr.y - pr.vy * 0.022)
-        .stroke({ width: 0.22, color: C.flame, alpha: 0.35, cap: 'round' });
+        .stroke({ width: 0.22, color: C.spark, alpha: 0.45, cap: 'round' });
       a.moveTo(pr.x, pr.y)
         .lineTo(pr.x - pr.vx * 0.012, pr.y - pr.vy * 0.012)
         .stroke({ width: 0.1, color: C.shell, alpha: 1, cap: 'round' });

@@ -34,7 +34,7 @@ export const C = {
   laser: 0xff7af0,
   laserCore: 0xfff2ff,
   shell: 0xfff2a0,
-  spark: 0xffd27a,
+  spark: 0xffe6a8,
   heat: 0xff7a3a,
   smoke: 0x9a90c8,
   boundary: 0x6a5acd,

@@ -139,6 +139,7 @@ async function boot(): Promise<void> {
       if (input.hit('KeyN') && state.mode === 'watch') newRound();
       if (input.hit('Space')) state.assist = !state.assist;
       if (input.hit('KeyM')) sfx.setMuted(!sfx.muted);
+      if (input.hit('KeyB')) scene.setBloom(!scene.bloom);
       state.slow = input.down('ShiftLeft') || input.down('ShiftRight');
 
       if (player) {
@@ -190,6 +191,7 @@ async function boot(): Promise<void> {
       const aims = new Map<Ship, { x: number; y: number }>();
       for (const s of m.combatants) aims.set(s, s.input.aim);
       scene.syncWorld(m.world, state.time, aims);
+      if (scale > 0) scene.fx.trails(m.world.ships, realDt * scale);
       scene.fx.update(realDt * (scale === 0 ? 0.15 : scale), m.world.projectiles);
       scene.updateCamera(realDt, cameraTarget(m, player, mouseW, app.screen.width, app.screen.height));
 

@@ -1,4 +1,5 @@
 import { Application, Container, Graphics, TilingSprite, type Texture } from 'pixi.js';
+import { AdvancedBloomFilter } from 'pixi-filters';
 import { ARENA_RADIUS, type World } from '../sim/world';
 import type { Ship } from '../sim/ship';
 import { ShipView } from './shipView';
@@ -8,7 +9,10 @@ import { C } from './palette';
 /** Owns the Pixi scene graph: parallax stars, world layer, ships, effects, camera. */
 export class Scene {
   stage = new Container();
+  /** Screen-aligned wrapper so post filters work in screen space. */
+  worldWrap = new Container();
   world = new Container();
+  private planet = new Graphics();
   private stars: TilingSprite[] = [];
   private nebula = new Graphics();
   private boundary = new Graphics();
@@ -23,9 +27,30 @@ export class Scene {
   constructor(private app: Application) {
     app.stage.addChild(this.stage);
     this.buildStars();
-    this.stage.addChild(this.world);
+    // A distant ringed planet with very slow parallax.
+    const pl = this.planet;
+    for (let k = 8; k >= 1; k--) pl.circle(0, 0, 26 + k * 5).fill({ color: 0x8f7cff, alpha: 0.01 * k });
+    pl.circle(0, 0, 28).fill({ color: 0x241d45 });
+    pl.circle(-7, -8, 21).fill({ color: 0x342a62, alpha: 0.9 });
+    pl.ellipse(0, 0, 52, 9).stroke({ width: 2, color: 0xffb9c8, alpha: 0.3 });
+    this.stage.addChild(pl);
+    this.stage.addChild(this.worldWrap);
+    this.worldWrap.addChild(this.world);
     this.world.addChild(this.nebula, this.boundary, this.shipLayer, this.fx.root);
     this.drawBoundary();
+    this.setBloom(true);
+  }
+
+  bloom = false;
+  setBloom(on: boolean): void {
+    this.bloom = on;
+    if (on) {
+      const f = new AdvancedBloomFilter({ threshold: 0.86, bloomScale: 0.75, brightness: 1.0, blur: 5, quality: 4 });
+      this.worldWrap.filters = [f];
+      this.worldWrap.filterArea = this.app.screen;
+    } else {
+      this.worldWrap.filters = [];
+    }
   }
 
   private buildStars(): void {
@@ -124,6 +149,7 @@ export class Scene {
     this.world.scale.set(this.cam.zoom);
     this.world.position.set(w / 2 - this.cam.x * this.cam.zoom + ox, h / 2 - this.cam.y * this.cam.zoom + oy);
 
+    this.planet.position.set(w * 0.16 - this.cam.x * this.cam.zoom * 0.015, h * 0.8 - this.cam.y * this.cam.zoom * 0.015);
     const factors = [0.04, 0.09, 0.16];
     this.stars.forEach((s, i) => {
       s.width = w;
