@@ -55,6 +55,10 @@
         grid-template-rows: auto 1fr auto;
         gap: 12px;
       }
+      .hud[hidden],
+      .banner[hidden] {
+        display: none;
+      }
       .card {
         background: var(--panel);
         border: 1px solid var(--panel-edge);
@@ -384,7 +388,85 @@
         line-height: 1.45;
         margin: 0;
       }
+      #app canvas {
+        touch-action: none;
+      }
+      .touch-only {
+        display: none;
+      }
+      body.touch .touch-only {
+        display: block;
+      }
+      body.touch .help {
+        display: none;
+      }
+      body.touch .keys {
+        display: none;
+      }
+      .touchui {
+        position: fixed;
+        right: 16px;
+        bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+        display: flex;
+        gap: 10px;
+      }
+      .touchui[hidden] {
+        display: none;
+      }
+      .tbtn {
+        appearance: none;
+        font-family: var(--font-mono);
+        font-size: 13px;
+        letter-spacing: 0.06em;
+        color: var(--ink);
+        background: var(--panel);
+        border: 1.5px solid rgba(255, 255, 255, 0.22);
+        border-radius: 12px;
+        padding: 12px 14px;
+        touch-action: none;
+      }
+      .tbtn[aria-pressed='true'] {
+        color: var(--warn);
+        border-color: var(--warn);
+      }
       @media (max-width: 640px) {
+        .card .systems {
+          display: none;
+        }
+        .sheet {
+          gap: 14px;
+        }
+        .title h1 {
+          font-size: 64px;
+        }
+        .title p {
+          font-size: 15px;
+        }
+        .ships {
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 8px;
+        }
+        .ship {
+          padding: 8px;
+          gap: 2px;
+          border-radius: 12px;
+        }
+        .ship canvas {
+          height: 64px;
+        }
+        .ship strong {
+          font-size: 15px;
+        }
+        .ship small {
+          font-size: 11px;
+        }
+        .btn {
+          font-size: 16px;
+          padding: 11px 16px;
+        }
+        .note {
+          font-size: 13px;
+        }
         .hud {
           grid-template-columns: 1fr 1fr;
         }
@@ -422,6 +504,11 @@
       </div>
       <div class="keys" id="keys"></div>
     </div>
+    <div class="touchui" id="touchui" hidden>
+      <button type="button" id="tMenu" class="tbtn">MENÜ</button>
+      <button type="button" id="tAssist" class="tbtn" aria-pressed="false">ASİSTAN</button>
+      <button type="button" id="tSlow" class="tbtn">YAVAŞ</button>
+    </div>
     <div class="menu" id="menu">
       <div class="sheet">
         <div class="title">
@@ -445,6 +532,7 @@
           <div><kbd>Tekerlek</kbd> yakınlaştır</div>
           <div><kbd>M</kbd> sesi kapat</div>
         </div>
+        <p class="note touch-only">Dokunmatik: sol yarıda parmağını sürükle, gemi o yöne döner ve yakar. Sağ yarıya dokunup tut: o noktaya ateş eder.</p>
         <p class="note">Gemiler karolardan yapılır. Vurduğun karo kırılır, üstünden geçen güç hattı kopar, kopan taraftaki sistemler kararır. İticisini kaybeden gemi yalpalar, köprüsü sönen gemi savaş dışı kalır.</p>
       </div>
     </div>

@@ -81,6 +81,30 @@ async function boot(): Promise<void> {
     start('watch');
   });
 
+  let touchSlow = false;
+  const tAssist = $('tAssist');
+  const tSlow = $('tSlow');
+  tAssist.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    state.assist = !state.assist;
+    tAssist.setAttribute('aria-pressed', String(!state.assist));
+    tAssist.textContent = state.assist ? 'ASİSTAN' : 'DRİFT';
+  });
+  tSlow.addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    touchSlow = true;
+  });
+  const slowOff = () => (touchSlow = false);
+  tSlow.addEventListener('pointerup', slowOff);
+  tSlow.addEventListener('pointercancel', slowOff);
+  tSlow.addEventListener('pointerleave', slowOff);
+  $('tMenu').addEventListener('pointerdown', (e) => {
+    e.preventDefault();
+    toMenu();
+  });
+  const isTouch = window.matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window;
+  if (isTouch) document.body.classList.add('touch');
+
   function start(mode: Mode): void {
     state.mode = mode;
     state.score = [0, 0];
@@ -88,6 +112,7 @@ async function boot(): Promise<void> {
     state.inMenu = false;
     $('menu').hidden = true;
     $('hud').hidden = false;
+    $('touchui').hidden = !(isTouch && mode === 'duel');
     $('keys').innerHTML =
       mode === 'duel'
         ? '<span><kbd>WASD</kbd> uç</span><span><kbd>Q</kbd><kbd>E</kbd> kay</span><span><kbd>Sol</kbd> top</span><span><kbd>Sağ</kbd> lazer</span><span><kbd>Space</kbd> asistan</span><span><kbd>Shift</kbd> yavaşlat</span><span><kbd>M</kbd> ses</span><span><kbd>B</kbd> bloom</span><span><kbd>R</kbd> yeniden</span><span><kbd>Esc</kbd> menü</span>'
@@ -102,6 +127,7 @@ async function boot(): Promise<void> {
     scene.clearWorld();
     $('menu').hidden = false;
     $('hud').hidden = true;
+    $('touchui').hidden = true;
   }
 
   function newRound(): void {
@@ -152,6 +178,32 @@ async function boot(): Promise<void> {
         pi.aim.y = mouseW.y;
         pi.fireCannon = input.mouse.left;
         pi.fireLaser = input.mouse.right;
+        if (input.touch.used) {
+          // Twin-stick: the stick says where to go; the ship turns to face it and burns.
+          const st = input.stick();
+          if (st.len > 0.12) {
+            const want = Math.atan2(st.x, -st.y);
+            let err = want - player.body.getAngle();
+            err = Math.atan2(Math.sin(err), Math.cos(err));
+            pi.turn = Math.max(-1, Math.min(1, err * 2 - player.body.getAngularVelocity() * 0.5));
+            pi.thrust = st.len * Math.max(0, Math.cos(err));
+            pi.strafe = st.len * Math.sin(err) * 0.7;
+          }
+          const t = input.touch;
+          if (t.aimId >= 0) {
+            const aw = scene.screenToWorld(t.ax, t.ay);
+            pi.aim.x = aw.x;
+            pi.aim.y = aw.y;
+            pi.fireCannon = true;
+            pi.fireLaser = true;
+          } else {
+            // No finger on the right: guns track the enemy but hold fire.
+            const ec = m.combatants[1].body.getWorldCenter();
+            pi.aim.x = ec.x;
+            pi.aim.y = ec.y;
+          }
+          if (touchSlow) state.slow = true;
+        }
       }
 
       // Time: hit-stop freezes, kill-cam and Shift slow down.
@@ -218,6 +270,18 @@ async function boot(): Promise<void> {
 
       // Crosshair (duel only)
       crosshair.clear();
+      if (player && input.touch.used) {
+        const t = input.touch;
+        if (t.stickId >= 0) {
+          const st = input.stick();
+          crosshair.circle(t.ox, t.oy, 70).stroke({ width: 2, color: 0x9ff3dc, alpha: 0.35 }).fill({ color: 0x9ff3dc, alpha: 0.06 });
+          crosshair.circle(t.ox + st.x * 70, t.oy + st.y * 70, 26).fill({ color: 0x9ff3dc, alpha: 0.45 });
+        }
+        if (t.aimId >= 0) {
+          crosshair.circle(t.ax, t.ay, 16).stroke({ width: 2, color: 0xffe27a, alpha: 0.9 });
+          crosshair.circle(t.ax, t.ay, 3).fill({ color: 0xffe27a });
+        }
+      }
       const enemy = m.combatants[1];
       if (player && player.controllable && m.world.ships.includes(enemy) && enemy.controllable) {
         // Fire-control lead pip: where to aim so shells meet the enemy's centre.
@@ -291,7 +355,7 @@ async function boot(): Promise<void> {
     },
   });
 
-  let zoomMul = 1;
+  let zoomMul = window.innerWidth < 640 ? 1.3 : 1;
   window.addEventListener('wheel', (e) => {
     zoomMul = Math.max(0.5, Math.min(2.5, zoomMul * (e.deltaY > 0 ? 0.9 : 1.1)));
   });
