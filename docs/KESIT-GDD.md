@@ -1,6 +1,8 @@
 # KESİT — Oyun Tasarım Belgesi (Faz 0)
 
-> Çalışma adı. Sürüm 0.1 · Durum: konsept onaylandı (Paket 3 "Tatlı Seferler" + Paket 1'den enkaz ve hırslar)
+> Çalışma adı. Sürüm 0.1 · **Durum: TBD (taslak)**. Yön onaylandı (Paket 3 "Tatlı Seferler" + Paket 1'den enkaz ve hırslar); ayrıntılar değişebilir.
+
+> ⚠️ **TBD:** Bu belgedeki sayılar, modül listeleri, faz planı ve teknik kararlar kesinleşmedi. Şu anki tek öncelik: **bir savaşı keyifli hale getirmek** (uçuş + nişan + yerel hasar + parçalanma hissi). Geri kalan her şey o his oturduktan sonra yeniden değerlendirilecek.
 
 ---
 
