@@ -98,7 +98,7 @@ export const WEAPONS = {
   },
   laser: {
     /** Energy per second deposited at the hit point. */
-    dps: 400,
+    dps: 850,
     range: 100,
     turnRate: 3.2,
   },

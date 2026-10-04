@@ -42,7 +42,7 @@ export const BLUEPRINTS: Blueprint[] = [
     rows: [
       '..@C@..',
       '.4^+^6.',
-      '.@+B+@.',
+      '@@+B+@@',
       '.L+R+L.',
       '.4SG+6.',
       '..v@v..',

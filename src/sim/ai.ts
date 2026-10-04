@@ -24,7 +24,7 @@ export interface AiProfile {
 export const AI_PROFILES: Record<string, AiProfile> = {
   serce: { range: 40, aimError: 0.07, jink: 1.8, surgical: 0.45 },
   kaplumbaga: { range: 46, aimError: 0.06, jink: 3, surgical: 0.6 },
-  ari: { range: 42, aimError: 0.07, jink: 1.0, surgical: 0.6 },
+  ari: { range: 50, aimError: 0.05, jink: 1.5, surgical: 0.7 },
 };
 
 const CRITICAL = new Set(['reactor', 'bridge', 'cannon', 'laser', 'gyro', 'thruster']);
