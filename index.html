@@ -1,0 +1,443 @@
+<!doctype html>
+<html lang="tr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>KESİT</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+    <style>
+      /* Layout: full-bleed canvas, HUD cards pinned to the corners, menu as a centred sheet. */
+      :root {
+        --void: #0e0b1f;
+        --ink: #efeaff;
+        --ink-dim: #a49cc8;
+        --mint: #9ff3dc;
+        --coral: #ffb9c8;
+        --gold: #ffe27a;
+        --violet: #8f7cff;
+        --panel: rgba(22, 17, 46, 0.78);
+        --panel-edge: rgba(159, 243, 220, 0.18);
+        --bad: #ff6b8b;
+        --warn: #ffc46b;
+        --ok: #8dffb0;
+        --font-display: 'Fredoka', 'Nunito', ui-rounded, system-ui, sans-serif;
+        --font-mono: 'IBM Plex Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+        color-scheme: dark;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        background: var(--void);
+        color: var(--ink);
+        overflow: hidden;
+        font-family: var(--font-display);
+        -webkit-user-select: none;
+        user-select: none;
+      }
+      #app {
+        position: fixed;
+        inset: 0;
+      }
+      #app canvas {
+        display: block;
+        cursor: none;
+      }
+      .hud {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        padding: calc(env(safe-area-inset-top, 0px) + 14px) 16px calc(env(safe-area-inset-bottom, 0px) + 14px);
+        display: grid;
+        grid-template-columns: minmax(0, 230px) 1fr minmax(0, 230px);
+        grid-template-rows: auto 1fr auto;
+        gap: 12px;
+      }
+      .card {
+        background: var(--panel);
+        border: 1px solid var(--panel-edge);
+        border-radius: 14px;
+        padding: 10px 12px;
+        backdrop-filter: blur(6px);
+        font-size: 12px;
+        display: grid;
+        gap: 6px;
+        align-self: start;
+      }
+      .card.enemy {
+        border-color: rgba(255, 185, 200, 0.22);
+        grid-column: 3;
+      }
+      .card[hidden] {
+        display: none;
+      }
+      .card-head {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
+      }
+      .card-head strong {
+        font-size: 17px;
+        font-weight: 600;
+      }
+      .tag {
+        font-family: var(--font-mono);
+        font-size: 10px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ink-dim);
+      }
+      .meter {
+        display: grid;
+        grid-template-columns: 34px 1fr auto;
+        gap: 8px;
+        align-items: center;
+      }
+      .meter span {
+        color: var(--ink-dim);
+      }
+      .meter em {
+        font-style: normal;
+        font-family: var(--font-mono);
+        font-variant-numeric: tabular-nums;
+        font-size: 11px;
+      }
+      .bar {
+        height: 7px;
+        border-radius: 99px;
+        background: rgba(255, 255, 255, 0.08);
+        overflow: hidden;
+      }
+      .bar i {
+        display: block;
+        height: 100%;
+        border-radius: inherit;
+        background: var(--mint);
+        transition: width 0.2s;
+      }
+      .enemy .bar i {
+        background: var(--coral);
+      }
+      .power .bar i {
+        background: var(--gold);
+      }
+      .fa {
+        font-family: var(--font-mono);
+        font-size: 10.5px;
+        letter-spacing: 0.06em;
+        padding: 3px 8px;
+        border-radius: 99px;
+        justify-self: start;
+        border: 1px solid currentColor;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .warn {
+        color: var(--warn);
+      }
+      .bad {
+        color: var(--bad);
+      }
+      .systems {
+        display: grid;
+        gap: 3px;
+      }
+      .sys {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+      }
+      .sys span {
+        color: var(--ink);
+        opacity: 0.85;
+      }
+      .sys b {
+        display: flex;
+        gap: 3px;
+      }
+      .sys i {
+        width: 8px;
+        height: 8px;
+        border-radius: 3px;
+        background: currentColor;
+      }
+      .sys i.dark {
+        background: transparent;
+        border: 1.5px solid currentColor;
+        opacity: 0.8;
+      }
+      .sys i.gone {
+        background: rgba(255, 255, 255, 0.12);
+      }
+      .center-top {
+        grid-column: 2;
+        justify-self: center;
+        text-align: center;
+        display: grid;
+        gap: 4px;
+      }
+      .score {
+        font-size: 22px;
+        font-weight: 600;
+        letter-spacing: 0.02em;
+      }
+      .score .m {
+        color: var(--mint);
+      }
+      .score .c {
+        color: var(--coral);
+      }
+      .sub {
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--ink-dim);
+        letter-spacing: 0.06em;
+      }
+      .banner {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        align-self: center;
+        justify-self: center;
+        text-align: center;
+        display: grid;
+        gap: 6px;
+      }
+      .banner h2 {
+        margin: 0;
+        font-size: clamp(40px, 8vw, 84px);
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        line-height: 1;
+        text-shadow: 0 0 30px currentColor;
+      }
+      .banner p {
+        margin: 0;
+        font-family: var(--font-mono);
+        color: var(--ink-dim);
+        font-size: 13px;
+      }
+      .keys {
+        grid-column: 1 / -1;
+        grid-row: 3;
+        justify-self: center;
+        font-family: var(--font-mono);
+        font-size: 11px;
+        color: var(--ink-dim);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px 14px;
+        justify-content: center;
+      }
+      kbd {
+        font-family: var(--font-mono);
+        background: rgba(255, 255, 255, 0.08);
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        border-bottom-width: 2px;
+        border-radius: 5px;
+        padding: 0 5px;
+        color: var(--ink);
+      }
+      .slowmo {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        box-shadow: inset 0 0 160px rgba(143, 124, 255, 0.35);
+        opacity: 0;
+        transition: opacity 0.15s;
+      }
+      .slowmo.on {
+        opacity: 1;
+      }
+
+      /* ---------------- menu */
+      .menu {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: radial-gradient(ellipse at 50% 35%, rgba(60, 40, 120, 0.55), rgba(14, 11, 31, 0.92) 70%);
+        padding: calc(env(safe-area-inset-top, 0px) + 16px) 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+        overflow-y: auto;
+      }
+      .menu[hidden] {
+        display: none;
+      }
+      .sheet {
+        width: min(760px, 100%);
+        display: grid;
+        gap: 22px;
+      }
+      .title {
+        display: grid;
+        gap: 4px;
+      }
+      .title h1 {
+        margin: 0;
+        font-size: clamp(56px, 12vw, 112px);
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        line-height: 0.9;
+        background: linear-gradient(180deg, var(--ink) 30%, var(--mint));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      .title p {
+        margin: 0;
+        font-size: 18px;
+        color: var(--ink-dim);
+      }
+      .ships {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        gap: 12px;
+      }
+      .ship {
+        appearance: none;
+        font: inherit;
+        color: inherit;
+        text-align: left;
+        background: var(--panel);
+        border: 1.5px solid rgba(255, 255, 255, 0.1);
+        border-radius: 16px;
+        padding: 12px;
+        display: grid;
+        gap: 6px;
+        cursor: pointer;
+        transition: border-color 0.15s, transform 0.15s;
+      }
+      .ship:hover {
+        transform: translateY(-2px);
+      }
+      .ship[aria-pressed='true'] {
+        border-color: var(--mint);
+        box-shadow: 0 0 0 3px rgba(159, 243, 220, 0.15);
+      }
+      .ship:focus-visible,
+      .btn:focus-visible {
+        outline: 2px solid var(--gold);
+        outline-offset: 3px;
+      }
+      .ship canvas {
+        width: 100%;
+        height: 110px;
+        display: block;
+      }
+      .ship strong {
+        font-size: 20px;
+        font-weight: 600;
+      }
+      .ship small {
+        color: var(--ink-dim);
+        font-size: 13px;
+      }
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      .btn {
+        appearance: none;
+        font: inherit;
+        font-size: 18px;
+        font-weight: 600;
+        border-radius: 14px;
+        padding: 12px 22px;
+        cursor: pointer;
+        border: 0;
+        color: #10261f;
+        background: var(--mint);
+      }
+      .btn.alt {
+        background: transparent;
+        color: var(--ink);
+        border: 1.5px solid rgba(255, 255, 255, 0.25);
+      }
+      .help {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+        gap: 6px 18px;
+        font-family: var(--font-mono);
+        font-size: 12px;
+        color: var(--ink-dim);
+      }
+      .help div {
+        display: flex;
+        gap: 8px;
+        align-items: baseline;
+      }
+      .note {
+        font-size: 14px;
+        color: var(--ink-dim);
+        max-width: 62ch;
+        line-height: 1.45;
+        margin: 0;
+      }
+      @media (max-width: 640px) {
+        .hud {
+          grid-template-columns: 1fr 1fr;
+        }
+        .card.enemy {
+          grid-column: 2;
+        }
+        .center-top {
+          grid-column: 1 / -1;
+          grid-row: 2;
+          align-self: start;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .ship,
+        .bar i {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <div class="slowmo" id="slowmo"></div>
+    <div class="hud" id="hud" hidden>
+      <div class="card" id="card0"></div>
+      <div class="center-top">
+        <div class="score" id="score"></div>
+        <div class="sub" id="sub"></div>
+      </div>
+      <div class="card enemy" id="card1"></div>
+      <div class="banner" id="banner" hidden>
+        <h2 id="bannerTitle"></h2>
+        <p id="bannerSub"></p>
+      </div>
+      <div class="keys" id="keys"></div>
+    </div>
+    <div class="menu" id="menu">
+      <div class="sheet">
+        <div class="title">
+          <h1>KESİT</h1>
+          <p>Her mermi bir yere çarpar. O yerin ne olduğu önemli.</p>
+        </div>
+        <div class="ships" id="ships"></div>
+        <div class="actions">
+          <button class="btn" id="play" type="button">Savaşa gir</button>
+          <button class="btn alt" id="watch" type="button">Yapay zekâları izle</button>
+        </div>
+        <div class="help">
+          <div><kbd>W</kbd><kbd>S</kbd> ileri / geri</div>
+          <div><kbd>A</kbd><kbd>D</kbd> dön</div>
+          <div><kbd>Q</kbd><kbd>E</kbd> yana kay</div>
+          <div><kbd>Fare</kbd> nişan al</div>
+          <div><kbd>Sol tık</kbd> toplar</div>
+          <div><kbd>Sağ tık</kbd> lazerler</div>
+          <div><kbd>Space</kbd> uçuş asistanı / drift</div>
+          <div><kbd>Shift</kbd> taktik yavaşlatma</div>
+        </div>
+        <p class="note">Gemiler karolardan yapılır. Vurduğun karo kırılır, üstünden geçen güç hattı kopar, kopan taraftaki sistemler kararır. İticisini kaybeden gemi yalpalar, köprüsü sönen gemi savaş dışı kalır.</p>
+      </div>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

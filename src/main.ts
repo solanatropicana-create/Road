@@ -1,0 +1,322 @@
+import 'pixi.js/unsafe-eval';
+import { Application, Graphics } from 'pixi.js';
+import { Scene } from './render/scene';
+import { Input } from './game/input';
+import { Match, type Mode } from './game/match';
+import { renderCard, snapshot, type ShipSnapshot } from './game/hud';
+import { BLUEPRINTS } from './sim/blueprints';
+import { CHAR_MAP } from './sim/defs';
+import { DT } from './sim/world';
+import type { Ship } from './sim/ship';
+
+const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
+
+async function boot(): Promise<void> {
+  const app = new Application();
+  await app.init({
+    resizeTo: window,
+    background: 0x0e0b1f,
+    antialias: true,
+    autoDensity: true,
+    resolution: Math.min(window.devicePixelRatio || 1, 2),
+  });
+  $('app').appendChild(app.canvas);
+
+  const scene = new Scene(app);
+  const input = new Input(app.canvas);
+  const crosshair = new Graphics();
+  app.stage.addChild(crosshair);
+
+  const state = {
+    mode: 'watch' as Mode,
+    playerShip: 'serce',
+    match: null as Match | null,
+    snaps: [] as ShipSnapshot[],
+    score: [0, 0],
+    round: 0,
+    seed: (Date.now() % 100000) | 0,
+    acc: 0,
+    hitStop: 0,
+    killCam: 0,
+    slow: false,
+    assist: true,
+    hudTimer: 0,
+    time: 0,
+    inMenu: true,
+  };
+
+  // ------------------------------------------------------------- menu
+  const shipsEl = $('ships');
+  for (const bp of BLUEPRINTS) {
+    const b = document.createElement('button');
+    b.className = 'ship';
+    b.type = 'button';
+    b.setAttribute('aria-pressed', String(bp.id === state.playerShip));
+    b.dataset.id = bp.id;
+    const cv = document.createElement('canvas');
+    b.append(cv);
+    b.insertAdjacentHTML('beforeend', `<strong>${bp.name}</strong><small>${bp.blurb}</small>`);
+    b.addEventListener('click', () => {
+      state.playerShip = bp.id;
+      shipsEl.querySelectorAll('.ship').forEach((n) => n.setAttribute('aria-pressed', String((n as HTMLElement).dataset.id === bp.id)));
+    });
+    shipsEl.append(b);
+    requestAnimationFrame(() => drawPreview(cv, bp.rows));
+  }
+  $('play').addEventListener('click', () => start('duel'));
+  $('watch').addEventListener('click', () => start('watch'));
+
+  function start(mode: Mode): void {
+    state.mode = mode;
+    state.score = [0, 0];
+    state.round = 0;
+    state.inMenu = false;
+    $('menu').hidden = true;
+    $('hud').hidden = false;
+    $('keys').innerHTML =
+      mode === 'duel'
+        ? '<span><kbd>WASD</kbd> uç</span><span><kbd>Q</kbd><kbd>E</kbd> kay</span><span><kbd>Sol</kbd> top</span><span><kbd>Sağ</kbd> lazer</span><span><kbd>Space</kbd> asistan</span><span><kbd>Shift</kbd> yavaşlat</span><span><kbd>R</kbd> yeniden</span><span><kbd>Esc</kbd> menü</span>'
+        : '<span><kbd>N</kbd> sonraki tur</span><span><kbd>Shift</kbd> yavaşlat</span><span><kbd>Esc</kbd> menü</span>';
+    newRound();
+  }
+
+  function toMenu(): void {
+    state.inMenu = true;
+    state.match?.destroy();
+    state.match = null;
+    scene.clearWorld();
+    $('menu').hidden = false;
+    $('hud').hidden = true;
+  }
+
+  function newRound(): void {
+    state.match?.destroy();
+    scene.clearWorld();
+    state.seed++;
+    state.round++;
+    const ids = BLUEPRINTS.map((b) => b.id);
+    const pick = () => ids[Math.floor(Math.random() * ids.length)]!;
+    const ships: [string, string] = state.mode === 'duel' ? [state.playerShip, pick()] : [pick(), pick()];
+    state.match = new Match({ mode: state.mode, seed: state.seed, ships });
+    state.snaps = state.match.combatants.map(snapshot);
+    state.acc = 0;
+    state.killCam = 0;
+    state.assist = true;
+    $('banner').hidden = true;
+    const c = state.match.combatants[0].body.getWorldCenter();
+    scene.cam.x = c.x * 0.5;
+    scene.cam.y = c.y * 0.5;
+  }
+
+  // ------------------------------------------------------------- loop
+  app.ticker.add((tk) => {
+    const realDt = Math.min(tk.deltaMS / 1000, 0.1);
+    state.time += realDt;
+    const m = state.match;
+
+    if (input.hit('Escape') && !state.inMenu) toMenu();
+
+    if (m && !state.inMenu) {
+      const player = state.mode === 'duel' ? m.combatants[0] : null;
+      const mouseW = scene.screenToWorld(input.mouse.x, input.mouse.y);
+
+      if (input.hit('KeyR') && state.mode === 'duel') newRound();
+      if (input.hit('KeyN') && state.mode === 'watch') newRound();
+      if (input.hit('Space')) state.assist = !state.assist;
+      state.slow = input.down('ShiftLeft') || input.down('ShiftRight');
+
+      if (player) {
+        const pi = player.input;
+        pi.thrust = input.axis(['KeyS', 'ArrowDown'], ['KeyW', 'ArrowUp']);
+        pi.turn = input.axis(['KeyA', 'ArrowLeft'], ['KeyD', 'ArrowRight']);
+        pi.strafe = input.axis(['KeyQ'], ['KeyE']);
+        pi.assist = state.assist;
+        pi.aim.x = mouseW.x;
+        pi.aim.y = mouseW.y;
+        pi.fireCannon = input.mouse.left;
+        pi.fireLaser = input.mouse.right;
+      }
+
+      // Time: hit-stop freezes, kill-cam and Shift slow down.
+      let scale = 1;
+      if (state.slow) scale = 0.25;
+      if (state.killCam > 0) {
+        state.killCam -= realDt;
+        scale = Math.min(scale, 0.3);
+      }
+      if (state.hitStop > 0) {
+        state.hitStop -= realDt;
+        scale = 0;
+      }
+      $('slowmo').classList.toggle('on', scale > 0 && scale < 1);
+
+      state.acc += realDt * scale;
+      let steps = 0;
+      while (state.acc >= DT && steps < 6) {
+        m.step(DT);
+        state.acc -= DT;
+        steps++;
+        const focus = scene.cam;
+        for (const e of m.world.events) {
+          scene.fx.handle(e, focus);
+          if (e.t === 'disabled' && m.combatants.some((s) => s.id === e.ship)) state.killCam = 1.3;
+        }
+        m.world.events.length = 0;
+      }
+      if (scene.fx.hitStop > 0) {
+        state.hitStop = Math.max(state.hitStop, scene.fx.hitStop);
+        scene.fx.hitStop = 0;
+      }
+
+      // Rendering
+      const aims = new Map<Ship, { x: number; y: number }>();
+      for (const s of m.combatants) aims.set(s, s.input.aim);
+      scene.syncWorld(m.world, state.time, aims);
+      scene.fx.update(realDt * (scale === 0 ? 0.15 : scale), m.world.projectiles);
+      scene.updateCamera(realDt, cameraTarget(m, player, mouseW, app.screen.width, app.screen.height));
+
+      // Round end
+      if (m.over) {
+        if (m.overTime === 0 || $('banner').hidden) {
+          if ($('banner').hidden) {
+            if (m.winner !== null && m.winner >= 0) state.score[m.winner]!++;
+            showBanner(m);
+          }
+        }
+        if (state.mode === 'watch' && m.overTime > 4.5) newRound();
+      }
+
+      // Crosshair (duel only)
+      crosshair.clear();
+      if (player && input.mouse.inside) {
+        const x = input.mouse.x;
+        const y = input.mouse.y;
+        const col = player.controllable ? 0xffe27a : 0x6b6488;
+        crosshair.circle(x, y, 9).stroke({ width: 1.5, color: col, alpha: 0.9 });
+        crosshair
+          .moveTo(x - 15, y)
+          .lineTo(x - 5, y)
+          .moveTo(x + 5, y)
+          .lineTo(x + 15, y)
+          .moveTo(x, y - 15)
+          .lineTo(x, y - 5)
+          .moveTo(x, y + 5)
+          .lineTo(x, y + 15)
+          .stroke({ width: 1.5, color: col, alpha: 0.9 });
+      }
+
+      state.hudTimer -= realDt;
+      if (state.hudTimer <= 0) {
+        state.hudTimer = 0.1;
+        updateHud(m);
+      }
+    } else {
+      // Menu backdrop: drift the stars.
+      scene.updateCamera(realDt, { x: state.time * 6, y: state.time * 2, zoom: 9 });
+      crosshair.clear();
+    }
+    input.endFrame();
+  });
+
+  function cameraTarget(m: Match, player: Ship | null, mouseW: { x: number; y: number }, w: number, h: number) {
+    const [a, b] = m.combatants;
+    const alive = (s: Ship) => m.world.ships.includes(s);
+    const ca = alive(a) ? a.body.getWorldCenter() : { x: scene.cam.x, y: scene.cam.y };
+    const cb = alive(b) ? b.body.getWorldCenter() : ca;
+    let cx: number;
+    let cy: number;
+    let extent: number;
+    const dist = Math.hypot(ca.x - cb.x, ca.y - cb.y);
+    if (player) {
+      cx = ca.x * 0.62 + cb.x * 0.38;
+      cy = ca.y * 0.62 + cb.y * 0.38;
+      cx += (mouseW.x - ca.x) * 0.12;
+      cy += (mouseW.y - ca.y) * 0.12;
+      extent = Math.max(22, dist * 0.66 + 16);
+    } else {
+      cx = (ca.x + cb.x) / 2;
+      cy = (ca.y + cb.y) / 2;
+      extent = Math.max(24, dist * 0.56 + 18);
+    }
+    const zoom = Math.max(3.5, Math.min(15, Math.min(w, h) / 2 / extent));
+    return { x: cx, y: cy, zoom };
+  }
+
+  function showBanner(m: Match): void {
+    const t = $('bannerTitle');
+    const s = $('bannerSub');
+    const w = m.winner;
+    if (state.mode === 'duel') {
+      t.textContent = w === 0 ? 'KAZANDIN' : w === 1 ? 'KAYBETTİN' : 'BERABERE';
+      t.style.color = w === 0 ? 'var(--mint)' : 'var(--coral)';
+      s.textContent = `${m.combatants[1].name} · ${m.elapsed.toFixed(0)} sn · R ile yeni tur`;
+    } else {
+      const ws = w !== null && w >= 0 ? m.combatants[w] : null;
+      t.textContent = ws ? `${ws.name.toUpperCase()} KAZANDI` : 'BERABERE';
+      t.style.color = w === 0 ? 'var(--mint)' : 'var(--coral)';
+      s.textContent = `${m.elapsed.toFixed(0)} sn · sıradaki tur hazırlanıyor`;
+    }
+    $('banner').hidden = false;
+  }
+
+  function updateHud(m: Match): void {
+    const [a, b] = m.combatants;
+    renderCard($('card0'), a, state.snaps[0]!, state.mode === 'duel' ? 'Sen' : 'Nane');
+    renderCard($('card1'), b, state.snaps[1]!, state.mode === 'duel' ? 'Düşman' : 'Mercan');
+    $('score').innerHTML = `<span class="m">${a.name}</span> ${state.score[0]} – ${state.score[1]} <span class="c">${b.name}</span>`;
+    $('sub').textContent = `TUR ${state.round} · ${m.elapsed.toFixed(0)} sn${state.mode === 'watch' ? ' · YZ vs YZ' : ''}`;
+  }
+}
+
+/** Small static preview of a blueprint for the menu cards. */
+function drawPreview(cv: HTMLCanvasElement, rows: string[]): void {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const W = cv.clientWidth || 180;
+  const H = cv.clientHeight || 110;
+  cv.width = W * dpr;
+  cv.height = H * dpr;
+  const g = cv.getContext('2d');
+  if (!g) return;
+  g.scale(dpr, dpr);
+  const w = Math.max(...rows.map((r) => r.length));
+  const s = Math.min((W - 10) / w, (H - 10) / rows.length);
+  const ox = (W - w * s) / 2;
+  const oy = (H - rows.length * s) / 2;
+  const colors: Record<string, string> = {
+    hull: '#9ff3dc',
+    armor: '#6fb8b0',
+    frame: '#5cc4b0',
+    conduit: '#ffe27a',
+    reactor: '#7ffcff',
+    bridge: '#fff1b8',
+    gyro: '#c9a8ff',
+    stabilizer: '#a6c8ff',
+    thruster: '#5d5680',
+    rcs: '#5d5680',
+    cannon: '#ffd36b',
+    laser: '#ff7af0',
+  };
+  rows.forEach((row, y) =>
+    [...row].forEach((ch, x) => {
+      const m = CHAR_MAP[ch];
+      if (!m) return;
+      g.fillStyle = '#1d4e55';
+      g.fillRect(ox + x * s - 1, oy + y * s - 1, s + 2, s + 2);
+    }),
+  );
+  rows.forEach((row, y) =>
+    [...row].forEach((ch, x) => {
+      const m = CHAR_MAP[ch];
+      if (!m) return;
+      g.fillStyle = colors[m.kind] ?? '#9ff3dc';
+      const r = s * 0.2;
+      const px = ox + x * s + 1;
+      const py = oy + y * s + 1;
+      g.beginPath();
+      g.roundRect(px, py, s - 2, s - 2, r);
+      g.fill();
+    }),
+  );
+}
+
+boot();
