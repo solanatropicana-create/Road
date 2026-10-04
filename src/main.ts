@@ -9,6 +9,7 @@ import { CHAR_MAP } from './sim/defs';
 import { DT } from './sim/world';
 import type { Ship } from './sim/ship';
 import { Sfx } from './game/audio';
+import { Labels } from './render/labels';
 import { WEAPONS } from './sim/defs';
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -26,8 +27,23 @@ async function boot(): Promise<void> {
 
   const scene = new Scene(app);
   const input = new Input(app.canvas);
+  const labels = new Labels();
+  app.stage.addChild(labels.root);
   const crosshair = new Graphics();
   app.stage.addChild(crosshair);
+  const CALLOUT: Record<string, string> = {
+    reactor: 'REAKTÖR',
+    bridge: 'KÖPRÜ',
+    gyro: 'JİROSKOP',
+    stabilizer: 'STABİLİZÖR',
+    thruster: 'İTİCİ',
+    cannon: 'TOP',
+    laser: 'LAZER',
+  };
+  const toScreen = (x: number, y: number) => ({
+    x: (x - scene.cam.x) * scene.cam.zoom + app.screen.width / 2,
+    y: (y - scene.cam.y) * scene.cam.zoom + app.screen.height / 2,
+  });
   const sfx = new Sfx();
   let hurt = 0;
 
@@ -125,6 +141,7 @@ async function boot(): Promise<void> {
     state.match?.destroy();
     state.match = null;
     scene.clearWorld();
+    labels.clear();
     $('menu').hidden = false;
     $('hud').hidden = true;
     $('touchui').hidden = true;
@@ -133,6 +150,7 @@ async function boot(): Promise<void> {
   function newRound(): void {
     state.match?.destroy();
     scene.clearWorld();
+    labels.clear();
     state.seed++;
     state.round++;
     const ids = BLUEPRINTS.map((b) => b.id);
@@ -230,7 +248,15 @@ async function boot(): Promise<void> {
           scene.fx.handle(e, focus);
           sfx.handle(e, focus, player?.id ?? null);
           if (player && (e.t === 'hit' || e.t === 'break' || e.t === 'explode') && 'ship' in e && e.ship === player.id) hurt = Math.min(1, hurt + (e.t === 'break' ? 0.35 : 0.15));
-          if (e.t === 'disabled' && m.combatants.some((s) => s.id === e.ship)) state.killCam = 1.3;
+          if (e.t === 'disabled' && m.combatants.some((s) => s.id === e.ship)) {
+            state.killCam = 1.3;
+            const s = m.combatants.find((c) => c.id === e.ship)!;
+            const c = s.body.getWorldCenter();
+            labels.add(c.x, c.y - 6, 'SAVAŞ DIŞI', 0xffe27a, true);
+          }
+          if (e.t === 'break' && CALLOUT[e.kind] && m.combatants.some((s) => s.id === e.ship)) {
+            labels.add(e.x, e.y - 1.5, CALLOUT[e.kind]!, e.team === 0 ? 0x9ff3dc : 0xffb9c8);
+          }
         }
         m.world.events.length = 0;
       }
@@ -245,6 +271,7 @@ async function boot(): Promise<void> {
       scene.syncWorld(m.world, state.time, aims);
       if (scale > 0) scene.fx.trails(m.world.ships, realDt * scale);
       scene.fx.update(realDt * (scale === 0 ? 0.15 : scale), m.world.projectiles);
+      labels.update(realDt, toScreen);
       scene.updateCamera(realDt, cameraTarget(m, player, mouseW, app.screen.width, app.screen.height));
 
       // Continuous audio + hurt vignette
