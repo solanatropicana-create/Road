@@ -292,7 +292,19 @@ Her fazın sonunda **çalışan, denenebilir** bir şey olmalı.
 
 ---
 
-## 18. Açık sorular
+## 18. Prototip notları (savaş dilimi, Faz 1–5)
+
+Bir gecede yapılan ilk prototipten öğrenilenler. Sayılar `src/sim/defs.ts` ve `src/sim/ai.ts` içinde.
+
+- **Fizik motoru:** Rapier yerine **planck.js** (Box2D'nin saf JS portu). Sebep: artifact sayfasının CSP'si WASM'ı engelleyebilir. Her karo bir fixture; kütle, kütle merkezi ve atalet motor tarafından fixture yoğunluklarından hesaplanıyor. Bölünmede kopan adanın hızı, kopma anındaki noktasal hızdan (v + ω×r) alınıyor.
+- **Hasar:** Kinetik mermi ½mv² enerji taşıyor, DDA ile karo karo ilerliyor. Lazer ısı olarak çalışıyor; malzemenin `thermalMul` değeri (çelik zırh 1.8) lazerin zırhı daha hızlı eritmesini sağlıyor. Dayanımlar tek bir `HP_SCALE` (2.6) ile ölçekleniyor, oranlar korunuyor.
+- **Uçuş asistanı:** İstenen yerel hız + açısal hız → kuvvet/tork hedefi → sınırlı koordinat inişiyle itici gazları. Jiroskop torku önce kullanılıyor. Asistan kapalıyken telafi yok.
+- **YZ:** Dünyada bir "istenen hız" vektörü üretiyor; hız hatası büyükse (ör. ters iticiler gittiyse) dönüp yakıyor. Hedef hızını tam kopyalamıyor (iki YZ'nin birbirini sonsuza kadar hızlandırdığı geri besleme döngüsü vardı).
+- **Tur sonu:** Köprü kontrolü kaybederse ya da 12 sn boyunca silahsız kalırsa tur biter; 240 sn'de yapı yüzdesi karar verir.
+- **Denge (12 seed):** Serçe–Serçe 6-6, Kaplumbağa–Serçe 8-4, Arı–Serçe 4-8, Arı–Kaplumbağa 1-11. Arı'nın lazerli tanka karşı zayıflığı açık bir iş.
+- **Görsel:** Kodla çizilen "sticker" karolar; köprüde nişana bakan gözler; güç kesilince sönen kablolar ve durum ışıkları. Bloom filtresi yazılım render'da artefakt ürettiği için varsayılan kapalı (B ile açılıyor).
+
+## 19. Açık sorular
 
 1. **Repo:** Yeni oyun neon yarış prototipinin yerine mi geçecek, ayrı bir branch/klasörde mi yaşayacak?
 2. **Gemi boyutu:** Tipik gemi kaç karo olsun? (Öneri: başlangıçta 30–80 karo, geç oyunda ~200; performans Faz 1'de ölçülecek.)
