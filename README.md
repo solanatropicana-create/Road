@@ -1,5 +1,7 @@
 # KESİT
 
+> Bu repoda ikinci bir prototip de var: **[Dalga Kıranlar](dalga/README.md)**, fizik tabanlı mobil korsan gemisi oyunu (`dalga/` klasörü).
+
 Karolardan yapılmış gemilerin tutarlı bir fizikle parçalandığı, tek oyunculu space RPG roguelike. Bu repo şu an **savaş dilimi prototipini** içeriyor.
 
 - Tasarım belgesi (TBD): [`docs/KESIT-GDD.md`](docs/KESIT-GDD.md)
