@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "build:artifact": "vite build && node scripts/artifact.mjs",
     "typecheck": "tsc --noEmit",
     "economy": "esbuild scripts/economy-test.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/economy.mjs --log-level=warning && node node_modules/.cache/economy.mjs",
     "sim-test": "esbuild scripts/sim-test.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/sim-test.mjs --log-level=warning && node node_modules/.cache/sim-test.mjs"
