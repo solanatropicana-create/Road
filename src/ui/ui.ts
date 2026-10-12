@@ -219,6 +219,14 @@ export class UI {
     watchBtn.title = 'Documentary camera (C)';
     watchBtn.onclick = () => this.game.director.toggle();
     watch.appendChild(watchBtn);
+    const helpBtn = h('button', '', '?');
+    helpBtn.id = 'help-btn';
+    helpBtn.title = 'Keys and views';
+    helpBtn.onclick = () => {
+      const k = this.els.keys!;
+      k.hidden = !k.hidden;
+    };
+    watch.appendChild(helpBtn);
     bar.appendChild(watch);
     const perf = h('div', 'perf');
     perf.id = 'perf';
@@ -276,11 +284,42 @@ export class UI {
     const over = h('div', 'panel');
     over.id = 'over';
     r.appendChild(over);
+    const keys = h('div', 'panel');
+    keys.id = 'keys';
+    keys.hidden = true;
+    keys.innerHTML = `<div class="eyebrow">Keys and views</div><dl>
+      <dt>Drag · wheel</dt><dd>Look around · zoom</dd>
+      <dt>Click an ant</dt><dd>Follow it (Esc lets go)</dd>
+      <dt>Space · 1–5</dt><dd>Pause · speed 1× to 16×</dd>
+      <dt>C</dt><dd>Documentary camera</dd>
+      <dt>P</dt><dd>Dig plan</dd>
+      <dt>T</dt><dd>Scent trails</dd>
+      <dt>H</dt><dd>Hide the panels</dd>
+      <dt>F</dt><dd>Whole slice</dd></dl>
+      <button class="btn" id="new-colony">New colony</button>`;
+    r.appendChild(keys);
+    // Starting over discards the current colony, so it takes a second click.
+    const fresh = keys.querySelector('#new-colony') as HTMLButtonElement;
+    fresh.onclick = () => {
+      if (fresh.dataset.armed) {
+        this.game.clearSave();
+        location.reload();
+        return;
+      }
+      fresh.dataset.armed = '1';
+      fresh.textContent = 'Discard this colony? Click again';
+      fresh.classList.add('danger');
+      setTimeout(() => {
+        delete fresh.dataset.armed;
+        fresh.textContent = 'New colony';
+        fresh.classList.remove('danger');
+      }, 4000);
+    };
     const caption = h('div', '', '<div class="eyebrow">Watching</div><div class="line"></div>');
     caption.id = 'caption';
     r.appendChild(caption);
 
-    for (const id of ['pop', 'maj', 'brood', 'food', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark', 'notes', 'caption', 'watch']) {
+    for (const id of ['pop', 'maj', 'brood', 'food', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark', 'notes', 'caption', 'watch', 'keys']) {
       this.els[id] = r.querySelector(`#${id}`) as HTMLElement;
     }
     this.syncBrain();
@@ -480,7 +519,10 @@ export class UI {
       } else if (e.key === 'h' || e.key === 'H') {
         // Clean frame for screenshots and clips.
         this.root.style.display = this.root.style.display === 'none' ? '' : 'none';
+      } else if (e.key === '?' || e.key === '/') {
+        this.els.keys!.hidden = !this.els.keys!.hidden;
       } else if (e.key === 'Escape') {
+        this.els.keys!.hidden = true;
         game.selected = null;
         this.markerMode = false;
         this.syncBrain();

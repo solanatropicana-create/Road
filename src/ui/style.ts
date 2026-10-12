@@ -76,6 +76,12 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #caption { position: absolute; left: 22px; bottom: 22px; display: none; pointer-events: none; max-width: min(520px, calc(100vw - 44px)); }
 #caption .line { font-family: var(--mono); font-size: 13px; color: var(--ink); margin-top: 4px; text-shadow: 0 1px 8px rgba(0,0,0,0.7); }
 #caption .eyebrow { color: var(--accent); text-shadow: 0 1px 6px rgba(0,0,0,0.7); }
+#keys { left: 50%; bottom: 74px; transform: translateX(-50%); width: 300px; }
+#keys dl { display: grid; grid-template-columns: 96px 1fr; gap: 5px 10px; margin: 8px 0 12px; font-size: 12px; }
+#keys dt { font-family: var(--mono); font-size: 11px; color: var(--accent); }
+#keys dd { margin: 0; color: var(--ink-dim); }
+#keys .btn { display: block; text-align: center; }
+.btn.danger { border-color: var(--danger); color: var(--danger); background: rgba(224,122,95,0.12); }
 #inspect { left: 14px; bottom: 14px; width: 248px; display: none; }
 #inspect .name { font-family: var(--mono); font-size: 15px; margin: 4px 0 8px; }
 #inspect dl { display: grid; grid-template-columns: 70px 1fr; gap: 4px 8px; margin: 0; }
@@ -105,7 +111,12 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
   #card .pop b { font-size: 26px; }
   #brain { top: auto; bottom: 66px; right: 8px; left: 8px; width: auto; max-height: 38vh; }
   #brain.collapsed .body { display: none; }
-  #bar { bottom: 8px; }
+  #bar { bottom: 8px; left: 8px; right: 8px; transform: none; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 6px; }
+  #bar .seg button { padding: 6px 8px; }
+  #bar .perf { display: none; }
+  #brain { bottom: 104px; }
+  #keys { bottom: 104px; width: auto; left: 8px; right: 8px; transform: none; }
+  #toasts { top: 232px; width: calc(100vw - 32px); }
   #inspect { display: none !important; }
   #caption { bottom: 120px; left: 14px; }
   #card .notes, #card .legend { display: none; }

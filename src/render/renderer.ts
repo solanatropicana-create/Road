@@ -48,6 +48,7 @@ export class Renderer {
   /** Static soil features too fine for the sim to care about (mottles, flecks). */
   private detail: Uint8Array;
   dpr = 1;
+  private calm = typeof matchMedia === 'function' && matchMedia('(prefers-reduced-motion: reduce)').matches;
   /** Seconds, for animation. */
   time = 0;
 
@@ -605,10 +606,11 @@ export class Renderer {
     // Lens: vignette and a whisper of film grain.
     if (!this.vignette || this.vignette.width !== W || this.vignette.height !== H) this.vignette = this.makeVignette(W, H);
     ctx.drawImage(this.vignette, 0, 0);
-    ctx.globalAlpha = 0.035;
+    // Film grain flickers, so it stays still for people who ask for less motion.
+    ctx.globalAlpha = this.calm ? 0.02 : 0.035;
     ctx.globalCompositeOperation = 'overlay';
-    const gx = (Math.random() * 128) | 0;
-    const gy = (Math.random() * 128) | 0;
+    const gx = this.calm ? 0 : (Math.random() * 128) | 0;
+    const gy = this.calm ? 0 : (Math.random() * 128) | 0;
     ctx.fillStyle = ctx.createPattern(this.grain, 'repeat')!;
     ctx.translate(-gx, -gy);
     ctx.fillRect(gx, gy, W, H);
