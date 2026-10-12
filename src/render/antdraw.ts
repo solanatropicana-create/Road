@@ -418,7 +418,9 @@ export class AntPainter {
         ctx.stroke(S.wings);
       }
     }
-    const rim = full && !dead ? css(SHEEN_COL, l, 0.3) : '';
+    // In the nest a black ant sits on dark soil: a stronger rim there keeps it off the wall.
+    const strong = wall;
+    const rim = full && !dead ? css(SHEEN_COL, l, strong ? 0.5 : 0.3) : '';
     // Curled into a "C" against a fly: body raised on the legs, gaster tucked under.
     const curled = !!a && a.cpose > 0;
     if (curled) ctx.translate(0, -0.9);
@@ -428,7 +430,7 @@ export class AntPainter {
     if (rim) {
       // Rim light: one screen pixel of warm edge so overlapping ants stay separate.
       ctx.strokeStyle = rim;
-      ctx.lineWidth = px;
+      ctx.lineWidth = strong ? px * 1.5 : px;
       ctx.stroke(bodyPath);
     }
     if (busy) ctx.translate(busy, 0);
@@ -450,7 +452,7 @@ export class AntPainter {
     if (busy) ctx.translate(-busy, 0);
     if (full && !curled) {
       // A specular streak near the top edge of each segment, as on a glossy cuticle under a lamp.
-      ctx.fillStyle = css(SHEEN_COL, l, dead ? 0.12 : 0.45);
+      ctx.fillStyle = css(SHEEN_COL, l, dead ? 0.12 : strong ? 0.62 : 0.45);
       ctx.fill(S.sheen);
     }
     if (curled) ctx.translate(0, 0.9);

@@ -123,11 +123,14 @@ export const fruitColor = (tone: number): RGB =>
 export const preyColor = (tone: number): RGB =>
   tone < 150 ? sampleRamp(PAL.beetle, tone / 150) : tone < 220 ? sampleRamp(PAL.hopper, (tone - 150) / 70) : sampleRamp(PAL.worm, (tone - 220) / 36);
 
-/** Chamber floor tints so rooms read at a glance (applied to the back wall). */
+/**
+ * Chamber tints, warm and light: the brood and the seed tell rooms apart, the
+ * tint only hints (blue-green belongs to water). Applied to the back wall.
+ */
 export const ZONE_TINT: Record<string, RGB> = {
-  queen: hex('#7a3f6c'),
-  nursery: hex('#4e7a78'),
-  granary: hex('#a07424'),
+  queen: hex('#7a4634'),
+  nursery: hex('#b49a76'),
+  granary: hex('#a27a32'),
   rest: hex('#4a4036'),
 };
 

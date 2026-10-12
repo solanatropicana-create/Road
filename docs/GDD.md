@@ -48,7 +48,7 @@ Hedef şu: ekran görüntüsünün kendisi paylaşılmak istensin. Bir doğa bel
 Görüntü üç katmandan oluşuyor, bir makro fotoğraftaki gibi:
 
 1. **Arka plan (odak dışı):** çayır, gökyüzü, bokeh. Yumuşak ve bulanık.
-2. **Toprak kesiti (sahne):** keskin piksel sanatı, 1 piksel = 1 mm.
+2. **Toprak kesiti (sahne):** uzaktan keskin piksel sanatı, 1 piksel = 1 mm. Yakında makro lens onu milimetrenin altına çözer (aşağıda).
 3. **Karıncalar (özne):** ekran çözünürlüğünde, her yakınlaştırmada keskin (bkz. 3.3).
 
 Ayrıntılar:
@@ -57,6 +57,17 @@ Ayrıntılar:
 - Arkadaki çayır, gökyüzü ve çimen yarım çözünürlükte çiziliyor ve yumuşak büyütülüyor. Böylece arka plan, makro fotoğraftaki gibi alan derinliği dışında kalıyor.
 - Arka planda bokeh daireleri ve gece ateş böcekleri var.
 - Kenarlarda vinyet, üstünde hafif film greni var.
+- **Makro lens** (`src/render/macro.ts`, bkz. [art-review/](art-review/README.md)):
+  - Kural: odaktaki hiçbir şey dört ekran pikselinden büyük piksel göstermez. Milimetre büyütülmez, içi çözülür.
+  - Zoom 3,4–4,4 arası lens belirir, ama hâlâ piksel kesit gibi görünür.
+  - Zoom 6,8'e kadar odaklanır: renkler hücreler arasında karışır, toprak/boşluk sınırı bulanıklaştırılmış bir alandan kavisli çizilir.
+  - Her malzemenin kendi dokusu var:
+    - Humusta kırıntı, tında silt ve kum.
+    - Kilde kılcal çatlak, kazı toprağında pelet.
+    - Mineral taneler.
+  - Karıncaların sıvadığı tünel astarı ve temas gölgeleri var.
+  - Bitkiler, kökler, yere düşmüş yapraklar ve çalı vektör çiziliyor.
+  - Görüntü 32 mm'lik parçalar halinde önbellekte tutulur.
 
 **Neden:** Piksel sanatı tek başına "retro oyun" diye okunuyor. Arkadaki bulanıklık ise "kameranın önündeki gerçek bir şey" diye okunuyor. İkisi birlikte hem okunaklı hem de sinematik duruyor. Bu, klip aracı fikriyle de doğrudan bağlantılı (bkz. 7.4).
 
@@ -140,10 +151,10 @@ Karıncalar toprak gibi piksel olarak değil, ekran çözünürlüğünde çizil
 | Vurgu (tohum, seçili) | `#e2b45c` kehribar |
 | Arayüz metni | `#efe6d6` kemik beyazı |
 | Panel zemini | `#100c09` %74 opak |
-| Kraliçe odası tonu | `#5a3350` mürdüm |
-| Kreş tonu | `#7a6248` |
-| Ambar tonu | `#7a5a26` |
-| Dinlenme odası tonu | `#3e3328` |
+| Kraliçe odası tonu | `#7a4634` kızıl kahve |
+| Kreş tonu | `#b49a76` krem |
+| Ambar tonu | `#a27a32` okra |
+| Dinlenme odası tonu | `#4a4036` |
 | Uyarı | `#e07a5f` |
 
 ### 3.8 Bilerek yapmadıklarım
@@ -405,6 +416,7 @@ Aşağıdakiler benim önerilerim. Senin "benle konuşmadan tasarımı komple ya
 4. **İlk eklenecek ikinci tür hangisi?** Benim önerim *Solenopsis* (sal kurma) ya da *Lasius* (yaprak biti çiftliği).
 5. **Görsel dil.** Makro lens + gerçek ölçek + laboratuvar arayüzü yönü sana uyuyor mu? Değiştirmek istediğin bir şey var mı?
    - Özellikle: toprak piksel, karıncalar pürüzsüz (3.3). Bu karışımı beğendin mi, yoksa her şey piksel mi olsun?
+   - **Kararlaştırıldı:** Beş kişilik bir sanat paneli kuruldu. Uzakta piksel kalıyor, yakında toprak malzemeye çözülüyor (makro lens, 3.2). Kırmızı gece ışığı önerisi kaldırıldı. Ayrıntılar: [art-review/](art-review/README.md).
 6. **Oyuncu müdahalesi.** Koloni beyni dışında doğrudan dünya müdahalesi (tohum bırakma, su dökme, taş koyma) olsun mu? Şu an yalnızca sandbox'ta yağmur var.
 7. **Ses.** Ambiyans tasarımı ne yönde olsun? Mikrofonla kaydedilmiş gerçek toprak sesleri, ya da minimal synth?
 8. **İkinci giriş.** Büyük kolonilerde ikinci bir giriş açılsın mı (8. bölüm)? Oyuncu bunu kendisi mi işaretlesin, yoksa koloni kendisi mi karar versin?
