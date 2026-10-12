@@ -9,6 +9,14 @@ import { savedMeta } from '../sim/save';
 
 const WORK_LABEL: Record<Work, string> = { dig: 'Dig', forage: 'Forage', nurse: 'Nurse', clean: 'Clean' };
 const WORK_TASK: Record<Work, number> = { dig: Task.Dig, forage: Task.Forage, nurse: Task.Nurse, clean: Task.Clean };
+/** A line of natural history for each kind of room (shown on hover). */
+const CHAMBER_FACT: Record<ChamberKind, string> = {
+  queen: 'She will lay every egg the colony ever has, for up to twenty years.',
+  nursery: 'Nurses keep brood where it is warm and dry, and move it when that changes.',
+  granary: 'Messor keep seed dry. If it gets wet it sprouts, and is thrown out.',
+  rest: 'Most of a colony is idle at any time: a reserve for whatever comes next.',
+};
+
 const CHAMBER_LABEL: Record<ChamberKind, string> = { queen: 'Royal chamber', nursery: 'Nursery', granary: 'Granary', rest: 'Rest chamber' };
 
 const h = (tag: string, cls?: string, html?: string): HTMLElement => {
@@ -682,6 +690,7 @@ export class UI {
     const life = a.caste === 'queen' ? 'decades' : `${Math.round(a.ageFrac * 100)}% of life`;
     el.innerHTML = `<div class="eyebrow">Following · Esc to release</div><div class="name">${a.name}</div>
       <dl><dt>Caste</dt><dd>${caste}</dd><dt>Age</dt><dd>${days} days · ${life}</dd>
+      ${a.caste === 'queen' ? '' : `<dt>Hatched</dt><dd>Day ${Math.max(1, this.game.sim.day - Math.floor(a.age / DAY_TICKS))}</dd>`}
       <dt>Doing</dt><dd>${a.caste === 'queen' ? (a.phase < 2 ? 'digging her burrow' : 'laying eggs') : TASK_LABEL[a.task]}</dd>
       <dt>Carrying</dt><dd>${a.carryBrood ? 'an egg' : Ant.carryLabel(a.carry)}</dd>
       ${a.delivered ? `<dt>Harvest</dt><dd>${a.delivered} seeds</dd>` : ''}</dl>`;
@@ -714,7 +723,8 @@ export class UI {
       body = `${n} brood · ${c.floor.length} spots`;
     }
     if (c.kind === 'rest') body = 'workers resting between jobs';
-    tip.innerHTML = `<b>${CHAMBER_LABEL[c.kind]}</b><br>${body}`;
+    const depth = ((c.floorY - w.ground[Math.round(c.cx)]!) / 10).toFixed(1);
+    tip.innerHTML = `<b>${CHAMBER_LABEL[c.kind]}</b> · ${depth} cm down<br>${body}<div class="fact">${CHAMBER_FACT[c.kind]}</div>`;
     tip.style.display = 'block';
     tip.style.left = `${this.pointer.x + 14}px`;
     tip.style.top = `${this.pointer.y + 14}px`;

@@ -101,6 +101,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
 #tip { position: absolute; pointer-events: none; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; font-size: 11px; display: none; white-space: nowrap; }
 #tip b { font-family: var(--mono); color: var(--accent); font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; font-size: 10px; }
+#tip .fact { margin-top: 4px; max-width: 230px; white-space: normal; color: var(--ink-faint); font-style: italic; line-height: 1.35; }
 
 #over { left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; padding: 22px 28px; display: none; max-width: 420px; }
 #over h2 { margin: 6px 0 8px; font-weight: 500; }
