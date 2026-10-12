@@ -7,17 +7,6 @@ type Light = (x: number, y: number) => RGB;
 
 const css = (c: RGB, l: RGB, a = 1): string => `rgba(${(c[0] * l[0]) | 0},${(c[1] * l[1]) | 0},${(c[2] * l[2]) | 0},${a})`;
 
-// Crested lark: sandy, streaked upperparts, pale belly, a spiky crest.
-const LARK = {
-  back: hex('#8d6d48'),
-  dark: hex('#4b3522'),
-  belly: hex('#dccdae'),
-  breast: hex('#c4ad86'),
-  streak: hex('#5b4130'),
-  bill: hex('#cdb48a'),
-  leg: hex('#c29a84'),
-  eye: hex('#140d0a'),
-};
 const HOPPER = { body: hex('#6f7034'), dark: hex('#4a4a22'), wing: hex('#7d6f45'), leg: hex('#5d5c2b') };
 const BEETLE = { body: hex('#141210'), sheen: hex('#3d4650'), leg: hex('#1d1a17') };
 const WORM = { body: hex('#b0706c'), dark: hex('#8a5250'), band: hex('#c98d80') };
@@ -31,15 +20,13 @@ const ANTLION = { jaw: hex('#8a6a40'), head: hex('#6b5232') };
 
 /**
  * The other animals, drawn over the slice at screen resolution like the
- * ants. Units are millimetres; a crested lark is about 17 cm from bill to
- * tail, so here it towers over everything.
+ * ants. Units are millimetres.
  */
 export function drawCritters(ctx: CanvasRenderingContext2D, list: Critter[], world: World, light: Light, view: { x0: number; y0: number; x1: number; y1: number }): void {
   for (const c of list) {
-    const pad = c.kind === 'lark' ? 200 : 40;
+    const pad = 40;
     if (c.kind !== 'worm' && (c.x < view.x0 - pad || c.x > view.x1 + pad || c.y < view.y0 - pad || c.y > view.y1 + pad)) continue;
     switch (c.kind) {
-      case 'lark': lark(ctx, c, light); break;
       case 'hopper': hopper(ctx, c, light); break;
       case 'beetle': beetle(ctx, c, light); break;
       case 'worm': worm(ctx, c, world, light, view); break;
@@ -51,139 +38,6 @@ export function drawCritters(ctx: CanvasRenderingContext2D, list: Critter[], wor
       case 'antlion': antlion(ctx, c, light); break;
     }
   }
-}
-
-function lark(ctx: CanvasRenderingContext2D, c: Critter, light: Light): void {
-  const S = 170;
-  const l = light(c.x, Math.max(1, c.y - 30));
-  ctx.save();
-  ctx.translate(c.x, c.y);
-  ctx.scale(c.dir * S, S);
-  const flying = c.state !== 1;
-  // Pecking tips the whole bird forward about its hips.
-  const peck = c.peck > 0 ? Math.sin((c.peck / 12) * Math.PI) : 0;
-  const lw = 1 / S;
-  if (!flying) {
-    // Legs: thin, pinkish, long hind claw.
-    ctx.strokeStyle = css(LARK.leg, l);
-    ctx.lineWidth = 0.012;
-    ctx.lineCap = 'round';
-    ctx.beginPath();
-    const tuck = c.air ? 0.07 : 0;
-    for (const [hx, fx] of [[0.02, 0.05], [-0.05, -0.03]] as const) {
-      ctx.moveTo(hx, -0.17);
-      ctx.lineTo((hx + fx) / 2 - 0.02, -0.08 - tuck);
-      ctx.lineTo(fx, -tuck);
-      ctx.moveTo(fx - 0.05, -tuck);
-      ctx.lineTo(fx + 0.05, -tuck);
-    }
-    ctx.stroke();
-  }
-  ctx.translate(0, -0.17);
-  ctx.rotate(peck * 0.55 + (flying ? -0.1 : 0));
-  ctx.translate(0, 0.17);
-  // Tail.
-  ctx.fillStyle = css(LARK.dark, l);
-  ctx.beginPath();
-  ctx.moveTo(-0.3, -0.33);
-  ctx.lineTo(-0.63, -0.3);
-  ctx.lineTo(-0.62, -0.25);
-  ctx.lineTo(-0.3, -0.25);
-  ctx.closePath();
-  ctx.fill();
-  // Body and pale underside.
-  ctx.fillStyle = css(LARK.back, l);
-  ctx.beginPath();
-  ctx.ellipse(-0.04, -0.3, 0.33, 0.155, -0.12, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = css(LARK.belly, l);
-  ctx.beginPath();
-  ctx.ellipse(0.0, -0.24, 0.26, 0.085, -0.08, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = css(LARK.breast, l);
-  ctx.beginPath();
-  ctx.ellipse(0.15, -0.31, 0.12, 0.09, -0.4, 0, Math.PI * 2);
-  ctx.fill();
-  // Breast streaks.
-  ctx.fillStyle = css(LARK.streak, l, 0.8);
-  for (let k = 0; k < 9; k++) {
-    const sx = 0.1 + (k % 3) * 0.035 + ((k * 7) % 5) * 0.004;
-    const sy = -0.36 + Math.floor(k / 3) * 0.026;
-    ctx.beginPath();
-    ctx.ellipse(sx, sy, 0.009, 0.005, 0.4, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  // Head with crest, eye stripe and bill.
-  ctx.fillStyle = css(LARK.back, l);
-  ctx.beginPath();
-  ctx.arc(0.27, -0.43, 0.095, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = css(LARK.dark, l);
-  ctx.beginPath();
-  ctx.moveTo(0.21, -0.505);
-  ctx.lineTo(0.155, -0.585);
-  ctx.lineTo(0.185, -0.57);
-  ctx.lineTo(0.27, -0.515);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = css(LARK.belly, l, 0.85);
-  ctx.lineWidth = 0.011;
-  ctx.beginPath();
-  ctx.moveTo(0.24, -0.465);
-  ctx.quadraticCurveTo(0.3, -0.485, 0.35, -0.46);
-  ctx.stroke();
-  ctx.fillStyle = css(LARK.eye, l);
-  ctx.beginPath();
-  ctx.arc(0.3, -0.44, 0.016, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = `rgba(255,255,255,${0.7 * l[0]})`;
-  ctx.beginPath();
-  ctx.arc(0.305, -0.446, 0.005, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.fillStyle = css(LARK.bill, l);
-  ctx.beginPath();
-  ctx.moveTo(0.35, -0.455);
-  ctx.lineTo(0.47, -0.425);
-  ctx.lineTo(0.35, -0.405);
-  ctx.closePath();
-  ctx.fill();
-  // Wing: folded on the side, or beating in flight.
-  if (flying) {
-    const beat = Math.sin(c.t * 0.55);
-    ctx.fillStyle = css(LARK.dark, l);
-    ctx.beginPath();
-    ctx.moveTo(0.05, -0.36);
-    ctx.quadraticCurveTo(-0.1, -0.36 - 0.42 * beat, -0.32, -0.33 - 0.5 * beat);
-    ctx.quadraticCurveTo(-0.22, -0.3 - 0.2 * beat, -0.15, -0.3);
-    ctx.closePath();
-    ctx.fill();
-  } else {
-    ctx.fillStyle = css(LARK.dark, l, 0.9);
-    ctx.beginPath();
-    ctx.ellipse(-0.13, -0.32, 0.23, 0.085, -0.1, 0, Math.PI * 2);
-    ctx.fill();
-    // Pale feather edges.
-    ctx.strokeStyle = css(LARK.breast, l, 0.75);
-    ctx.lineWidth = lw * 1.2;
-    ctx.beginPath();
-    for (let k = 0; k < 5; k++) {
-      const fx = -0.02 - k * 0.07;
-      ctx.moveTo(fx, -0.36 + k * 0.004);
-      ctx.quadraticCurveTo(fx - 0.04, -0.31, fx - 0.07, -0.27);
-    }
-    ctx.stroke();
-  }
-  // Streaks on the back.
-  ctx.strokeStyle = css(LARK.streak, l, 0.7);
-  ctx.lineWidth = lw * 1.5;
-  ctx.beginPath();
-  for (let k = 0; k < 6; k++) {
-    const sx = 0.14 - k * 0.07;
-    ctx.moveTo(sx, -0.43 + k * 0.012);
-    ctx.lineTo(sx - 0.05, -0.41 + k * 0.012);
-  }
-  ctx.stroke();
-  ctx.restore();
 }
 
 function hopper(ctx: CanvasRenderingContext2D, c: Critter, light: Light): void {

@@ -1627,7 +1627,6 @@ export class UI {
     const cc = sim.carcasses.at(x, y);
     if (cc) return { key: cc.kind === 'beetle' ? 'deadBeetle' : cc.kind === 'hopper' ? 'deadHopper' : 'deadWorm' };
     for (const c of sim.critters.list) {
-      if (c.kind === 'lark' && Math.abs(x - c.x) < 75 && y > c.y - 110 && y <= c.y + 2) return { key: 'lark' };
       if (c.kind === 'hopper' && Math.abs(x - c.x) < 14 && Math.abs(y - c.y + 4) < 8) return { key: 'hopper' };
       if (c.kind === 'beetle' && Math.abs(x - c.x) < 8 && Math.abs(y - c.y + 3) < 5) return { key: 'beetle' };
       if (c.kind === 'worm' && c.body.some((i) => Math.abs((i % w.w) - x) < 3 && Math.abs(((i / w.w) | 0) - y) < 3)) return { key: 'worm' };

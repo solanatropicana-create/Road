@@ -1055,7 +1055,7 @@ export class Renderer {
     if (this.trails) this.drawTrails(sim, view);
     this.painter.drawCorpses(ctx, col.corpses, z, this.lightAt, view);
     this.painter.drawBrood(ctx, col.brood, z, this.lightAt, view, TUNING.pupaTicks);
-    if (sim.critters.list.length) drawCritters(ctx, sim.critters.list.filter((c) => (c.kind === 'worm' ? this.known(sim, c.body[0]! % w.w, (c.body[0]! / w.w) | 0) : this.known(sim, c.x, c.kind === 'lark' ? c.y - 30 : c.y))), w, this.lightAt, view);
+    if (sim.critters.list.length) drawCritters(ctx, sim.critters.list.filter((c) => (c.kind === 'worm' ? this.known(sim, c.body[0]! % w.w, (c.body[0]! / w.w) | 0) : this.known(sim, c.x, c.y))), w, this.lightAt, view);
     if (sim.carcasses.list.length) drawCarcasses(ctx, sim.carcasses.list.filter((c) => this.known(sim, c.x, c.y)), this.lightAt, view);
     this.painter.draw(ctx, ants, z, this.lightAt, view, selected);
     if (sim.flyers.length) this.painter.drawFlyers(ctx, sim.flyers, z, this.lightAt);

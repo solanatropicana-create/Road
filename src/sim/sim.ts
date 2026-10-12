@@ -99,7 +99,7 @@ export class Sim {
   readonly tree: { x: number; r: number } | null;
   /** The surface's year beyond the meadow: shrub, tree, dead insects. */
   readonly eco: Ecology;
-  /** Birds, grasshoppers, ground beetles, earthworms. */
+  /** Grasshoppers, ground beetles, earthworms, spiders, nest guests. */
   readonly critters = new Critters();
   /** What the year brought, for the review at the start of the winter rest. */
   private yearStart = { born: 0, deaths: {} as Record<string, number>, flown: 0 };
@@ -150,7 +150,7 @@ export class Sim {
   /** Alates in the air after take-off (drawn until they are out of sight). */
   readonly flyers: { x: number; y: number; vx: number; vy: number; caste: string; t: number }[] = [];
   seedRain = 0.4;
-  /** Seeds lying loose on the surface (birds and mice keep this in check). */
+  /** Seeds lying loose on the surface (mice and beetles keep this in check). */
   looseSeeds = 0;
   /** Awned seeds that drilled themselves into the soil. */
   drilled = 0;
@@ -362,8 +362,8 @@ export class Sim {
   }
 
   /**
-   * The other founding queens: almost none survive. Birds take those still
-   * on the surface; foragers of established colonies (ours, once we have
+   * The other founding queens: almost none survive. Heat and hunting beetles
+   * take those still on the surface; foragers of established colonies (ours, once we have
    * workers, and the neighbours') find their burrows, dig them out and kill
    * them; others starve or sicken in their cells.
    */
@@ -374,10 +374,10 @@ export class Sim {
       if (!q.alive) continue;
       q.tick(this);
       if (this.tick % 30 !== 0) continue;
-      const bird = this.critters.birdX;
-      if (q.phase < 2 && bird === bird && Math.abs(q.x - bird) < 70 && rng.chance(0.05)) {
+      // Still on the open ground: the midday heat or a hunting beetle gets many of them.
+      if (q.phase < 2 && rng.chance(0.004)) {
         q.alive = false;
-        this.noteYearly('foundressBird', q);
+        this.noteYearly('foundressLost', q);
         continue;
       }
       if (q.phase === 2) {
@@ -654,7 +654,7 @@ export class Sim {
   }
 
   /**
-   * Birds and mice glean the surface, so fallen seed never piles up for long;
+   * Mice and beetles glean the surface, so fallen seed never piles up for long;
    * other scavengers take dead insects. Feather-grass and stork's-bill seeds
    * left lying on damp ground screw themselves into the soil with their awns.
    */

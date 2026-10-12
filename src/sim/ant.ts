@@ -978,16 +978,6 @@ export class Ant {
     }
     this.chase = 0;
     this.bound = null;
-    // A bird on the ground nearby: the ground shakes with its hops, and foragers run for home.
-    const bird = sim.critters.birdX;
-    if (bird === bird && Math.abs(this.x - bird) < 110) {
-      this.sent = false;
-      this.bound = null;
-      this.task = Task.Idle;
-      this.reevalAt = sim.tick + TICK_HZ * 10;
-      this.fdist = 0;
-      return;
-    }
     if (this.fdist === 0) {
       // Just out of the nest: pick a heading and how far to walk before searching.
       this.fdir = sim.rng.chance(0.5) ? -1 : 1;

@@ -52,13 +52,13 @@ export class Director {
   }
 
   /**
-   * A moment worth filming (a bird lands, a spider bites, a battle breaks
+   * A moment worth filming (a spider bites, a battle breaks
    * out): the camera cuts to it with the field note as the caption.
    */
   notice(x: number, y: number, caption: string, key: string): void {
     if (!this.active) return;
     const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds', 'neighbourMetL', 'neighbourMetR', 'youngColony', 'teamCarry', 'cutUp', 'recruitHeavy', 'tugOfWar'];
-    const wide = ['war', 'raid', 'flight', 'lark', 'leafFall', 'otherQueens', 'wormsUp', 'youngColonyGone', 'secondGate', 'raidYoung', 'warYoung'];
+    const wide = ['war', 'raid', 'flight', 'leafFall', 'otherQueens', 'wormsUp', 'youngColonyGone', 'secondGate', 'raidYoung', 'warYoung'];
     const zoom = close.includes(key) ? 11 : wide.includes(key) ? 3.4 : 6;
     this.story = { x, y, caption, zoom };
     // Don't cut away from a shot that has barely started, unless it's big news.

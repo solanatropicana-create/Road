@@ -223,6 +223,9 @@ function upgrade(sim: Sim): void {
     nest.gateX = -1;
     nest.gateShaft = [];
   }
+  // Saves from before the birds were taken out: drop any lark still visiting.
+  const cl = sim.critters.list as { kind: string }[];
+  for (let k = cl.length - 1; k >= 0; k--) if (cl[k]!.kind === 'lark') cl.splice(k, 1);
   const oc = sim as unknown as { carcasses?: Carcasses };
   oc.carcasses ??= new Carcasses();
   if (!o.neighbours) {
