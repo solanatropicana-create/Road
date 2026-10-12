@@ -11,8 +11,16 @@ Gerçek ölçekte bir toprak kesitinde, bir *Messor structor* (hasatçı karınc
 - **Oynanabilir link:** https://claude.ai/artifact/Ja2FVX7Gs5UHxjRM7yPXha (özel; yalnızca sen açabilirsin, istersen Share menüsünden paylaşırsın).
 - Tarayıcıda oynanabilir prototip var: kraliçe iner, kanatlarını koparır, yuvasını kazar, ilk işçileri büyütür. Sonra koloni kendi başına büyür: kazar, tohum toplar, ambar doldurur, yavru besler, çöp atar. Yağmur ve fırtınada su basar, ıslak tavanlar çöker.
 - Koloni beyni arayüzü (Mod B) çalışıyor.
-- Simülasyon sağlam. 8 farklı haritada 30 dakikalık (5 oyun günü) otomatik testte 8 koloninin 8'i de büyüdü: 109–168 işçi, 1700–2250 hücrelik yuva, hiç açlık ölümü yok. 60 dakikalık testte de hepsi hayatta ve büyümeye devam ediyor.
-- Gece sonunda kodu ayrı bir gözden geçirmeden geçirdim; 10 hata bulundu ve düzeltildi. En önemlisi: bir kez zaman aşımına uğrayan taşıyıcı karıncalar, sonraki bütün yüklerini sessizce yok ediyordu. Kazılan toprağın çoğu ortadan kayboluyordu. Artık her tane gerçekten höyüğe taşınıyor. Yuvalar biraz daha küçük ama dürüst.
+- Simülasyon sağlam. 8 farklı haritada otomatik test:
+  - 30 dakika (5 oyun günü): 145–200 işçi, 2400–3300 hücrelik yuva.
+  - 60 dakika (10 oyun günü): 120–320 işçi, 3300–5800 hücre. Hepsi hayatta.
+  - Ölümlerin neredeyse hepsi yaşlılıktan. Fakir haritalarda arada birkaç açlık ölümü oluyor; bu bilinçli bir baskı.
+- Gece sonunda kodu iki ayrı gözden geçirmeden geçirdim; toplam 15 hata bulundu ve düzeltildi. Hepsi ölçülerek doğrulandı. En önemlileri:
+  - Bir kez zaman aşımına uğrayan taşıyıcılar sonraki bütün yüklerini sessizce yok ediyordu; kazılan toprağın çoğu kayboluyordu.
+  - Yüzeydeki bir su damlası hiç kurumuyor, yolu kesip toplayıcıları dışarıda mahsur bırakıyordu.
+  - Ambar, tohumu kapısına yığıp kendini kapatıyordu.
+  - Karıncaların kursağındaki yüzlerce tohum hesaba katılmıyordu; koloni açlık çekiyormuş gibi davranıyordu.
+  - Bunlar düzelince koloniler belirgin şekilde daha sağlıklı büyüyor.
 - Gecenin ikinci yarısında eklenenler: anatomik makro karıncalar, zengin toprak dokusu, *Messor* krateri, saha defteri, belgesel kamera, kazı planı ve koku izi görünümleri, evlilik uçuşu açılışı, otomatik kayıt, tohum türleri, çimlenen tohum, antenleşme.
 - Gece boyunca bulunan ve düzeltilen önemli hatalar: krater kenarında sapı kesilip havada kalan bitkiler toplayıcıları kilitliyordu (iki haritada koloni açlıktan ölüyordu); kraliçe yüzeydeki bir çakılın üstüne inince kazamıyordu.
 - Çalıştırmak için: `npm install` ve ardından `npm run dev`. Tek dosyalık sürüm için `npm run build:artifact`.
@@ -238,8 +246,8 @@ Ayrıca:
 
 **Performans**
 
-- 150 karıncada simülasyon adımı yaklaşık 0,3 ms. 16x hızda bile tarayıcıda rahat çalışıyor.
-- 60 dakikalık (10 oyun günü) testte 8 haritanın hepsinde koloni hayatta kaldı. 110–180 işçide çayırın taşıma kapasitesine yaklaşıyorlar, yuva büyümeye devam ediyor. Ölümler yaşlılıktan ya da selde boğulan yavrudan; açlık yok.
+- 300 karıncalık kolonide simülasyon adımı yaklaşık 0,45 ms (16× hızda bir çekirdeğin ~%20'si). Zamanın çoğu mesafe alanlarına ve kum fiziğine gidiyor.
+- 60 dakikalık (10 oyun günü) testte 8 haritanın hepsinde koloni hayatta kaldı ve 120–320 işçide çayırın taşıma kapasitesine yaklaştı.
 - Görüntüsüz test aracı var: `npm run headless` ve `scripts/batch.sh`.
 
 ## 6. Formicarium'dan aldıklarımız ve geçtiğimiz yerler
