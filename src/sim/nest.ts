@@ -361,6 +361,9 @@ export class Nest {
     return { cap, used, count, building };
   }
 
+  /** A player's order that could not be placed anywhere (read and cleared by the sim). */
+  droppedOrder: ChamberKind | null = null;
+
   /** Pick the next project, if the colony needs one. Returns what was started. */
   grow(needs: NestNeeds, wanted: number): string | null {
     // Don't stack up more unfinished work than the colony can dig.
@@ -374,22 +377,54 @@ export class Nest {
         return order;
       }
       // Couldn't fit it at the current depth: dig deeper first.
-      return this.deepen() ? 'deeper' : null;
+      if (this.deepen()) return 'deeper';
+      // Can't go deeper either (the slice bottom): drop the order rather than block every plan behind it.
+      needs.orders.shift();
+      this.droppedOrder = order;
+      return null;
     }
-
-    if (this.openCells + this.pendingCells >= wanted) return null;
 
     const nursery = this.capacityOf('nursery');
     const granary = this.capacityOf('granary');
-    let kind: ChamberKind = 'rest';
+    let kind: ChamberKind | null = null;
     // A harvester colony's first big project is somewhere to keep the harvest.
     if (granary.count === 0 && needs.adults >= 5) kind = 'granary';
     else if (nursery.building === 0 && needs.brood > nursery.cap * 0.7 && needs.adults > 6) kind = 'nursery';
     else if (granary.building === 0 && needs.seeds > granary.cap * 0.6) kind = 'granary';
-    else if (needs.adults > 120 && this.rng.chance(0.35)) return this.deepen() ? 'deeper' : null;
+    // Rooms the colony is short of are built whatever the nest's size; only
+    // living space (rest chambers, deeper shafts) follows the headcount.
+    if (!kind) {
+      if (this.openCells + this.pendingCells >= wanted) return null;
+      if (needs.adults > 120 && this.rng.chance(0.35)) return this.deepen() ? 'deeper' : null;
+      kind = 'rest';
+    }
 
     if (this.placeChamber(kind)) return kind;
     return this.deepen() ? 'deeper' : null;
+  }
+
+  /** Cells planned by the last shaft extension (to tell whether it has been dug yet). */
+  private lastShaft: number[] = [];
+
+  /** Share of the last shaft extension still undug (0 = done). */
+  shaftPending(): number {
+    if (this.lastShaft.length === 0) return 0;
+    let left = 0;
+    for (const i of this.lastShaft) if (SOLID[this.world.mat[i]!]) left++;
+    return left / this.lastShaft.length;
+  }
+
+  /**
+   * Why the player can't place the growth marker here, or null if they can:
+   * 'sky' above ground, 'edge' too near the sides or bottom of the slice, 'rock' in stone.
+   */
+  markerProblem(x: number, y: number): 'sky' | 'edge' | 'rock' | null {
+    const w = this.world;
+    if (!w.inside(x, y) || y <= w.ground[x]! + 10) return 'sky';
+    if (x < 24 || x > w.w - 24 || y > w.h - 40) return 'edge';
+    const m = w.mat[y * w.w + x]!;
+    if (m === STONE || m === BEDROCK) return 'rock';
+    return null;
   }
 
   /** Extend the deepest shaft downward. */
@@ -415,7 +450,9 @@ export class Nest {
     const ty = Math.min(w.h - 12, by + len);
     const path = this.astar(bx, by, tx, ty);
     if (!path) return false;
-    for (const i of path) this.stampDisc(i % w.w, (i / w.w) | 0, 2.6, null);
+    const cells: number[] = [];
+    for (const i of path) this.stampDisc(i % w.w, (i / w.w) | 0, 2.6, cells);
+    this.lastShaft = cells;
     return true;
   }
 

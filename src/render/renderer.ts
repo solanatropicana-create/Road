@@ -221,7 +221,7 @@ export class Renderer {
     if (z) {
       const kind = this.zoneKinds[z - 1];
       const tint = kind ? ZONE_TINT[kind] : undefined;
-      if (tint) c = mixRGB(c, tint, 0.22);
+      if (tint) c = mixRGB(c, tint, 0.38);
     }
     // Shadow falls from the ceiling: darker near the top of a tunnel.
     let up = 0;

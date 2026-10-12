@@ -36,9 +36,11 @@ npm run dev            # http://localhost:5173
 | C | Belgesel kamera: kendi başına özneler seçer, alt yazıyla anlatır |
 | P | Kazı planını göster/gizle (kehribar noktalar) |
 | T | Koku izlerini (feromon) göster/gizle |
-| H | Panelleri gizle (temiz ekran görüntüsü için) |
-| ? | Tuşlar paneli (yeni koloni de buradan) |
-| Esc | Takibi bırak |
+| H | Sinema modu: paneller gizlenir, belgesel alt yazısı kalır |
+| ? | Tuşlar paneli (dil seçimi ve yeni koloni de burada) |
+| Esc | Takibi, işaretlemeyi ya da sinema modunu bırak |
+
+P, T, H, C ve ? alt çubukta düğme olarak da var (dokunmatik ekranlar için). Arayüz İngilizce ve Türkçe; dil tarayıcıdan seçilir, tuşlar panelinden değiştirilir.
 
 ## Komutlar
 
@@ -52,6 +54,7 @@ npm run dev            # http://localhost:5173
 | `node scripts/shot.mjs ad 7 9000` | Çalışan dev sunucusundan ekran görüntüsü (`shots/`) |
 | `node scripts/beauty.mjs` | Belgelerdeki seçilmiş görüntüler (paneller gizli) |
 | `node scripts/play.mjs ad 3 40` | Oyuncu gibi oynar: kraliçeyi indirir, 16× hızda bekler, ekran görüntüsü alır |
+| `scripts/playtest.mjs` | Oyun testi aracı: tarayıcıda oyunu sürer (`openGame()`), bkz. `docs/playtest/` |
 
 ## Kod yapısı
 
@@ -61,7 +64,7 @@ src/
   world/           hücre dünyası, toprak üretimi, bitkiler, düşen kum fiziği, su ve nem
   sim/             koloni, karınca davranışı, yuva planlayıcı, mesafe alanları, yavru
   render/          piksel kesit, makro arka plan, ışık ve hava, kamera, vektör karıncalar (antdraw.ts)
-  ui/              koloni beyni, saha defteri, belgesel kamera (director.ts), ipuçları
+  ui/              koloni beyni, saha defteri, belgesel kamera (director.ts), ipuçları, dil tablosu (i18n.ts)
 scripts/           görüntüsüz test, toplu test, ekran görüntüsü, tek dosya derleme
 ```
 

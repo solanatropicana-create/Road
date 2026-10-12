@@ -1,6 +1,7 @@
 import type { Game } from '../main';
 import type { Ant } from '../sim/ant';
 import { Carry, Task } from '../sim/types';
+import { t, num } from './i18n';
 
 type Shot = 'queen' | 'forager' | 'digger' | 'hauler' | 'nurse' | 'major' | 'granary' | 'wide';
 
@@ -121,7 +122,7 @@ export class Director {
           if (g) {
             point = { x: g.cx, y: g.floorY - 3 };
             zoom = 11;
-            this.caption = `Granary · ${g.seeds} seeds · ${((g.floorY - w.ground[Math.round(g.cx)]!) / 10).toFixed(1)} cm down`;
+            this.caption = t('dc_granary', { n: g.seeds, d: num((g.floorY - w.ground[Math.round(g.cx)]!) / 10) });
           }
           break;
         }
@@ -135,7 +136,7 @@ export class Director {
           }
           point = { x, y };
           zoom = cam.fitZoom() * 1.7;
-          this.caption = `Day ${sim.day} · ${col.adults} workers · ${(sim.nest.openCells / 100).toFixed(0)} cm² dug`;
+          this.caption = t('dc_wide', { day: sim.day, n: col.adults, a: Math.round(sim.nest.openCells / 100) });
           break;
         }
       }
@@ -155,28 +156,27 @@ export class Director {
     const w = sim.world;
     const depth = (a.y - w.ground[a.x]!) / 10;
     const away = Math.abs(a.x - sim.nest.foundX) / 10;
-    const where = depth > 0.3 ? `${depth.toFixed(1)} cm down` : `${away.toFixed(1)} cm from the nest`;
-    if (a.caste === 'queen') return a.phase < 2 ? 'The queen · digging her first burrow' : `The queen · laying in the royal chamber · ${where}`;
-    const who = a.caste === 'soldier' ? 'Major' : a.task === Task.Forage ? 'Forager' : a.task === Task.Dig ? 'Digger' : a.task === Task.Nurse ? 'Nurse' : a.task === Task.Clean ? 'Cleaner' : 'Worker';
-    let doing = '';
+    const where = depth > 0.3 ? t('dc_down', { d: num(depth) }) : t('dc_from', { d: num(away) });
+    if (a.caste === 'queen') return a.phase < 2 ? t('dc_queenDig') : t('dc_queenLay', { where });
+    const who = t(a.caste === 'soldier' ? 'dc_major' : a.task === Task.Forage ? 'dc_forager' : a.task === Task.Dig ? 'dc_digger' : a.task === Task.Nurse ? 'dc_nurse' : a.task === Task.Clean ? 'dc_cleaner' : 'dc_worker');
+    const below = depth > 0.3;
+    let doing: string;
     switch (a.carry) {
-      case Carry.Seed: doing = depth > 0.3 ? 'taking a seed to the granary' : 'bringing a seed home'; break;
-      case Carry.Soil: doing = 'hauling soil to the surface'; break;
-      case Carry.Refuse: doing = 'carrying husks to the midden'; break;
-      case Carry.Egg: doing = 'moving an egg'; break;
-      case Carry.Larva: doing = 'carrying a larva'; break;
-      case Carry.Pupa: doing = 'carrying a pupa'; break;
-      case Carry.Corpse: doing = 'removing a dead nestmate'; break;
-      case Carry.Fruit: doing = 'carrying fruit'; break;
-      default: {
-        const below = depth > 0.3;
-        if (a.task === Task.Dig) doing = a.timer > 0 ? 'digging' : 'heading to the dig face';
-        else if (a.task === Task.Forage) doing = below ? 'heading out to forage' : 'searching the meadow';
-        else if (a.task === Task.Nurse) doing = 'tending the brood';
-        else if (a.task === Task.Clean) doing = 'tidying the nest';
-        else doing = a.timer > 0 ? 'resting' : 'on the move';
-      }
+      case Carry.Seed: doing = below ? 'dc_seedGranary' : 'dc_seedHome'; break;
+      case Carry.Soil: doing = 'dc_soil'; break;
+      case Carry.Refuse: doing = 'dc_refuse'; break;
+      case Carry.Egg: doing = 'dc_egg'; break;
+      case Carry.Larva: doing = 'dc_larva'; break;
+      case Carry.Pupa: doing = 'dc_pupa'; break;
+      case Carry.Corpse: doing = 'dc_corpse'; break;
+      case Carry.Fruit: doing = 'dc_fruit'; break;
+      default:
+        if (a.task === Task.Dig) doing = a.timer > 0 ? 'dc_digging' : 'dc_toDig';
+        else if (a.task === Task.Forage) doing = below ? 'dc_out' : 'dc_search';
+        else if (a.task === Task.Nurse) doing = 'dc_tending';
+        else if (a.task === Task.Clean) doing = 'dc_tidy';
+        else doing = a.timer > 0 ? 'dc_rest' : 'dc_move';
     }
-    return `${who} ${a.name} · ${doing} · ${where}`;
+    return `${who} ${a.name} · ${t(doing)} · ${where}`;
   }
 }

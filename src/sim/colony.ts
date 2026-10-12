@@ -9,8 +9,6 @@ import { clamp } from '../util/math';
 
 /** Multipliers for the colony brain's priority levels: off, low, normal, high. */
 export const PRIO_MULT = [0, 0.4, 1, 2.2] as const;
-export const PRIO_LABEL = ['Off', 'Low', 'Normal', 'High'] as const;
-export const BREED_LABEL = ['Low', 'Normal', 'High'] as const;
 
 const TASKS: TaskKind[] = [Task.Dig, Task.Forage, Task.Nurse, Task.Clean, Task.Idle];
 const WORK_TASK: Record<Work, TaskKind> = { dig: Task.Dig, forage: Task.Forage, nurse: Task.Nurse, clean: Task.Clean };
@@ -59,6 +57,8 @@ export class Colony {
   readonly share: Record<number, number> = {};
   readonly count: Record<number, number> = {};
   hungryLarvae = 0;
+  /** Cause of the most recent worker death (the game-over card explains the end with it). */
+  lastDeath = '';
   /** Nurses currently carrying food to the brood. */
   mealsCarried = 0;
   looseEggs = 0;
@@ -420,6 +420,8 @@ export class Colony {
   kill(a: Ant, cause: string): void {
     if (!a.alive) return;
     a.alive = false;
+    a.deathCause = cause;
+    this.lastDeath = cause;
     this.deaths[cause] = (this.deaths[cause] ?? 0) + 1;
     if (a.carryBrood) {
       this.placeBrood(a.carryBrood, a.x, a.y);

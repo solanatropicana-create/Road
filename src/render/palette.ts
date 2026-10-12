@@ -80,9 +80,9 @@ export const SEED_TONE: Record<string, [number, number]> = { grass: [0, 85], clo
 
 /** Chamber floor tints so rooms read at a glance (applied to the back wall). */
 export const ZONE_TINT: Record<string, RGB> = {
-  queen: hex('#5a3350'),
-  nursery: hex('#7a6248'),
-  granary: hex('#7a5a26'),
-  rest: hex('#3e3328'),
+  queen: hex('#7a3f6c'),
+  nursery: hex('#4e7a78'),
+  granary: hex('#a07424'),
+  rest: hex('#4a4036'),
 };
 

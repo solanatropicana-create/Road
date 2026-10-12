@@ -158,17 +158,21 @@ Oyuncu tek bir karıncaya emir vermez. Koloninin önceliklerini belirler. Her i�
 
 | Kontrol | Ne yapar |
 |---|---|
-| İş öncelikleri: Kaz / Topla / Bak / Temizle (Kapalı · Düşük · Normal · Yüksek) | Koloninin o işe ayırmak istediği payı değiştirir. Altındaki çubuk gerçekte kaç karıncanın o işte olduğunu gösterir. |
-| Kraliçe: Üreme (Düşük · Normal · Yüksek) | Yumurta hızını belirler. Yüksek üreme hızlı büyütür ama yiyecek yetmezse açlık riski doğar. |
+| İş öncelikleri: Kazı / Toplama / Bakım / Temizlik (Kapalı · Düşük · Normal · Yüksek) | Koloninin o işe ayırmak istediği payı değiştirir. Altındaki çubuk ve yazı ("52 karınca · %25") gerçekte kaç karıncanın o işte olduğunu gösterir. Kazılacak plan yoksa "yuva yeterli" yazar. Açlığa kapalı bir iş yol açıyorsa uyarı o işin adını verir ve satırı yanıp söner. |
+| Kraliçe: Üreme (Düşük · Normal · Yüksek) | Yumurta hızını belirler. Yüksek üreme hızlı büyütür ama yiyecek yetmezse açlık riski doğar. Altında yavru sayısı ve son bir saatteki eğilimi (▲ ▼) görünür. |
 | Majör oranı | Yavruların ne kadarının iri kafalı majör olacağını belirler. Majörler iri ve yavaş. Gerçekte tohum kırarlar; bu davranış henüz simde yok (8. bölüm). Rakip koloni gelirse savaşta işe yarayacaklar. |
-| Yuva: + Kreş / + Ambar / + Dinlenme odası / Daha derine kaz | Planlayıcının sırasına oda ekler. |
-| Büyüme işareti | Yeraltında bir noktaya tıklarsın, koloni o yöne doğru genişler. |
+| Yuva: + Kreş / + Ambar / + Dinlenme odası / Daha derine kaz | Yer varsa oda hemen kazı planı olarak çizilir; yoksa sıraya girer (en çok 4, × ile iptal). Dilimin dibine inildiği için yeri kalmayan sipariş düşer ve günlüğe yazılır. "Daha derine kaz" bir seferde tek adımdır. |
+| Büyüme işareti | Yeraltında bir noktaya tıklarsın, koloni o yöne doğru genişler. Gökyüzü, taş ve kenarlar kabul edilmez; işaret × ile silinir, Esc işaretlemeyi bırakır. |
 | Sandbox: Yağmur / Fırtına | Hava zaten kendiliğinden geliyor. Bu butonlar yuva tasarımını hemen test etmek için var. |
 
 Ayrıca:
 
 - Bir karıncaya tıklarsan kamera onu takip eder. Karıncanın etrafında kehribar köşeli parantezler çıkar; panelde adı, kastı, yaşı, ne yaptığı ve ne taşıdığı görünür.
-- H tuşu tüm panelleri gizler; ekran görüntüsü ve video için temiz kadraj verir.
+- H tuşu (ya da alttaki Gizle düğmesi) sinema modunu açar: paneller ve seçim köşeleri gizlenir, belgesel alt yazısı kalır.
+- Takip edilen karınca ölünce kısa bir hayat kartı çıkar: kaç gün yaşadığı, kaç tohum getirdiği, neden öldüğü.
+- Koloni beyni ilk işçiler çıkana kadar soluk durur. İnişten sonra oyun 4× hızda başlar; iniş ekranında simülasyon donuktur, böylece aynı harita aynı yerden başlar.
+- Arayüz İngilizce ve Türkçe (dil tablosu `src/ui/i18n.ts`).
+- Kayıt oyun zamanına bağlı: birkaç oyun saatinde bir, sekme gizlenince ve kapanırken.
 - **Saha defteri:** Kartın altında zaman damgalı bir olay günlüğü tutuluyor. Örnekler: "D3 14:20 — Ambar bitti, 6.2 cm derinde", "Sel: 5 yavru boğuldu", "Koloni 100 işçiye ulaştı". Bildirimler kaybolup gidiyor, günlük kalıyor.
 - **Belgesel kamera (Watch / C):** Kamera 10–16 saniyede bir özne seçip yavaşça takip ediyor. Özneler: tohum taşıyan toplayıcı, kazı yüzündeki işçi, yumurtlayan kraliçe, larva taşıyan bakıcı, ambarın yakın planı, yuvanın genel görüntüsü. Altta saha notu tarzında bir alt yazı çıkıyor: "Forager Ila-8 · bringing a seed home · 4.1 cm from the nest". Elle kamera hareketi kontrolü geri veriyor. "İzle" tarafının ilk adımı ve klip aracının (7.4) bir ön tadı.
 - **Koku izleri (T):** Toplayıcıların bıraktığı feromon izleri turkuaz bir hale olarak görünüyor. Karıncaların neden aynı yolları kullandığı böylece okunuyor.

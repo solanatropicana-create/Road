@@ -74,6 +74,8 @@ export class Ant {
   private fdist = 0;
   reevalAt = 0;
   alive = true;
+  /** Why it died ('old age', 'starvation', 'drowned'), for the life card. */
+  deathCause = '';
   wings = false;
   /** Founding queen: 0 landing, 1 digging her burrow, 2 settled. */
   phase = 2;
@@ -928,11 +930,6 @@ export class Ant {
     // Settled: keep to the royal chamber, shuffle a little.
     const r = this.descend(sim, F.Royal);
     if (r !== Step.Moved) this.startAct(Act.Rest, -1, sim.rng.int(TICK_HZ * 2, TICK_HZ * 8));
-  }
-
-  /** Colour of whatever the ant carries (also used by the inspector). */
-  static carryLabel(c: CarryKind): string {
-    return ['nothing', 'soil', 'a seed', 'fruit', 'an egg', 'a larva', 'a pupa', 'a corpse', 'husks'][c]!;
   }
 }
 

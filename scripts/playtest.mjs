@@ -121,7 +121,7 @@ s.save(out)`;
           const mins = Math.floor(s.dayT * 1440);
           const tasks = {};
           for (const a of c.ants) tasks[TASKS[a.task]] = (tasks[TASKS[a.task]] ?? 0) + 1;
-          const journal = g.ui.journalData().entries.slice(-10).map((e) => `${e.at} ${e.html.replace(/<[^>]+>/g, '')}`);
+          const journal = g.ui.journalLines(10);
           return {
             phase: s.phase,
             day: s.day,

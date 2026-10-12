@@ -15,6 +15,14 @@ import { TUNING, TICK_HZ, DAY_TICKS } from '../config';
 import { pack, sampleRamp, PAL, mixRGB } from '../render/palette';
 import { HUMUS, LOAM, CLAY, SUBSOIL } from '../world/mat';
 
+/** An event for the player; `key` names a message in the UI's string table. */
+export interface SimEvent {
+  key: string;
+  n?: number;
+  /** A chamber kind the message is about. */
+  kind?: string;
+}
+
 export type Phase = 'choose' | 'founding' | 'growing' | 'failed';
 
 export interface Weather {
@@ -51,7 +59,11 @@ export class Sim {
   /** Lightning flash, counts down in ticks. */
   flash = 0;
   /** Messages for the UI (it drains this). */
-  readonly events: string[] = [];
+  /** Things worth telling the player (the UI words them). Drained by the UI. */
+  readonly events: SimEvent[] = [];
+  /** Collapses and sprouts accumulate here and are reported every couple of in-game hours. */
+  private pendingCollapse = 0;
+  private pendingSprout = 0;
   /** Day starts mid-morning. */
   readonly dayOffset = 0.32;
   seedRain = 0.4;
@@ -385,25 +397,30 @@ export class Sim {
     this.physics.moisture.step();
     this.seasonal();
     this.rain();
-    if (this.physics.moisture.collapses > 0 && this.tick % (TICK_HZ * 4) === 0) {
-      const n = this.physics.moisture.collapses;
-      this.physics.moisture.collapses = 0;
-      if (n >= 3) this.events.push(`Sodden ceilings are <b>collapsing</b> (${n} cells)`);
-    }
-    if (this.physics.moisture.sprouted > 0 && this.tick % (TICK_HZ * 6) === 0) {
-      const n = this.physics.moisture.sprouted;
-      this.physics.moisture.sprouted = 0;
-      if (n >= 2) this.events.push(`Damp seed is <b>sprouting</b> in the stores (${n}); the workers throw it out`);
+    const m = this.physics.moisture;
+    this.pendingCollapse += m.collapses;
+    this.pendingSprout += m.sprouted;
+    m.collapses = 0;
+    m.sprouted = 0;
+    // One line per kind every two in-game hours at most, with the total.
+    if (this.tick % Math.round(DAY_TICKS / 12) === 0) {
+      if (this.pendingCollapse >= 3) this.events.push({ key: 'collapse', n: this.pendingCollapse });
+      if (this.pendingSprout >= 2) this.events.push({ key: 'sprout', n: this.pendingSprout });
+      if (this.pendingCollapse >= 3) this.pendingCollapse = 0;
+      if (this.pendingSprout >= 2) this.pendingSprout = 0;
     }
   }
 
   /** Start a shower now (or a storm). */
   startRain(storm: boolean): void {
     const w = this.weather;
-    w.storm = storm;
-    w.target = storm ? 2.6 : this.rng.range(0.5, 1);
-    w.until = this.tick + Math.round((storm ? this.rng.range(45, 70) : this.rng.range(30, 60)) * TICK_HZ);
-    this.events.push(storm ? 'A <b>storm</b> breaks over the meadow' : '<b>Rain</b> — the foragers hurry home');
+    const already = w.rain > 0.15 || w.target > 0;
+    // Already raining: a storm call strengthens it, otherwise it just lasts longer.
+    if (already) this.events.push(storm && !w.storm ? { key: 'stormGrows' } : { key: 'rainLonger' });
+    else this.events.push({ key: storm ? 'storm' : 'rain' });
+    w.storm = w.storm || storm;
+    w.target = Math.max(already ? w.target : 0, storm ? 2.6 : this.rng.range(0.5, 1));
+    w.until = Math.max(w.until, this.tick + Math.round((storm ? this.rng.range(45, 70) : this.rng.range(30, 60)) * TICK_HZ));
   }
 
   private rain(): void {
@@ -412,7 +429,7 @@ export class Sim {
     if (wt.target > 0 && this.tick >= wt.until) {
       wt.target = 0;
       wt.next = this.tick + Math.round(this.rng.range(DAY_TICKS * 0.9, DAY_TICKS * 2.2));
-      this.events.push('The rain stops');
+      this.events.push({ key: 'rainStops' });
     }
     wt.rain += (wt.target - wt.rain) * 0.01;
     if (wt.rain < 0.01 && wt.target === 0) wt.rain = 0;
@@ -480,6 +497,10 @@ export class Sim {
     const col = this.colony;
     const wanted = Nest.wanted(col.adults, col.brood.length, TUNING.nestCellsPerAnt, TUNING.nestCellsBase);
     this.nest.grow({ adults: col.adults, brood: col.brood.length, seeds: col.stored, orders: col.orders }, wanted);
+    if (this.nest.droppedOrder) {
+      this.events.push({ key: 'orderDropped', kind: this.nest.droppedOrder });
+      this.nest.droppedOrder = null;
+    }
   }
 
   private decayPheromone(): void {

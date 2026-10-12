@@ -1,23 +1,33 @@
 import type { Game } from '../main';
 import { CSS } from './style';
-import { PRIO_LABEL, BREED_LABEL } from '../sim/colony';
-import { WORK, Work, TASK_LABEL, Task, ChamberKind } from '../sim/types';
-import { Ant } from '../sim/ant';
-import { SPEEDS, TICK_HZ, DAY_TICKS } from '../config';
+import { WORK, Work, Task, ChamberKind } from '../sim/types';
+import type { Ant } from '../sim/ant';
+import type { Chamber } from '../sim/nest';
+import { SPEEDS, TICK_HZ, DAY_TICKS, TUNING } from '../config';
 import { ZONE_TINT } from '../render/palette';
 import { savedMeta } from '../sim/save';
+import { t, num, getLang, setLang, Lang, Vars } from './i18n';
 
-const WORK_LABEL: Record<Work, string> = { dig: 'Dig', forage: 'Forage', nurse: 'Nurse', clean: 'Clean' };
 const WORK_TASK: Record<Work, number> = { dig: Task.Dig, forage: Task.Forage, nurse: Task.Nurse, clean: Task.Clean };
-/** A line of natural history for each kind of room (shown on hover). */
-const CHAMBER_FACT: Record<ChamberKind, string> = {
-  queen: 'She will lay every egg the colony ever has, for up to twenty years.',
-  nursery: 'Nurses keep brood where it is warm and dry, and move it when that changes.',
-  granary: 'Messor keep seed dry. If it gets wet it sprouts, and is thrown out.',
-  rest: 'Most of a colony is idle at any time: a reserve for whatever comes next.',
-};
+/** One in-game hour, in ticks. */
+const HOUR = DAY_TICKS / 24;
+/** A second click this soon after the first is one double-click, not a confirmation. */
+const CONFIRM_DELAY_MS = 450;
+/**
+ * Below this many days of food the colony is warned. Healthy colonies live
+ * hand to mouth at around half a day, so the line sits lower than that.
+ */
+const LOW_FOOD_DAYS = 0.25;
 
-const CHAMBER_LABEL: Record<ChamberKind, string> = { queen: 'Royal chamber', nursery: 'Nursery', granary: 'Granary', rest: 'Rest chamber' };
+/** A line in the field journal. Old saves hold `html`; new entries are re-worded in the current language. */
+interface Entry {
+  at: string;
+  tick?: number;
+  key?: string;
+  vars?: Vars;
+  loc?: { x: number; y: number };
+  html?: string;
+}
 
 const h = (tag: string, cls?: string, html?: string): HTMLElement => {
   const e = document.createElement(tag);
@@ -26,31 +36,42 @@ const h = (tag: string, cls?: string, html?: string): HTMLElement => {
   return e;
 };
 
+/** Is there room to open the brain without hiding the slice (not a phone, upright or sideways)? */
+const roomy = (): boolean => innerWidth >= 760 && innerHeight > 500;
+
+const depthCm = (c: Chamber, ground: Int16Array): string => num((c.floorY - ground[Math.round(c.cx)]!) / 10);
+
 /**
  * The HUD and the colony brain. Mode B: the player never commands an ant.
  * They set what the colony cares about and where it should grow.
  */
 export class UI {
+  /** Panels hidden for a clean frame (H); the documentary caption stays. */
+  cinema = false;
   private game: Game;
   private root: HTMLElement;
   private els: Record<string, HTMLElement> = {};
-  private spark: HTMLCanvasElement;
+  private spark!: HTMLCanvasElement;
   private markerMode = false;
   private lastPhase = '';
-  private lastChambers = 0;
   private refresh = 0;
   private pointer = { x: 0, y: 0, inside: false };
-  /** The field journal: what happened and when, newest last. */
-  private journal: { at: string; html: string }[] = [];
+  private journal: Entry[] = [];
   private notesOpen = false;
   private milestone = 0;
   private notedChambers = new Set<number>();
+  private restNoted = false;
   private firstStore = false;
   private firstMajor = false;
   private drowned = 0;
+  private larvaeLost = 0;
   private starvedDay = -1;
+  private lowFoodDay = -1;
   private wingsNoted = false;
-  private replaceArmed = false;
+  private replaceArmedAt = 0;
+  private followed: Ant | null = null;
+  private lifeCardUntil = 0;
+  private queueSig = '';
 
   constructor(game: Game, root: HTMLElement) {
     this.game = game;
@@ -58,128 +79,155 @@ export class UI {
     const style = document.createElement('style');
     style.textContent = CSS;
     document.head.appendChild(style);
-    this.spark = document.createElement('canvas');
     this.build();
     this.bindInput(game.renderer.canvas);
   }
 
+  // ------------------------------------------------------------------ building
+
   private build(): void {
     const r = this.root;
+    const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+
     // --- field card
     const card = h('div', 'panel');
     card.id = 'card';
     card.innerHTML = `
       <div class="title">UNDERFOOT</div>
-      <div class="species">Messor structor · harvester ant</div>
-      <div class="pop"><b id="pop">0</b><span>workers</span></div>
+      <div class="species">${t('species')}</div>
+      <div class="pop"><b id="pop">0</b><span>${t('workers')}</span></div>
       <div class="grid">
-        <div><span class="eyebrow">Majors</span><b id="maj">0</b></div>
-        <div><span class="eyebrow">Brood</span><b id="brood">0</b></div>
-        <div><span class="eyebrow">Seeds</span><b id="food">0</b></div>
+        <div><span class="eyebrow">${t('majors')}</span><b id="maj">0</b></div>
+        <div><span class="eyebrow">${t('brood')}</span><b id="brood">0</b></div>
+        <div><span class="eyebrow">${t('seeds')}</span><b id="food">0</b><small id="fooddays"></small></div>
       </div>`;
+    this.spark = document.createElement('canvas');
     this.spark.width = 440;
     this.spark.height = 76;
     card.appendChild(this.spark);
-    const clock = h('div', 'clock', `<span id="day">Day 1</span><span id="sky">Clear</span><span id="time">09:00</span>`);
-    card.appendChild(clock);
-    // What the chamber tints mean (hover a chamber for its contents).
+    card.appendChild(h('div', 'sparkkey', `<span><i class="k-pop"></i>${t('sparkWorkers')}</span><span><i class="k-food"></i>${t('sparkSeeds')}</span>`));
+    card.appendChild(h('div', 'clock', `<span id="day"></span><span id="sky"></span><span id="time"></span>`));
     const legend = h('div', 'legend');
-    for (const [kind, label] of [['queen', 'Royal'], ['nursery', 'Nursery'], ['granary', 'Granary'], ['rest', 'Rest']] as const) {
+    for (const [kind, key] of [['queen', 'legendQueen'], ['nursery', 'legendNursery'], ['granary', 'legendGranary'], ['rest', 'legendRest']] as const) {
       const c = ZONE_TINT[kind]!;
-      legend.appendChild(h('span', '', `<i style="background:rgb(${c[0]},${c[1]},${c[2]})"></i>${label}`));
+      legend.appendChild(h('span', '', `<i style="background:rgb(${c[0]},${c[1]},${c[2]})"></i>${t(key)}`));
     }
     card.appendChild(legend);
-    const notes = h('div', 'notes', `<div class="notes-head"><span class="eyebrow">Field notes</span><button class="collapse" id="notes-all">all</button></div><ol id="notes"></ol>`);
+    const notes = h('div', 'notes', `<div class="notes-head"><span class="eyebrow">${t('fieldNotes')}</span><button class="collapse" id="notes-all">${this.notesOpen ? t('notesLess') : t('notesAll')}</button></div><ol id="notes"></ol>`);
+    notes.classList.toggle('open', this.notesOpen);
     card.appendChild(notes);
     (notes.querySelector('#notes-all') as HTMLElement).onclick = () => {
       this.notesOpen = !this.notesOpen;
       notes.classList.toggle('open', this.notesOpen);
-      (notes.querySelector('#notes-all') as HTMLElement).textContent = this.notesOpen ? 'less' : 'all';
+      (notes.querySelector('#notes-all') as HTMLElement).textContent = this.notesOpen ? t('notesLess') : t('notesAll');
       this.renderNotes();
     };
+    // Journal lines with a place on them take the camera there.
+    (notes.querySelector('#notes') as HTMLElement).onclick = (e) => {
+      const b = (e.target as HTMLElement).closest('[data-loc]') as HTMLElement | null;
+      if (!b) return;
+      const [x, y] = b.dataset.loc!.split(',').map(Number);
+      this.lookAt(x!, y!);
+    };
     r.appendChild(card);
+
+    // --- one-line strip for phones (the card is hidden there)
+    r.appendChild(h('div', '', `<b id="s-pop">0</b><span>${t('workers')}</span><span id="s-brood"></span><span id="s-food"></span><span id="s-day"></span>`)).id = 'strip';
 
     // --- colony brain
     const brain = h('div', 'panel');
     brain.id = 'brain';
-    brain.innerHTML = `<button class="collapse" id="collapse">hide</button><div class="title">COLONY BRAIN</div>
+    brain.innerHTML = `<button class="collapse" id="collapse"></button><div class="title">${t('brainTitle')}</div>
+      <div id="dormant">${t('brainDormant')}</div>
       <div class="body">
-      <div class="hint" style="margin-top:4px">You don't command ants. You decide what the colony cares about; every worker weighs it against its own age and what it sees.</div>
-      <h3 class="eyebrow">Work priorities</h3><div id="work"></div>
-      <h3 class="eyebrow">Queen</h3>
-      <div class="row"><label>Breeding</label><div class="seg" id="breed"></div></div>
-      <div class="row"><label>Majors</label><input type="range" id="majors" min="0" max="35" step="1"></div>
-      <h3 class="eyebrow">Nest</h3>
+      <div class="hint" style="margin-top:4px">${t('brainIntro')}</div>
+      <h3 class="eyebrow">${t('workPriorities')}</h3><div id="work"></div>
+      <h3 class="eyebrow">${t('queen')}</h3>
+      <div class="row"><label>${t('breeding')}</label><div class="seg" id="breed"></div></div>
+      <div class="subline" id="broodtrend"></div>
+      <div class="row slider"><label>${t('majorsLabel')}</label><input type="range" id="majors" min="0" max="35" step="1"><span id="majval"></span></div>
+      <h3 class="eyebrow">${t('nest')}</h3>
       <div class="btns">
-        <button class="btn" data-order="nursery">+ Nursery</button>
-        <button class="btn" data-order="granary">+ Granary</button>
-        <button class="btn" data-order="rest">+ Rest chamber</button>
-        <button class="btn" id="deeper">Dig deeper</button>
+        <button class="btn" data-order="nursery">${t('order_nursery')}</button>
+        <button class="btn" data-order="granary">${t('order_granary')}</button>
+        <button class="btn" data-order="rest">${t('order_rest')}</button>
+        <button class="btn" id="deeper">${t('digDeeper')}</button>
       </div>
-      <div class="btns" style="margin-top:6px; grid-template-columns: 1fr;"><button class="btn" id="mark">Mark where to grow</button></div>
+      <div class="btns" style="margin-top:6px; grid-template-columns: 1fr;"><button class="btn" id="mark"></button></div>
       <div class="queue" id="queue"></div>
-      <div class="hint">Amber dots show where the colony means to dig. <b>P</b> keeps them on.</div>
-      <h3 class="eyebrow">Sandbox</h3>
-      <div class="btns"><button class="btn" id="rain">Bring rain</button><button class="btn" id="storm">Storm</button></div>
-      <div class="hint">Weather comes on its own every day or two. These let you test a nest's design now.</div>
+      <div class="hint">${t('planHint')}</div>
+      <h3 class="eyebrow">${t('sandbox')}</h3>
+      <div class="btns"><button class="btn" id="rain">${t('bringRain')}</button><button class="btn" id="storm">${t('storm')}</button></div>
+      <div class="hint">${t('sandboxHint')}</div>
       </div>`;
     r.appendChild(brain);
     const work = brain.querySelector('#work')!;
     for (const wk of WORK) {
-      const row = h('div', 'row', `<label>${WORK_LABEL[wk]}</label>`);
+      const row = h('div', 'row', `<label>${t('work_' + wk)}</label>`);
+      row.id = `row-${wk}`;
       const seg = h('div', 'seg');
-      PRIO_LABEL.forEach((lbl, i) => {
-        const b = h('button', '', lbl);
+      for (let i = 0; i < 4; i++) {
+        const b = h('button', '', t('prio' + i));
         b.onclick = () => {
           this.game.sim.colony.prio[wk] = i;
           this.syncBrain();
         };
         b.dataset.k = `${wk}:${i}`;
         seg.appendChild(b);
-      });
+      }
       row.appendChild(seg);
       work.appendChild(row);
-      const share = h('div', 'share', '<i></i>');
+      const share = h('div', 'share', '<div class="track"><i></i></div><span></span>');
       share.id = `share-${wk}`;
       work.appendChild(share);
     }
     const breed = brain.querySelector('#breed')!;
-    BREED_LABEL.forEach((lbl, i) => {
-      const b = h('button', '', lbl);
+    for (let i = 0; i < 3; i++) {
+      const b = h('button', '', t('breed' + i));
       b.onclick = () => {
         this.game.sim.colony.breeding = i;
         this.syncBrain();
       };
       breed.appendChild(b);
-    });
+    }
     const majors = brain.querySelector('#majors') as HTMLInputElement;
     majors.oninput = () => {
       this.game.sim.colony.majorShare = Number(majors.value) / 100;
+      this.syncBrain();
     };
     brain.querySelectorAll<HTMLElement>('[data-order]').forEach((b) => {
-      b.onclick = () => {
-        const col = this.game.sim.colony;
-        if (col.orders.length < 4) col.orders.push(b.dataset.order as ChamberKind);
-        this.game.renderer.planFlash = 6;
-        this.syncBrain();
-      };
+      b.onclick = () => this.order(b.dataset.order as ChamberKind);
     });
-    (brain.querySelector('#deeper') as HTMLElement).onclick = () => {
-      if (this.game.sim.nest.deepen()) {
-        this.toast('The colony starts a <b>deeper shaft</b>');
-        this.game.renderer.planFlash = 6;
-      }
-    };
+    (brain.querySelector('#deeper') as HTMLElement).onclick = () => this.deeper();
     (brain.querySelector('#mark') as HTMLElement).onclick = () => {
+      if (this.game.sim.phase === 'choose') {
+        this.toast(t('markWait'));
+        return;
+      }
       this.markerMode = !this.markerMode;
       this.syncBrain();
+    };
+    (brain.querySelector('#queue') as HTMLElement).onclick = (e) => {
+      const el = e.target as HTMLElement;
+      const q = el.closest('[data-q]') as HTMLElement | null;
+      const col = this.game.sim.colony;
+      if (q) {
+        col.orders.splice(Number(q.dataset.q), 1);
+        this.syncBrain();
+      } else if (el.closest('[data-m]')) {
+        this.game.sim.nest.marker = null;
+        this.toast(t('markerRemoved'));
+        this.syncBrain();
+      }
     };
     (brain.querySelector('#rain') as HTMLElement).onclick = () => this.game.sim.startRain(false);
     (brain.querySelector('#storm') as HTMLElement).onclick = () => this.game.sim.startRain(true);
     (brain.querySelector('#collapse') as HTMLElement).onclick = () => {
       brain.classList.toggle('collapsed');
-      (brain.querySelector('#collapse') as HTMLElement).textContent = brain.classList.contains('collapsed') ? 'show' : 'hide';
+      this.syncCollapse();
     };
+    // Narrow screens start with the brain folded so the slice stays visible.
+    if (innerWidth < 1500) brain.classList.add('collapsed');
 
     // --- time bar
     const bar = h('div', 'panel');
@@ -204,7 +252,8 @@ export class UI {
     const zoom = h('div', 'seg');
     const zin = h('button', '', '+');
     const zout = h('button', '', '−');
-    const zfit = h('button', '', 'Fit');
+    const zfit = h('button', '', t('fit'));
+    zfit.title = t('titleFit');
     const manual = (): void => {
       if (this.game.director.active) this.game.director.stop();
     };
@@ -223,68 +272,62 @@ export class UI {
     };
     zoom.append(zout, zin, zfit);
     bar.appendChild(zoom);
-    const watch = h('div', 'seg');
-    const watchBtn = h('button', '', 'Watch');
-    watchBtn.id = 'watch';
-    watchBtn.title = 'Documentary camera (C)';
-    watchBtn.onclick = () => this.game.director.toggle();
-    watch.appendChild(watchBtn);
-    const helpBtn = h('button', '', '?');
-    helpBtn.id = 'help-btn';
-    helpBtn.title = 'Keys and views';
-    helpBtn.onclick = () => {
-      const k = this.els.keys!;
-      k.hidden = !k.hidden;
+    // Views: the toggles that also have keys, so they can be found (and used on touch).
+    const views = h('div', 'seg');
+    views.id = 'views';
+    const view = (id: string, label: string, title: string, fn: () => void): void => {
+      const b = h('button', '', label);
+      b.id = id;
+      b.title = title;
+      b.onclick = fn;
+      views.appendChild(b);
     };
-    watch.appendChild(helpBtn);
-    bar.appendChild(watch);
+    view('watch', t('watch'), t('titleWatch'), () => this.game.director.toggle());
+    view('v-plan', t('plan'), t('titlePlan'), () => this.togglePlan());
+    view('v-trails', t('trails'), t('titleTrails'), () => this.toggleTrails());
+    view('v-hide', t('hidePanels'), t('titleHide'), () => this.toggleCinema());
+    view('help-btn', '?', t('titleKeys'), () => {
+      this.els.keys!.hidden = !this.els.keys!.hidden;
+    });
+    bar.appendChild(views);
     const perf = h('div', 'perf');
     perf.id = 'perf';
     bar.appendChild(perf);
     r.appendChild(bar);
 
-    // --- inspector, prompt, toasts, tooltip, game over
+    // --- inspector, prompt, toasts, tooltip, game over, keys, caption
     const insp = h('div', 'panel');
     insp.id = 'inspect';
     r.appendChild(insp);
     const prompt = h('div', 'panel');
     prompt.id = 'prompt';
-    prompt.innerHTML = `<div class="eyebrow">Nuptial flight</div><h2>Where should the queen land?</h2><p>Click the ground. She will tear off her wings, dig a burrow and raise her first daughters alone.</p>
-      <div class="prompt-btns"><button class="btn" id="anywhere">Let her choose</button><button class="btn on" id="resume" hidden></button></div>`;
+    prompt.innerHTML = `<div class="eyebrow">${t('nuptialFlight')}</div><h2>${t('whereLand')}</h2><p>${t(coarse ? 'landHelpTouch' : 'landHelp')}</p>
+      <div class="prompt-btns"><button class="btn" id="anywhere">${t('letHerChoose')}</button><button class="btn on" id="resume" hidden></button></div>`;
     r.appendChild(prompt);
-    // A colony saved from an earlier visit can be picked up again.
     const meta = savedMeta();
     const resume = prompt.querySelector('#resume') as HTMLButtonElement;
     if (meta) {
       resume.hidden = false;
-      resume.textContent = `Continue colony · Day ${meta.day} · ${meta.adults} workers`;
+      resume.textContent = t('continueColony', { d: meta.day, n: meta.adults });
       resume.onclick = async () => {
-        resume.textContent = 'Opening the colony…';
-        if (await this.game.resume()) this.toast('Welcome back to your colony');
+        resume.textContent = t('opening');
+        if (await this.game.resume()) this.toast(t('welcomeBack'));
         else {
-          resume.textContent = 'That save could not be opened';
+          resume.textContent = t('saveBroken');
           this.game.clearSave();
         }
       };
     }
     (prompt.querySelector('#anywhere') as HTMLElement).onclick = () => {
       const sim = this.game.sim;
-      // A spot near the middle that suits her; the click path handles the camera and the toast.
       for (let k = 0; k < 200; k++) {
         const x = Math.round(sim.world.w * (0.3 + Math.random() * 0.4));
         if (sim.canFound(x)) {
-          const cam = this.game.cam;
-          const s = cam.toScreen(x, sim.world.ground[x]!);
-          this.click(s.x, s.y);
+          this.land(x);
           return;
         }
       }
     };
-    // Small screens start with the brain folded away so the slice stays visible.
-    if (innerWidth < 760) {
-      brain.classList.add('collapsed');
-      (brain.querySelector('#collapse') as HTMLElement).textContent = 'show';
-    }
     const toasts = h('div');
     toasts.id = 'toasts';
     r.appendChild(toasts);
@@ -297,54 +340,101 @@ export class UI {
     const keys = h('div', 'panel');
     keys.id = 'keys';
     keys.hidden = true;
-    keys.innerHTML = `<div class="eyebrow">Keys and views</div><dl>
-      <dt>Drag · wheel</dt><dd>Look around · zoom</dd>
-      <dt>Click an ant</dt><dd>Follow it (Esc lets go)</dd>
-      <dt>Space · 1–5</dt><dd>Pause · speed 1× to 16×</dd>
-      <dt>C</dt><dd>Documentary camera</dd>
-      <dt>P</dt><dd>Dig plan</dd>
-      <dt>T</dt><dd>Scent trails</dd>
-      <dt>H</dt><dd>Hide the panels</dd>
-      <dt>F</dt><dd>Whole slice</dd></dl>
-      <button class="btn" id="new-colony">New colony</button>`;
+    const lang = getLang();
+    keys.innerHTML = `<div class="eyebrow">${t('keysTitle')}</div><dl>
+      <dt>${t('keyDrag')}</dt><dd>${t('keyDragD')}</dd>
+      <dt>${t('keyClick')}</dt><dd>${t('keyClickD')}</dd>
+      <dt>${t('keySpeed')}</dt><dd>${t('keySpeedD')}</dd>
+      <dt>C</dt><dd>${t('keyC')}</dd>
+      <dt>P</dt><dd>${t('keyP')}</dd>
+      <dt>T</dt><dd>${t('keyT')}</dd>
+      <dt>H</dt><dd>${t('keyH')}</dd>
+      <dt>F</dt><dd>${t('keyF')}</dd></dl>
+      <div class="row langrow"><label>${t('language')}</label><div class="seg" id="lang">
+        <button data-lang="en" class="${lang === 'en' ? 'on' : ''}">English</button><button data-lang="tr" class="${lang === 'tr' ? 'on' : ''}">Türkçe</button></div></div>
+      <button class="btn" id="new-colony">${t('newColony')}</button>`;
     r.appendChild(keys);
-    // Starting over discards the current colony, so it takes a second click.
+    keys.querySelectorAll<HTMLElement>('[data-lang]').forEach((b) => {
+      b.onclick = () => {
+        setLang(b.dataset.lang as Lang);
+        this.rebuild();
+        this.els.keys!.hidden = false;
+      };
+    });
+    // Starting over discards the colony: it takes a second, separate click.
     const fresh = keys.querySelector('#new-colony') as HTMLButtonElement;
+    let armedAt = 0;
     fresh.onclick = () => {
-      if (fresh.dataset.armed) {
+      const now = performance.now();
+      if (armedAt && now - armedAt > CONFIRM_DELAY_MS) {
         this.game.clearSave();
         location.reload();
         return;
       }
-      fresh.dataset.armed = '1';
-      fresh.textContent = 'Discard this colony? Click again';
+      if (armedAt) return;
+      armedAt = now;
+      fresh.textContent = t('newColonyConfirm');
       fresh.classList.add('danger');
       setTimeout(() => {
-        delete fresh.dataset.armed;
-        fresh.textContent = 'New colony';
+        armedAt = 0;
+        fresh.textContent = t('newColony');
         fresh.classList.remove('danger');
       }, 4000);
     };
-    const caption = h('div', '', '<div class="eyebrow">Watching</div><div class="line"></div>');
+    const caption = h('div', '', `<div class="eyebrow">${t('watching')}</div><div class="line"></div>`);
     caption.id = 'caption';
     r.appendChild(caption);
+    const exit = h('button', 'btn', t('showPanels'));
+    exit.id = 'cinema-exit';
+    exit.onclick = () => this.toggleCinema();
+    r.appendChild(exit);
 
-    for (const id of ['pop', 'maj', 'brood', 'food', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark', 'notes', 'caption', 'watch', 'keys']) {
+    for (const id of ['pop', 'maj', 'brood', 'food', 'fooddays', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark', 'notes', 'caption', 'watch', 'keys', 'broodtrend', 'majval', 's-pop', 's-brood', 's-food', 's-day', 'v-plan', 'v-trails']) {
       this.els[id] = r.querySelector(`#${id}`) as HTMLElement;
     }
+    this.syncCollapse();
     this.syncBrain();
     this.syncBar();
     this.renderNotes();
+    this.applyPhase(this.game.sim.phase);
   }
+
+  /** Rebuild every panel (after a language change), keeping the state. */
+  private rebuild(): void {
+    const tipShown = this.els.keys && !this.els.keys.hidden;
+    const folded = this.els.brain?.classList.contains('collapsed');
+    this.root.innerHTML = '';
+    this.els = {};
+    this.queueSig = '';
+    this.build();
+    this.els.brain!.classList.toggle('collapsed', !!folded);
+    this.syncCollapse();
+    if (this.game.sim.phase === 'failed') this.showOver();
+    if (tipShown) this.els.keys!.hidden = false;
+  }
+
+  private syncCollapse(): void {
+    const brain = this.els.brain ?? (this.root.querySelector('#brain') as HTMLElement);
+    (brain.querySelector('#collapse') as HTMLElement).textContent = brain.classList.contains('collapsed') ? t('show') : t('hide');
+  }
+
+  /** Panel visibility that follows the phase (no journal side effects). */
+  private applyPhase(phase: string): void {
+    for (const p of ['choose', 'founding', 'growing', 'failed']) this.root.classList.toggle(`ph-${p}`, phase === p);
+    this.els.prompt!.style.display = phase === 'choose' ? 'block' : 'none';
+    // The brain only does something once there are workers to weigh it.
+    this.els.brain!.classList.toggle('dormant', phase !== 'growing');
+  }
+
+  // ------------------------------------------------------------------ messages
 
   toast(html: string, ms = 5200): void {
     const box = this.els.toasts!;
-    // Keep it to a few lines; the oldest make way.
     while (box.children.length >= 3) box.firstElementChild!.remove();
-    const t = h('div', 'toast', html);
-    t.style.animationDuration = `${ms / 1000}s`;
-    box.appendChild(t);
-    setTimeout(() => t.remove(), ms);
+    const el = h('div', 'toast', html);
+    el.style.animationDuration = `${ms / 1000}s`;
+    box.appendChild(el);
+    setTimeout(() => el.remove(), ms);
   }
 
   /** The journal and what it has already noted, for saving with the colony. */
@@ -353,102 +443,301 @@ export class UI {
       entries: this.journal,
       milestone: this.milestone,
       chambers: [...this.notedChambers],
+      restNoted: this.restNoted,
       firstStore: this.firstStore,
       firstMajor: this.firstMajor,
       drowned: this.drowned,
+      larvae: this.larvaeLost,
     };
   }
 
   /** After loading a saved colony: put the journal back and resync the panels. */
   restore(data: unknown): void {
-    const d = data as { entries?: { at: string; html: string }[]; milestone?: number; chambers?: number[]; firstStore?: boolean; firstMajor?: boolean; drowned?: number } | undefined;
+    const d = data as
+      | { entries?: Entry[]; milestone?: number; chambers?: number[]; restNoted?: boolean; firstStore?: boolean; firstMajor?: boolean; drowned?: number; larvae?: number }
+      | undefined;
+    const col = this.game.sim.colony;
     this.journal = d?.entries ?? [];
     this.milestone = d?.milestone ?? 0;
     this.notedChambers = new Set(d?.chambers ?? []);
+    this.restNoted = d?.restNoted ?? true;
     this.firstStore = d?.firstStore ?? false;
     this.firstMajor = d?.firstMajor ?? false;
-    this.drowned = d?.drowned ?? 0;
+    this.drowned = d?.drowned ?? col.deaths['brood drowned'] ?? 0;
+    this.larvaeLost = d?.larvae ?? col.deaths['larva starved'] ?? 0;
     this.wingsNoted = true;
-    this.lastPhase = '';
-    this.lastChambers = this.game.sim.nest.chambers.length;
+    this.lastPhase = this.game.sim.phase;
+    this.applyPhase(this.lastPhase);
     this.renderNotes();
     this.syncBrain();
   }
 
-  /** Write an entry in the field journal (and optionally pop it up as a toast). */
-  note(html: string, toast = false): void {
+  /**
+   * Write a journal entry (and optionally pop it up). With `merge`, a repeat of
+   * the last entry within two in-game hours updates it instead of adding a line.
+   */
+  note(key: string, vars?: Vars, opts: { toast?: boolean; loc?: { x: number; y: number }; merge?: boolean } = {}): void {
     const sim = this.game.sim;
-    const mins = Math.floor(sim.dayT * 24 * 60);
-    const at = `D${sim.day} ${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
-    this.journal.push({ at, html });
-    if (this.journal.length > 80) this.journal.shift();
+    const last = this.journal[this.journal.length - 1];
+    if (opts.merge && last && last.key === key && last.tick !== undefined && sim.tick - last.tick < HOUR * 2) {
+      if (vars && typeof vars.n === 'number' && typeof last.vars?.n === 'number') vars = { ...vars, n: last.vars.n + vars.n };
+      last.vars = vars;
+    } else {
+      const mins = Math.floor(sim.dayT * 24 * 60);
+      const at = `${t('dayShort', { n: sim.day })} ${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+      this.journal.push({ at, tick: sim.tick, key, vars, loc: opts.loc });
+      if (this.journal.length > 80) this.journal.shift();
+    }
     this.renderNotes();
-    if (toast) this.toast(html);
+    if (opts.toast) this.toast(this.entryText({ at: '', key, vars }));
+  }
+
+  /** The last n journal lines as plain text (for tests and the play-test harness). */
+  journalLines(n = 10): string[] {
+    return this.journal.slice(-n).map((e) => `${e.at} ${this.entryText(e).replace(/<[^>]+>/g, '')}`);
+  }
+
+  private entryText(e: Entry): string {
+    if (e.key) {
+      const v = e.vars?.kind ? { ...e.vars, kind: t(String(e.vars.kind)) } : e.vars;
+      const w = v?.work ? { ...v, work: t(String(v.work)) } : v;
+      return t(e.key, w);
+    }
+    return e.html ?? '';
   }
 
   private renderNotes(): void {
     const list = this.els.notes;
     if (!list) return;
     const shown = this.notesOpen ? this.journal.slice().reverse() : this.journal.slice(-3).reverse();
-    list.innerHTML = shown.map((n) => `<li><time>${n.at}</time><span>${n.html}</span></li>`).join('') || '<li><time></time><span>Nothing yet. Choose where the queen lands.</span></li>';
+    list.innerHTML =
+      shown
+        .map((n) => {
+          const show = n.loc ? ` <button class="go" data-loc="${n.loc.x},${n.loc.y}">${t('notesShow')}</button>` : '';
+          return `<li><time>${n.at}</time><span>${this.entryText(n)}${show}</span></li>`;
+        })
+        .join('') || `<li><time></time><span>${t('notesEmpty')}</span></li>`;
+  }
+
+  private lookAt(x: number, y: number): void {
+    const g = this.game;
+    if (g.director.active) g.director.stop();
+    g.selected = null;
+    g.cam.follow = null;
+    g.cam.tzoom = Math.max(g.cam.tzoom, 5);
+    g.cam.tx = x;
+    g.cam.ty = y;
+  }
+
+  /** Brief red pulse on a work row, to point at the setting that is causing trouble. */
+  private pulse(work: Work): void {
+    const row = this.root.querySelector(`#row-${work}`);
+    if (!row) return;
+    // A folded brain would hide the flash: open it (phones keep their slice clear).
+    const brain = this.els.brain!;
+    if (brain.classList.contains('collapsed') && roomy()) {
+      brain.classList.remove('collapsed');
+      this.syncCollapse();
+    }
+    row.classList.remove('pulse');
+    void (row as HTMLElement).offsetWidth;
+    row.classList.add('pulse');
+  }
+
+  /** Seeds the colony eats in one in-game day (workers, plus the queen). */
+  private dailyNeed(): number {
+    const col = this.game.sim.colony;
+    return (col.adults * DAY_TICKS) / TUNING.adultSeedTicks + (col.queen?.alive ? DAY_TICKS / TUNING.queenSeedTicks : 0);
   }
 
   /** Things worth writing down, noticed by watching the colony's numbers. */
   private observe(): void {
     const sim = this.game.sim;
     const col = sim.colony;
+    if (sim.phase === 'failed') return;
     if (!this.wingsNoted && col.queen && !col.queen.wings) {
       this.wingsNoted = true;
-      this.note('The queen lands and <b>tears off her wings</b>', true);
-      setTimeout(() => this.toast('Drag to look around · scroll to zoom · click an ant to follow it · <b>?</b> shows all keys', 9000), 2500);
-      // Founding takes a few in-game hours; suggest speeding up if they haven't.
+      this.note('j_wings', undefined, { toast: true });
+      setTimeout(() => this.toast(t('tipControls'), 9000), 2500);
       setTimeout(() => {
-        if (this.game.speed === 1 && !this.game.paused && this.game.sim.phase === 'founding') {
-          this.toast('She raises her first daughters alone, which takes a while: try <b>8×</b> or <b>16×</b> (keys 4, 5)', 8000);
-        }
+        if (this.game.speed === 1 && !this.game.paused && this.game.sim.phase === 'founding') this.toast(t('tipSpeed'), 8000);
       }, 14000);
     }
     const marks = [10, 25, 50, 100, 150, 200, 300, 500];
     while (this.milestone < marks.length && col.adults >= marks[this.milestone]!) {
-      this.note(`The colony reaches <b>${marks[this.milestone]}</b> workers`, marks[this.milestone]! >= 50);
+      this.note('j_milestone', { n: marks[this.milestone]! }, { toast: marks[this.milestone]! >= 50 });
       this.milestone++;
     }
     for (const c of sim.nest.chambers) {
       if (!c.ready || this.notedChambers.has(c.id)) continue;
       this.notedChambers.add(c.id);
-      const depth = c.floorY - sim.world.ground[Math.round(c.cx)]!;
-      this.note(`${CHAMBER_LABEL[c.kind]} finished, <b>${(depth / 10).toFixed(1)} cm</b> down`);
+      // Rest chambers are routine: only the first one gets a line.
+      if (c.kind === 'rest' && this.restNoted) continue;
+      if (c.kind === 'rest') this.restNoted = true;
+      this.note('j_chamberDone', { kind: `ch_${c.kind}`, d: depthCm(c, sim.world.ground) }, { toast: c.kind !== 'rest', loc: { x: c.cx, y: c.cy } });
     }
-    if (!this.firstStore && col.stored > 0) {
+    if (!this.firstStore && sim.nest.chambers.some((c) => c.kind === 'granary' && c.seeds > 0)) {
       this.firstStore = true;
-      this.note('First seeds laid up in the <b>granary</b>', true);
+      const g = sim.nest.chambers.find((c) => c.kind === 'granary' && c.seeds > 0)!;
+      this.note('j_firstStore', undefined, { toast: true, loc: { x: g.cx, y: g.cy } });
     }
     if (!this.firstMajor && col.majors > 0) {
       this.firstMajor = true;
-      this.note('The first <b>major</b> ecloses: big head, seed-cracking jaws', true);
+      this.note('j_firstMajor', undefined, { toast: true });
     }
     const drowned = col.deaths['brood drowned'] ?? 0;
     if (drowned > this.drowned && sim.weather.rain < 0.15) {
-      this.note(`Flood: <b>${drowned - this.drowned}</b> brood drowned`, true);
+      this.note('j_flood', { n: drowned - this.drowned }, { toast: true, merge: true });
       this.drowned = drowned;
     }
-    if ((col.deaths['starvation'] ?? 0) > 0 && col.starving && this.starvedDay !== sim.day) {
+    const larvae = col.deaths['larva starved'] ?? 0;
+    if (larvae > this.larvaeLost) {
+      const off = col.prio.nurse === 0;
+      this.note(off ? 'j_larvaeOff' : 'j_larvae', { n: larvae - this.larvaeLost }, { toast: true, merge: true });
+      if (off) this.pulse('nurse');
+      this.larvaeLost = larvae;
+    }
+    // Hunger: say why, and point at the setting when one is to blame.
+    const offWork = col.prio.forage === 0 ? 'forage' : null;
+    if (col.starving && this.starvedDay !== sim.day) {
       this.starvedDay = sim.day;
-      this.note('Workers are <b>starving</b>; foragers can\'t keep up', true);
+      if (offWork) {
+        this.note('j_starvingOff', { work: `work_${offWork}` }, { toast: true });
+        this.pulse(offWork);
+      } else this.note('j_starving', undefined, { toast: true });
+    } else if (!col.starving && col.adults >= 10 && this.lowFoodDay !== sim.day && this.starvedDay !== sim.day) {
+      const days = (col.stored + col.reserve) / Math.max(1, this.dailyNeed());
+      if (days < LOW_FOOD_DAYS) {
+        this.lowFoodDay = sim.day;
+        if (offWork) {
+          this.note('j_lowFoodOff', { work: `work_${offWork}` }, { toast: true });
+          this.pulse(offWork);
+        } else this.note('j_lowFood', undefined, { toast: true });
+      }
     }
   }
 
+  // ------------------------------------------------------------------ actions
+
+  private land(x: number): void {
+    const game = this.game;
+    const sim = game.sim;
+    // A saved colony would be replaced at the next autosave: ask first (a real second click).
+    if (savedMeta()) {
+      const now = performance.now();
+      if (!this.replaceArmedAt || now - this.replaceArmedAt > 6000) {
+        this.replaceArmedAt = now;
+        this.toast(t('replaceSave'), 6000);
+        return;
+      }
+      if (now - this.replaceArmedAt < CONFIRM_DELAY_MS) return;
+    }
+    sim.found(x);
+    this.markerMode = false;
+    // Founding is slow at 1×: start at 4× (the player can slow down).
+    game.setSpeed(2);
+    this.syncBar();
+    this.syncBrain();
+    game.cam.tzoom = Math.max(game.cam.tzoom, game.cam.fitZoom() * 2.4);
+    game.cam.tx = x;
+    game.cam.ty = sim.world.ground[Math.round(x)]! + 10;
+  }
+
+  /** Order a room: placed at once (and drawn) when there is room, otherwise queued. */
+  private order(kind: ChamberKind): void {
+    const sim = this.game.sim;
+    const col = sim.colony;
+    if (sim.phase !== 'growing') {
+      this.toast(t('orderWait'));
+      return;
+    }
+    if (col.orders.length >= 4) {
+      this.toast(t('queueFull'));
+      return;
+    }
+    const n0 = sim.nest.chambers.length;
+    if (col.orders.length === 0 && sim.nest.placeChamber(kind)) {
+      const c = sim.nest.chambers[n0]!;
+      this.toast(t('orderPlanned', { kind: t(`ch_${kind}`), d: depthCm(c, sim.world.ground) }), 6500);
+      this.game.renderer.planFlash = 9;
+    } else {
+      col.orders.push(kind);
+      this.toast(t('orderQueued', { kind: t(`ch_${kind}`) }), 6500);
+      this.game.renderer.planFlash = 6;
+    }
+    this.syncBrain();
+  }
+
+  /** One shaft extension at a time: the next waits until most of the last is dug. */
+  private deeper(): void {
+    const sim = this.game.sim;
+    if (sim.phase !== 'growing') {
+      this.toast(t('orderWait'));
+      return;
+    }
+    const left = sim.nest.shaftPending();
+    if (left > 0.25) {
+      this.toast(t('deeperBusy', { p: Math.round(left * 100) }));
+      return;
+    }
+    if (sim.nest.deepen()) {
+      this.toast(t('deeperStarted'));
+      this.game.renderer.planFlash = 8;
+    } else this.toast(t('deeperNone'));
+  }
+
+  private togglePlan(): void {
+    const r = this.game.renderer;
+    r.planAlways = !r.planAlways;
+    this.toast(t(r.planAlways ? 'planOn' : 'planOff'));
+    this.syncBar();
+  }
+
+  private toggleTrails(): void {
+    const r = this.game.renderer;
+    r.trails = !r.trails;
+    this.toast(t(r.trails ? 'trailsOn' : 'trailsOff'));
+    this.syncBar();
+  }
+
+  /** Clean frame for screenshots and clips; the documentary caption stays. */
+  private toggleCinema(): void {
+    this.cinema = !this.cinema;
+    this.root.classList.toggle('cinema', this.cinema);
+  }
+
+  // ------------------------------------------------------------------ syncing
+
   private syncBrain(): void {
-    const col = this.game.sim.colony;
+    const sim = this.game.sim;
+    const col = sim.colony;
     this.root.querySelectorAll<HTMLElement>('#work .seg button').forEach((b) => {
       const [wk, i] = b.dataset.k!.split(':');
       b.classList.toggle('on', col.prio[wk as Work] === Number(i));
     });
     this.root.querySelectorAll<HTMLElement>('#breed button').forEach((b, i) => b.classList.toggle('on', col.breeding === i));
-    (this.root.querySelector('#majors') as HTMLInputElement).value = String(Math.round(col.majorShare * 100));
+    const pct = Math.round(col.majorShare * 100);
+    (this.root.querySelector('#majors') as HTMLInputElement).value = String(pct);
+    this.els.majval!.textContent = t('majorsValue', { n: pct });
     this.els.mark!.classList.toggle('on', this.markerMode);
-    this.els.mark!.textContent = this.markerMode ? 'Click underground to mark…' : 'Mark where to grow';
-    this.els.queue!.textContent = col.orders.length ? `Queued: ${col.orders.map((o) => CHAMBER_LABEL[o]).join(' → ')}` : '';
+    this.els.mark!.textContent = this.markerMode ? t('marking') : t('markGrow');
+    this.root.querySelectorAll<HTMLElement>('[data-order]').forEach((b) => b.classList.toggle('disabled', col.orders.length >= 4));
+    // Queue and marker as chips, each with an × to cancel.
+    const m = sim.nest.marker;
+    const sig = `${col.orders.join(',')}|${m ? `${m.x},${m.y}` : ''}|${getLang()}`;
+    if (sig !== this.queueSig) {
+      this.queueSig = sig;
+      let html = '';
+      if (col.orders.length) {
+        html += `<span class="qlabel">${t('queued')}</span>`;
+        html += col.orders.map((o, i) => `<button class="chip" data-q="${i}" title="${t('cancel')}">${t(`ch_${o}`)} ×</button>`).join('');
+      }
+      if (m) {
+        const d = num((m.y - sim.world.ground[m.x]!) / 10);
+        html += `<button class="chip" data-m title="${t('removeMarker')}">${t('markerLine', { d })} ×</button>`;
+      }
+      this.els.queue!.innerHTML = html;
+    }
   }
 
   private syncBar(): void {
@@ -457,6 +746,8 @@ export class UI {
       if (i === 0) b.classList.toggle('on', this.game.paused);
       else b.classList.toggle('on', !this.game.paused && SPEEDS[i - 1] === this.game.speed);
     });
+    this.els['v-plan']?.classList.toggle('on', this.game.renderer.planAlways);
+    this.els['v-trails']?.classList.toggle('on', this.game.renderer.trails);
   }
 
   // ------------------------------------------------------------------ input
@@ -467,7 +758,6 @@ export class UI {
     let dragDist = 0;
     let pinch0 = 0;
     canvas.addEventListener('pointerdown', (e) => {
-      // Taking the camera by hand ends the documentary.
       if (game.director.active) game.director.stop();
       canvas.setPointerCapture(e.pointerId);
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
@@ -519,6 +809,7 @@ export class UI {
       { passive: false },
     );
     addEventListener('keydown', (e) => {
+      if (e.target instanceof HTMLInputElement) return;
       if (e.key === ' ') {
         game.paused = !game.paused;
         this.syncBar();
@@ -531,21 +822,19 @@ export class UI {
         game.selected = null;
         game.cam.fit();
       } else if (e.key === 't' || e.key === 'T') {
-        game.renderer.trails = !game.renderer.trails;
-        this.toast(game.renderer.trails ? 'Showing <b>scent trails</b> (T to hide)' : 'Scent trails hidden');
+        this.toggleTrails();
       } else if (e.key === 'p' || e.key === 'P') {
-        game.renderer.planAlways = !game.renderer.planAlways;
-        this.toast(game.renderer.planAlways ? 'Showing the <b>dig plan</b> (P to hide)' : 'Dig plan hidden');
+        this.togglePlan();
       } else if (e.key === 'c' || e.key === 'C') {
         game.director.toggle();
       } else if (e.key === 'h' || e.key === 'H') {
-        // Clean frame for screenshots and clips.
-        this.root.style.display = this.root.style.display === 'none' ? '' : 'none';
+        this.toggleCinema();
       } else if (e.key === '?' || e.key === '/') {
         this.els.keys!.hidden = !this.els.keys!.hidden;
       } else if (e.key === 'Escape') {
         this.els.keys!.hidden = true;
         game.selected = null;
+        if (this.cinema) this.toggleCinema();
         this.markerMode = false;
         this.syncBrain();
       } else if (e.key === '+' || e.key === '=') {
@@ -561,36 +850,25 @@ export class UI {
     const sim = game.sim;
     const p = game.cam.toWorld(sx, sy);
     if (sim.phase === 'choose') {
-      if (sim.canFound(p.x)) {
-        // A saved colony would be replaced at the next autosave: ask first.
-        if (savedMeta() && !this.replaceArmed) {
-          this.replaceArmed = true;
-          this.toast('Landing here starts a <b>new colony</b> and replaces the saved one. Click again to land.', 6000);
-          setTimeout(() => (this.replaceArmed = false), 6000);
-          return;
-        }
-        sim.found(p.x);
-        // The journal entry waits until she actually sheds her wings (see observe()).
-        game.cam.tzoom = Math.max(game.cam.tzoom, game.cam.fitZoom() * 2.4);
-        game.cam.tx = p.x;
-        game.cam.ty = sim.world.ground[Math.round(p.x)]! + 10;
-      }
+      if (sim.canFound(p.x)) this.land(p.x);
       return;
     }
     if (this.markerMode) {
-      const w = sim.world;
       const x = Math.round(p.x);
       const y = Math.round(p.y);
-      if (w.inside(x, y) && y > w.ground[x]! + 10) {
-        sim.nest.marker = { x, y };
-        this.toast('The colony will <b>grow toward the marker</b>');
-        game.renderer.planFlash = 8;
+      const problem = sim.nest.markerProblem(x, y);
+      // A bad spot keeps marking on, so the player can simply click again (Esc cancels).
+      if (problem) {
+        this.toast(t(`marker_${problem}`));
+        return;
       }
+      sim.nest.marker = { x, y };
+      this.toast(t('markerSet'));
+      game.renderer.planFlash = 8;
       this.markerMode = false;
       this.syncBrain();
       return;
     }
-    // Select the nearest ant under the cursor.
     let best: Ant | null = null;
     let bd = (8 / game.cam.zoom) ** 2 + 6;
     const col = sim.colony;
@@ -615,20 +893,26 @@ export class UI {
     const col = sim.colony;
     const phase = sim.phase;
     if (phase !== this.lastPhase) {
-      if (phase === 'growing' && this.lastPhase === 'founding') this.note('The first workers have <b>hatched</b>', true);
+      const was = this.lastPhase;
+      this.lastPhase = phase;
+      this.applyPhase(phase);
+      if (phase === 'growing' && was === 'founding') {
+        this.note('j_firstWorkers', undefined, { toast: true });
+        // The moment to act: open the brain (except on phones) and point at Watch.
+        if (roomy()) {
+          this.els.brain!.classList.remove('collapsed');
+          this.syncCollapse();
+        }
+        setTimeout(() => this.toast(t('tipBrainAwake'), 9000), 1800);
+        const w = this.els.watch!;
+        w.classList.add('pulse');
+        setTimeout(() => w.classList.remove('pulse'), 10000);
+      }
       if (phase === 'failed') {
-        this.note('The colony has died out');
+        this.note('j_died');
         this.game.clearSave();
         this.showOver();
       }
-      this.els.prompt!.style.display = phase === 'choose' ? 'block' : 'none';
-      this.lastPhase = phase;
-    }
-    if (sim.nest.chambers.length !== this.lastChambers) {
-      const c = sim.nest.chambers[sim.nest.chambers.length - 1];
-      if (c && this.lastChambers > 0) this.toast(`New chamber planned: <b>${CHAMBER_LABEL[c.kind]}</b>`);
-      this.lastChambers = sim.nest.chambers.length;
-      this.syncBrain();
     }
     const dir = game.director;
     this.els.watch!.classList.toggle('on', dir.active);
@@ -637,35 +921,71 @@ export class UI {
     if (dir.active) (cap.querySelector('.line') as HTMLElement).innerHTML = dir.caption;
     while (sim.events.length) {
       const e = sim.events.shift()!;
-      // The rain stopping is worth a glance, not a line in the journal.
-      if (e.includes('rain stops')) this.toast(e);
-      else this.note(e, true);
+      if (phase === 'failed') continue;
+      // Passing weather is worth a glance, not a line in the journal.
+      if (e.key === 'rainStops' || e.key === 'rainLonger') this.toast(t(`ev_${e.key}`));
+      else {
+        const vars: Vars = {};
+        if (e.n !== undefined) vars.n = e.n;
+        if (e.kind) vars.kind = `ch_${e.kind}`;
+        this.note(`ev_${e.key}`, vars, { toast: true, merge: !e.kind });
+      }
     }
+    // The ant being followed died: show its life card for a moment.
+    if (game.selected) this.followed = game.selected;
+    else if (this.followed && !this.followed.alive) {
+      this.lifeCard(this.followed);
+      this.followed = null;
+    } else this.followed = null;
     this.tooltip();
     this.refresh -= dt;
     if (this.refresh > 0) return;
     this.refresh = 0.25;
 
+    const [e, l, p] = col.broodCounts();
+    const days = (col.stored + col.reserve) / Math.max(1, this.dailyNeed());
+    const foodText = days >= 10 ? t('foodDays', { n: '10+' }) : days >= 1 ? t('foodDays', { n: num(days) }) : t('foodHours', { n: Math.floor(days * 24) });
     this.els.pop!.textContent = String(col.adults);
     this.els.maj!.textContent = String(col.majors);
-    const [e, l, p] = col.broodCounts();
     this.els.brood!.textContent = String(e + l + p);
-    this.els.brood!.title = `${e} eggs · ${l} larvae · ${p} pupae`;
+    this.els.brood!.title = t('broodTitle', { e, l, p });
     this.els.food!.textContent = String(col.stored);
     this.els.food!.classList.toggle('warn', col.starving);
-    this.els.day!.textContent = `Day ${sim.day}`;
-    this.els.sky!.textContent = sim.weather.rain > 0.15 ? (sim.weather.storm ? 'Storm' : 'Rain') : sim.dayT < 0.23 || sim.dayT > 0.8 ? 'Night' : 'Clear';
+    this.els.fooddays!.textContent = col.adults > 0 ? foodText : '';
+    this.els.fooddays!.classList.toggle('warn', col.adults >= 10 && days < LOW_FOOD_DAYS);
+    const sky = sim.weather.rain > 0.15 ? (sim.weather.storm ? 'skyStorm' : 'skyRain') : sim.dayT < 0.23 || sim.dayT > 0.8 ? 'skyNight' : 'skyClear';
     const mins = Math.floor(sim.dayT * 24 * 60);
-    this.els.time!.textContent = `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
-    this.els.perf!.textContent = `${(game.tps / TICK_HZ).toFixed(1)}× real`;
+    const clock = `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+    this.els.day!.textContent = t('day', { n: sim.day });
+    this.els.sky!.textContent = t(sky);
+    this.els.time!.textContent = clock;
+    this.els['s-pop']!.textContent = String(col.adults);
+    this.els['s-brood']!.textContent = `${t('brood')} ${e + l + p}`;
+    this.els['s-food']!.textContent = `${t('seeds')} ${col.stored}`;
+    this.els['s-day']!.textContent = `${t('day', { n: sim.day })} ${clock}`;
+    this.els.perf!.textContent = phase === 'choose' ? '' : t('perf', { n: num(game.tps / TICK_HZ) });
+    // Who is doing what right now, beside each priority.
     const adults = Math.max(1, col.adults);
+    const counts: Record<number, number> = {};
+    for (const a of col.ants) counts[a.task] = (counts[a.task] ?? 0) + 1;
     for (const wk of WORK) {
-      const n = col.ants.filter((a) => a.task === WORK_TASK[wk]).length;
-      const bar = this.root.querySelector(`#share-${wk} i`) as HTMLElement;
-      bar.style.width = `${Math.round((n / adults) * 100)}%`;
+      const n = counts[WORK_TASK[wk]] ?? 0;
+      const pct = Math.round((n / adults) * 100);
+      const share = this.root.querySelector(`#share-${wk}`) as HTMLElement;
+      (share.querySelector('i') as HTMLElement).style.width = `${pct}%`;
+      // No diggers because nothing is planned is not a fault: say so.
+      const idle = wk === 'dig' && n === 0 && sim.nest.pendingCells === 0 && col.prio.dig > 0;
+      (share.querySelector('span') as HTMLElement).textContent = col.adults > 0 ? (idle ? t('shareNoDig') : t('share', { n, p: pct })) : '';
     }
+    // Brood trend over the last in-game hour, to show what Breeding is doing.
+    const hist = col.history;
+    const back = hist[Math.max(0, hist.length - 4)];
+    const brood = e + l + p;
+    const arrow = !back ? '' : brood > back.brood + 2 ? '▲' : brood < back.brood - 2 ? '▼' : '–';
+    this.els.broodtrend!.textContent = col.adults > 0 ? t('broodTrend', { n: brood, arrow }) : '';
+    this.syncBrain();
     this.drawSpark();
-    this.inspector();
+    if (performance.now() > this.lifeCardUntil) this.inspector();
     this.observe();
   }
 
@@ -692,7 +1012,7 @@ export class UI {
       c.lineWidth = width;
       c.stroke();
     };
-    line('food', 'rgba(226,180,92,0.55)', 2);
+    line('food', 'rgba(226,180,92,0.7)', 2);
     line('pop', 'rgba(239,230,214,0.9)', 3);
   }
 
@@ -704,21 +1024,35 @@ export class UI {
       return;
     }
     el.style.display = 'block';
-    const days = (a.age / DAY_TICKS).toFixed(1);
-    const caste = a.caste === 'queen' ? 'Queen' : a.caste === 'soldier' ? 'Major worker' : 'Minor worker';
-    const life = a.caste === 'queen' ? 'decades' : `${Math.round(a.ageFrac * 100)}% of life`;
-    el.innerHTML = `<div class="eyebrow">Following · Esc to release</div><div class="name">${a.name}</div>
-      <dl><dt>Caste</dt><dd>${caste}</dd><dt>Age</dt><dd>${days} days · ${life}</dd>
-      ${a.caste === 'queen' ? '' : `<dt>Hatched</dt><dd>Day ${Math.max(1, this.game.sim.day - Math.floor(a.age / DAY_TICKS))}</dd>`}
-      <dt>Doing</dt><dd>${a.caste === 'queen' ? (a.phase < 2 ? 'digging her burrow' : 'laying eggs') : TASK_LABEL[a.task]}</dd>
-      <dt>Carrying</dt><dd>${a.carryBrood ? 'an egg' : Ant.carryLabel(a.carry)}</dd>
-      ${a.delivered ? `<dt>Harvest</dt><dd>${a.delivered} seeds</dd>` : ''}</dl>`;
+    el.classList.remove('lifecard');
+    const days = num(a.age / DAY_TICKS);
+    const caste = a.caste === 'queen' ? t('casteQueen') : a.caste === 'soldier' ? t('casteMajor') : t('casteMinor');
+    const ageText = a.caste === 'queen' ? `${days} · ${t('decades')}` : t('ageValue', { d: days, p: Math.round(a.ageFrac * 100) });
+    const doing = a.caste === 'queen' ? (a.phase < 2 ? t('queenDigging') : t('queenLaying')) : t(`task${a.task}`);
+    el.innerHTML = `<div class="eyebrow">${t('following')}</div><div class="name">${a.name}</div>
+      <dl><dt>${t('caste')}</dt><dd>${caste}</dd><dt>${t('age')}</dt><dd>${ageText}</dd>
+      ${a.caste === 'queen' ? '' : `<dt>${t('hatched')}</dt><dd>${t('day', { n: Math.max(1, this.game.sim.day - Math.floor(a.age / DAY_TICKS)) })}</dd>`}
+      <dt>${t('doing')}</dt><dd>${doing}</dd>
+      <dt>${t('carrying')}</dt><dd>${a.carryBrood ? t('carry4') : t(`carry${a.carry}`)}</dd>
+      ${a.delivered ? `<dt>${t('harvest')}</dt><dd>${t('seedsN', { n: a.delivered })}</dd>` : ''}</dl>`;
+  }
+
+  /** A short obituary for the ant the player was following. */
+  private lifeCard(a: Ant): void {
+    const el = this.els.inspect!;
+    const cause = a.deathCause === 'old age' ? 'old' : a.deathCause || 'old';
+    const job = a.delivered ? t('lifeSeeds', { n: a.delivered }) : t('lifeNoSeeds');
+    el.style.display = 'block';
+    el.classList.add('lifecard');
+    el.innerHTML = `<div class="eyebrow">${t('lifeEnd')}</div><div class="name">${t(`died_${cause}`, { name: a.name })}</div>
+      <p>${t('lifeLine', { d: num(a.age / DAY_TICKS), job })}</p>`;
+    this.lifeCardUntil = performance.now() + 7000;
   }
 
   private tooltip(): void {
     const tip = this.els.tip!;
     const game = this.game;
-    if (!this.pointer.inside) {
+    if (!this.pointer.inside || this.cinema) {
       tip.style.display = 'none';
       return;
     }
@@ -736,27 +1070,32 @@ export class UI {
       return;
     }
     let body = '';
-    if (c.kind === 'granary' || c.kind === 'queen') body = `${c.seeds} seeds stored`;
+    if (c.kind === 'granary' || c.kind === 'queen') body = t('seedsStored', { n: c.seeds });
     if (c.kind === 'nursery') {
       const n = game.sim.colony.brood.filter((b) => !b.carried && game.sim.nest.chamberAt(b.y * w.w + b.x) === c).length;
-      body = `${n} brood · ${c.floor.length} spots`;
+      body = t('broodSpots', { n, s: c.floor.length });
     }
-    if (c.kind === 'rest') body = 'workers resting between jobs';
-    const depth = ((c.floorY - w.ground[Math.round(c.cx)]!) / 10).toFixed(1);
-    tip.innerHTML = `<b>${CHAMBER_LABEL[c.kind]}</b> · ${depth} cm down<br>${body}<div class="fact">${CHAMBER_FACT[c.kind]}</div>`;
+    if (c.kind === 'rest') body = t('restBody');
+    tip.innerHTML = `<b>${t(`ch_${c.kind}`)}</b> · ${t('cmDown', { d: depthCm(c, w.ground) })}<br>${body}<div class="fact">${t(`fact_${c.kind}`)}</div>`;
     tip.style.display = 'block';
-    tip.style.left = `${this.pointer.x + 14}px`;
+    tip.style.left = `${Math.min(this.pointer.x + 14, innerWidth - 260)}px`;
     tip.style.top = `${this.pointer.y + 14}px`;
   }
 
   private showOver(): void {
     const sim = this.game.sim;
-    const peak = Math.max(0, ...sim.colony.history.map((s) => s.pop));
+    const col = sim.colony;
+    const peak = Math.max(0, ...col.history.map((s) => s.pop));
+    let cause = 'end_old';
+    if (col.prio.forage === 0) cause = 'end_forageOff';
+    else if (col.lastDeath === 'starvation') cause = 'end_hunger';
+    else if (col.lastDeath === 'drowned') cause = 'end_flood';
+    else if (col.prio.nurse === 0) cause = 'end_nurseOff';
     const el = this.els.over!;
     el.style.display = 'block';
-    el.innerHTML = `<div class="eyebrow">Day ${sim.day}</div><h2>The colony has died out</h2>
-      <p>The queen cannot forage or tend brood alone. At its height the colony had ${peak} workers.</p>
-      <button class="btn" id="again" style="padding:8px 16px">Found a new colony</button>`;
+    el.innerHTML = `<div class="eyebrow">${t('day', { n: sim.day })}</div><h2>${t('overTitle')}</h2>
+      <p>${t(cause)} ${t('overPeak', { n: peak })}</p>
+      <button class="btn" id="again" style="padding:8px 16px">${t('foundNew')}</button>`;
     (el.querySelector('#again') as HTMLElement).onclick = () => location.reload();
   }
 }

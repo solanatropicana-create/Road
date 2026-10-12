@@ -2,7 +2,7 @@ import { Sim } from './sim/sim';
 import { Renderer } from './render/renderer';
 import { Camera } from './render/camera';
 import { UI } from './ui/ui';
-import { TICK_HZ, SPEEDS } from './config';
+import { TICK_HZ, SPEEDS, DAY_TICKS } from './config';
 import type { Ant } from './sim/ant';
 import { Director } from './ui/director';
 import { saveSim, loadSim, SAVE_KEY, META_KEY } from './sim/save';
@@ -32,6 +32,8 @@ export class Game {
   /** Bumped when the save is cleared, so a save already under way doesn't write it back. */
   private saveGen = 0;
   private lastSave = performance.now();
+  /** Sim tick of the last save: the colony is also saved every few in-game hours. */
+  private lastSaveTick = 0;
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement, seed: number) {
     this.canvas = canvas;
@@ -44,18 +46,23 @@ export class Game {
     this.cam.fit();
     this.cam.zoom = this.cam.tzoom;
     addEventListener('resize', () => this.resize());
-    // Keep the colony when the tab goes away.
+    // Keep the colony when the tab goes away or closes.
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') void this.save();
     });
+    addEventListener('pagehide', () => void this.save());
     requestAnimationFrame((t) => this.frame(t));
   }
 
   resize(): void {
     const w = innerWidth;
     const h = innerHeight;
+    // A view showing the whole slice keeps showing it after the window changes.
+    const wasFit = this.cam.tzoom <= this.cam.minZoom * 1.02;
     this.renderer.resize(w, h, Math.min(2, devicePixelRatio || 1));
     this.cam.resize(w, h);
+    if (wasFit && !this.cam.follow) this.cam.fit();
+    this.cam.tzoom = Math.max(this.cam.tzoom, this.cam.minZoom);
   }
 
   /** Write the colony to browser storage (compressed). Quietly does nothing if storage is unavailable. */
@@ -74,6 +81,7 @@ export class Game {
     } finally {
       this.saving = false;
       this.lastSave = performance.now();
+      this.lastSaveTick = this.sim.tick;
     }
   }
 
@@ -100,6 +108,7 @@ export class Game {
     try {
       const { sim, extra } = await loadSim(blob);
       this.sim = sim;
+      this.lastSaveTick = sim.tick;
       this.renderer = new Renderer(this.canvas, sim.world, sim.seed);
       this.selected = null;
       this.director.stop();
@@ -126,7 +135,8 @@ export class Game {
   private frame(now: number): void {
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
-    if (!this.paused) {
+    // Time stands still until the queen lands, so a seed always starts from the same meadow.
+    if (!this.paused && this.sim.phase !== 'choose') {
       this.acc += dt * TICK_HZ * this.speed;
       // Never spend more than ~12 ms of a frame simulating; drop the rest.
       const start = performance.now();
@@ -152,10 +162,11 @@ export class Game {
     if (this.director.active) this.director.update(dt);
     else this.cam.follow = this.selected ? { x: this.selected.x, y: this.selected.y - 2 } : this.cam.follow;
     this.cam.update(dt);
-    this.renderer.render(this.sim, this.cam, dt, this.paused ? 0 : this.speed, this.selected);
+    this.renderer.render(this.sim, this.cam, dt, this.paused ? 0 : this.speed, this.ui.cinema ? null : this.selected);
     this.ui.update(dt);
-    // Autosave about once a minute of real time.
-    if (now - this.lastSave > 60000) void this.save();
+    // Autosave every few in-game hours (not more than every few seconds), and at least once a minute.
+    const due = this.sim.tick - this.lastSaveTick >= DAY_TICKS / 6 && now - this.lastSave > 4000;
+    if (due || now - this.lastSave > 60000) void this.save();
     requestAnimationFrame((t) => this.frame(t));
   }
 }
