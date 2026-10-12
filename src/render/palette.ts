@@ -57,7 +57,7 @@ export const PAL = {
   refuse: ramp('#3a312b', '#7d6a4d', '#a48e66', '#c0aa7f', '#d4c096'),
   leafLitter: ramp('#5c351d', '#7a4625', '#94582c', '#a86a35', '#b97c42'),
   twig: ramp('#3b2a1d', '#4a3524', '#5b432f'),
-  fruit: ramp('#2b1220', '#45192e', '#5f213c', '#7a2c4b'),
+  fruit: ramp('#24111a', '#361822', '#48202b', '#5a2a34'),
 };
 
 /** Chamber floor tints so rooms read at a glance (applied to the back wall). */

@@ -152,8 +152,16 @@ export class Renderer {
         c = mixRGB(sampleRamp(src, tone * 0.7 + grain * 0.3), [230, 215, 190], 0.14);
         break;
       }
-      case SEED: c = sampleRamp(PAL.seed, tone); break;
-      case REFUSE: c = sampleRamp(PAL.refuse, tone); break;
+      case SEED:
+      case REFUSE:
+        // Close up, grains are drawn as shapes over the slice (see grains()).
+        if (this.closeUp) {
+          if (w.bg[i] === 0) return 0;
+          c = this.backwall(i, x, y);
+          return pack(c[0], c[1], c[2]);
+        }
+        c = m === SEED ? sampleRamp(PAL.seed, tone) : sampleRamp(PAL.refuse, tone);
+        break;
       case LITTER: c = w.tint[i] === 1 ? sampleRamp(PAL.twig, tone) : sampleRamp(PAL.leafLitter, tone); break;
       case FRUIT: c = sampleRamp(PAL.fruit, tone); break;
       default: c = [255, 0, 255];
@@ -320,6 +328,66 @@ export class Renderer {
   /** Whether the camera is close enough that loose specks are drawn smooth instead of as pixels. */
   private closeUp = false;
 
+  /**
+   * Seeds and husks as grains: glossy ovals heaped in the granary, pale
+   * split husks on the midden. Tones are bucketed so each bucket is one fill.
+   */
+  private grains(view: { x0: number; y0: number; x1: number; y1: number }): void {
+    const w = this.world;
+    const ctx = this.ctx;
+    const x0 = Math.max(1, Math.floor(view.x0) - 1);
+    const x1 = Math.min(w.w - 2, Math.ceil(view.x1) + 1);
+    const y0 = Math.max(1, Math.floor(view.y0) - 1);
+    const y1 = Math.min(w.h - 2, Math.ceil(view.y1) + 1);
+    const B = 4;
+    const seedPaths: Path2D[] = [];
+    const huskPaths: Path2D[] = [];
+    for (let k = 0; k < B; k++) {
+      seedPaths.push(new Path2D());
+      huskPaths.push(new Path2D());
+    }
+    const gloss = new Path2D();
+    let any = false;
+    // One light level for the whole view keeps this to a handful of fills.
+    const l = this.lightAt((x0 + x1) / 2, (y0 + y1) / 2);
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const i = y * w.w + x;
+        const m = w.mat[i];
+        if (m !== SEED && m !== REFUSE) continue;
+        any = true;
+        const hsh = Math.imul(i, 2654435761) >>> 0;
+        const rot = ((hsh >>> 8) & 255) / 255 * Math.PI;
+        const jx = (((hsh >>> 16) & 15) / 15 - 0.5) * 0.25;
+        const jy = (((hsh >>> 20) & 15) / 15 - 0.5) * 0.2;
+        const cx = x + 0.5 + jx;
+        const cy = y + 0.55 + jy;
+        const b = Math.min(B - 1, (w.tone[i]! * B) >> 8);
+        if (m === SEED) {
+          const p = seedPaths[b]!;
+          p.moveTo(cx + 0.68 * Math.cos(rot), cy + 0.68 * Math.sin(rot));
+          p.ellipse(cx, cy, 0.68, 0.5, rot, 0, Math.PI * 2);
+          gloss.moveTo(cx - 0.12 + 0.2, cy - 0.2);
+          gloss.ellipse(cx - 0.12, cy - 0.2, 0.2, 0.1, rot, 0, Math.PI * 2);
+        } else {
+          const p = huskPaths[b]!;
+          p.moveTo(cx + 0.6 * Math.cos(rot), cy + 0.6 * Math.sin(rot));
+          p.ellipse(cx, cy, 0.6, 0.26, rot, 0, Math.PI * 2);
+        }
+      }
+    }
+    if (!any) return;
+    const lit = (c: RGB, a = 1): string => `rgba(${(c[0] * l[0]) | 0},${(c[1] * l[1]) | 0},${(c[2] * l[2]) | 0},${a})`;
+    for (let k = 0; k < B; k++) {
+      ctx.fillStyle = lit(sampleRamp(PAL.refuse, 0.35 + (k / B) * 0.6));
+      ctx.fill(huskPaths[k]!);
+      ctx.fillStyle = lit(sampleRamp(PAL.seed, (k + 0.5) / B));
+      ctx.fill(seedPaths[k]!);
+    }
+    ctx.fillStyle = lit([255, 236, 196], 0.45);
+    ctx.fill(gloss);
+  }
+
   /** Dust, shed wings and rain at screen resolution, for close-ups. */
   private specks(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }, z: number): void {
     const ctx = this.ctx;
@@ -392,7 +460,11 @@ export class Renderer {
       w.dirtyAll = true;
       sim.nest.zonesChanged = false;
     }
-    this.closeUp = cam.zoom * this.dpr >= 5;
+    const close = cam.zoom * this.dpr >= 5;
+    if (close !== this.closeUp) {
+      this.closeUp = close;
+      w.dirtyAll = true;
+    }
     this.updateBase();
     this.buf.set(this.base);
     this.drawEntities(sim);
@@ -427,6 +499,7 @@ export class Renderer {
     const ants = col.queen && col.queen.alive ? [...col.ants.filter((a) => a.caste !== 'queen'), col.queen] : col.ants;
     this.painter.update(ants, dt, speed);
     const view = { x0: cam.x - cam.screenW / 2 / cam.zoom, y0: cam.y - cam.screenH / 2 / cam.zoom, x1: cam.x + cam.screenW / 2 / cam.zoom, y1: cam.y + cam.screenH / 2 / cam.zoom };
+    if (this.closeUp) this.grains(view);
     this.painter.drawCorpses(ctx, col.corpses, z, this.lightAt, view);
     this.painter.drawBrood(ctx, col.brood, z, this.lightAt, view, TUNING.pupaTicks);
     this.painter.draw(ctx, ants, z, this.lightAt, view, selected);

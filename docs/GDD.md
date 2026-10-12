@@ -10,7 +10,8 @@ Gerçek ölçekte bir toprak kesitinde, bir *Messor structor* (hasatçı karınc
 
 - Tarayıcıda oynanabilir prototip var: kraliçe iner, kanatlarını koparır, yuvasını kazar, ilk işçileri büyütür. Sonra koloni kendi başına büyür: kazar, tohum toplar, ambar doldurur, yavru besler, çöp atar. Yağmur ve fırtınada su basar, ıslak tavanlar çöker.
 - Koloni beyni arayüzü (Mod B) çalışıyor.
-- Simülasyon sağlam. 8 farklı haritada 40 dakikalık (yaklaşık 7 oyun günü) otomatik testte 8 koloninin 8'i de büyüdü: 107–151 işçi, 2300–3000 hücrelik yuva.
+- Simülasyon sağlam. 8 farklı haritada 30 dakikalık (5 oyun günü) otomatik testte 8 koloninin 8'i de büyüdü: 118–186 işçi, 2000–3300 hücrelik yuva, hiç açlık ölümü yok.
+- Gece boyunca bulunan ve düzeltilen önemli hatalar: krater kenarında sapı kesilip havada kalan bitkiler toplayıcıları kilitliyordu (iki haritada koloni açlıktan ölüyordu); kraliçe yüzeydeki bir çakılın üstüne inince kazamıyordu.
 - Çalıştırmak için: `npm install` ve ardından `npm run dev`. Tek dosyalık sürüm için `npm run build:artifact`.
 
 ## 3. Görsel dil: seçtiğim yön ve nedenleri
@@ -31,14 +32,54 @@ Hedef şu: ekran görüntüsünün kendisi paylaşılmak istensin. Bir doğa bel
 
 ### 3.2 Makro objektif hissi
 
-- Toprak kesiti ve karıncalar keskin piksel sanatı.
+Görüntü üç katmandan oluşuyor, bir makro fotoğraftaki gibi:
+
+1. **Arka plan (odak dışı):** çayır, gökyüzü, bokeh. Yumuşak ve bulanık.
+2. **Toprak kesiti (sahne):** keskin piksel sanatı, 1 piksel = 1 mm.
+3. **Karıncalar (özne):** ekran çözünürlüğünde, her yakınlaştırmada keskin (bkz. 3.3).
+
+Ayrıntılar:
+
+- Toprak kesiti keskin piksel sanatı.
 - Arkadaki çayır, gökyüzü ve çimen yarım çözünürlükte çiziliyor ve yumuşak büyütülüyor. Böylece arka plan, makro fotoğraftaki gibi alan derinliği dışında kalıyor.
 - Arka planda bokeh daireleri ve gece ateş böcekleri var.
 - Kenarlarda vinyet, üstünde hafif film greni var.
 
 **Neden:** Piksel sanatı tek başına "retro oyun" diye okunuyor. Arkadaki bulanıklık ise "kameranın önündeki gerçek bir şey" diye okunuyor. İkisi birlikte hem okunaklı hem de sinematik duruyor. Bu, klip aracı fikriyle de doğrudan bağlantılı (bkz. 7.4).
 
-### 3.3 Toprak gerçek horizonlarla
+### 3.3 Karıncalar: sahnenin öznesi
+
+Karıncalar toprak gibi piksel olarak değil, ekran çözünürlüğünde çiziliyor. İlk denemede piksel karıncalar yakınlaştırınca okunmaz bir gürültüye dönüşüyordu. Makro lens fikrinde netlik özneye ait olmalı.
+
+- **Anatomi:** *Messor*, Myrmicinae alt familyasından. Bu yüzden:
+  - Belde iki boğum var (petiol ve postpetiol).
+  - Göğsün arkasında küçük dikenler var.
+  - Başın altında "psammofor" var: kum taşımaya yarayan sakal gibi kıllar. Bu kıllar yalnızca yakın planda görünüyor.
+- **Hareket:**
+  - Altı bacak tripod yürüyüşüyle adım atıyor.
+  - Antenler sürekli tarıyor.
+  - Karıncalar hücreden hücreye kaymadan süzülüyor.
+  - Duvara ve tavana dönüp ters yürüyebiliyor.
+  - Geri dönerken gövde gerçekten dönüyor.
+  - Kazarken başını sallıyor.
+- **Işık:**
+  - Parlak kitin üstünde ince bir parlama var.
+  - Kenarda bir piksellik sıcak bir ışık hattı var; üst üste binen karıncalar böylece ayrışıyor.
+  - Yuvada arka duvara yumuşak bir gölge düşüyor.
+- **Kastlar:** Majörün kafası iri ve kızıl-kahve. Kraliçenin karnı büyük; kanatları yarı saydam ve inince düşüyor.
+- **Yavru ve ölüler:**
+  - Larvalar beslendikçe şişiyor ve kursaklarında tohum lapası görünüyor.
+  - Pupalar çıplak, çünkü Myrmicinae koza örmez. Olgunlaştıkça kararıyorlar.
+  - Ölü karıncalar sırtüstü yatıyor, bacakları kıvrık.
+- **Ambar:** Yakın planda tohumlar parlak taneler olarak yığılıyor, kabuklar soluk pullar gibi duruyor.
+- **Ayrıntı seviyesi:**
+  - Uzaktan sade bir siluet.
+  - Yakında tam anatomi.
+  - 150+ karıncada çizim maliyeti yaklaşık 2–3 ms.
+
+**Neden:** Toprak piksel, karınca pürüzsüz. Bu bilerek yapılmış bir karışım. Sahne bir "tuval", karınca ise kameranın odaklandığı canlı. Yakın plan ekran görüntüleri ve klipler bu sayede belgesel gibi görünüyor. Bunu beğenmezsen karıncalar tekrar piksel yapılabilir; sorulardan biri bu (9. bölüm).
+
+### 3.4 Toprak gerçek horizonlarla
 
 - Yukarıdan aşağı katmanlar:
   1. Koyu humus ve kökler.
@@ -48,10 +89,18 @@ Hedef şu: ekran görüntüsünün kendisi paylaşılmak istensin. Bir doğa bel
 - Her katmanın sertliği farklı. Kil en zor kazılanı ama tavanı en iyi o tutuyor.
 - Kazılan toprak dışarı taşınıyor ve yuva ağzının çevresinde gerçek *Messor* yuvaları gibi bir toprak höyüğü oluşturuyor.
 - Tünelin arka duvarı, kazılan toprağın tonunu "hatırlıyor". Böylece kazılmış yer, kazılmamış yerden ayrı görünüyor.
+- Toprak dokusu:
+  - Çimenlerin saçak kökleri ve yoncanın kazık kökü, içinden geçtiği toprağın açık tonunda iplikler olarak görünüyor.
+  - Eski solucan yolları (krotovina) koyu üst toprakla dolu. Gevşek oldukları için karıncalar bu yolları takip etmeyi sever.
+  - Kilin içinde gri ve pas rengi lekeler var; suyun durduğu ve demirin paslandığı yerler.
+  - Alt toprakta ince tabakalanma var.
+  - Üst toprakta kömür parçacıkları var.
+- Höyük gerçek bir *Messor* krateri gibi alçak ve geniş: girişin iki yanında bir sırt, çayıra doğru incelen bir döküntü. Koloni büyüdükçe höyük de büyüyor.
+- Yuva mimarisi kendiliğinden "Noel ağacı" şeklini alıyor: tek dikey şaft ve iki yanında yassı odalar. Bu, Tschinkel'in gerçek hasatçı karınca yuvalarına alüminyum dökerek çıkardığı kalıplarla aynı.
 
 **Neden:** Toprak bu oyunun asıl tuvali. Katmanlar hem güzel görünüyor hem de oyuna anlam katıyor: derin kazmak pahalı ama güvenli.
 
-### 3.4 Gece: kırmızı gözlem lambası
+### 3.5 Gece: kırmızı gözlem lambası
 
 - Gece yer üstü maviye ve karanlığa döner.
 - Yer altı ise kırmızı bir gözlem lambasıyla aydınlanır. Gerçek karınca bakıcıları da kırmızı ışık kullanır, çünkü karıncalar kırmızıyı göremez.
@@ -59,7 +108,7 @@ Hedef şu: ekran görüntüsünün kendisi paylaşılmak istensin. Bir doğa bel
 
 **Neden:** Bu sayede gece de oynanabilir oluyor ve ekran görüntüleri günün saatine göre çok farklı renk kimlikleri kazanıyor. Akşam altın sarısı, gece kırmızı ve lacivert, yağmurda kurşuni.
 
-### 3.5 Arayüz: laboratuvar aleti
+### 3.6 Arayüz: laboratuvar aleti
 
 - Yazı tipleri IBM Plex Mono (sayılar ve etiketler) ile IBM Plex Sans (metin).
 - Koyu, yarı saydam ve bulanık arkalıklı paneller.
@@ -68,7 +117,7 @@ Hedef şu: ekran görüntüsünün kendisi paylaşılmak istensin. Bir doğa bel
 
 **Neden:** Oyun "bilimsel gözlem" havasında. Arayüz sahneyle yarışmamalı, ona not düşmeli.
 
-### 3.6 Palet
+### 3.7 Palet
 
 | Kullanım | Renk |
 |---|---|
@@ -81,7 +130,7 @@ Hedef şu: ekran görüntüsünün kendisi paylaşılmak istensin. Bir doğa bel
 | Dinlenme odası tonu | `#3e3328` |
 | Uyarı | `#e07a5f` |
 
-### 3.7 Bilerek yapmadıklarım
+### 3.8 Bilerek yapmadıklarım
 
 - Sevimli, gözlü, çizgi film karıncalar yapmadım. Karınca küçük ve gerçekçi; kişilik davranıştan gelmeli.
 - Neon, bilim kurgu ve "oyunsu" HUD kullanmadım.
@@ -102,7 +151,8 @@ Oyuncu tek bir karıncaya emir vermez. Koloninin önceliklerini belirler. Her i�
 
 Ayrıca:
 
-- Bir karıncaya tıklarsan kamera onu takip eder. Panelde adı, kastı, yaşı, ne yaptığı ve ne taşıdığı görünür.
+- Bir karıncaya tıklarsan kamera onu takip eder. Karıncanın etrafında kehribar köşeli parantezler çıkar; panelde adı, kastı, yaşı, ne yaptığı ve ne taşıdığı görünür.
+- H tuşu tüm panelleri gizler; ekran görüntüsü ve video için temiz kadraj verir.
 - Bir odanın üstüne gelirsen içindeki tohum ya da yavru sayısı çıkar.
 - Kısayollar: Boşluk duraklatır, 1–5 hız seçer, F tüm kesiti gösterir, tekerlek zoom yapar, sürükleme kaydırır.
 
@@ -254,10 +304,10 @@ Aşağıdakiler benim önerilerim. Senin "benle konuşmadan tasarımı komple ya
 
 ## 8. Bilinen sorunlar
 
-- Karıncalar şaftta yer yer kümeleniyor ve görsel olarak "trafik sıkışıklığı" oluşuyor.
-- Toprak höyüğü fazla konik (gerçek *Messor* höyükleri daha yayvan).
+- **Tek giriş, yoğun trafik.** Büyük kolonide 60'tan fazla karınca aynı şafttan geçiyor: toprak taşıyanlar, kabuk atanlar, toplayıcılar. Gerçekçi ama görsel olarak kalabalık.
+  - Önerim: koloni 120 işçiyi geçince ikinci bir giriş açılsın (gerçek büyük *Messor* yuvalarında birden çok giriş olur).
+  - Bu bir mimari kararı olduğu için sormadan yapmadım.
 - Yağmur suyu derine pek inmiyor, bu yüzden çökmeler nadir.
-- Düşen meyveler mor piramit gibi görünüyor.
 - Ses yok.
 - Kayıt/yükleme yok.
 - Klavye dışında erişilebilirlik ayarı yok.
@@ -269,5 +319,7 @@ Aşağıdakiler benim önerilerim. Senin "benle konuşmadan tasarımı komple ya
 3. **Rakip koloni.** Yapay zekâ mı, ikinci oyuncu mu, sadece tehdit mi (7.1)?
 4. **İlk eklenecek ikinci tür hangisi?** Benim önerim *Solenopsis* (sal kurma) ya da *Lasius* (yaprak biti çiftliği).
 5. **Görsel dil.** Makro lens + gerçek ölçek + laboratuvar arayüzü yönü sana uyuyor mu? Değiştirmek istediğin bir şey var mı?
+   - Özellikle: toprak piksel, karıncalar pürüzsüz (3.3). Bu karışımı beğendin mi, yoksa her şey piksel mi olsun?
 6. **Oyuncu müdahalesi.** Koloni beyni dışında doğrudan dünya müdahalesi (tohum bırakma, su dökme, taş koyma) olsun mu? Şu an yalnızca sandbox'ta yağmur var.
 7. **Ses.** Ambiyans tasarımı ne yönde olsun? Mikrofonla kaydedilmiş gerçek toprak sesleri, ya da minimal synth?
+8. **İkinci giriş.** Büyük kolonilerde ikinci bir giriş açılsın mı (8. bölüm)? Oyuncu bunu kendisi mi işaretlesin, yoksa koloni kendisi mi karar versin?
