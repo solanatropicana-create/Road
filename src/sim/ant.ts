@@ -833,11 +833,16 @@ export class Ant {
         w.set(cell, EMPTY, w.tone[cell], w.tint[cell]);
         this.dropDist = 0;
       } else if (col.husks > 0 && room && (room.kind === 'granary' || room.kind === 'queen')) {
-        col.husks--;
+        // Chaff goes out in bundles: a few husks to a trip.
+        col.husks -= Math.min(3, col.husks);
         this.carry = Carry.Refuse;
         this.carryTone = sim.rng.int(150, 255);
         this.dropDist = 0;
-      } else this.wander(sim, w.bg[i] === 1);
+      } else {
+        // Someone got here first: look for other work rather than loiter.
+        if (col.husks === 0) this.reevalAt = 0;
+        this.wander(sim, w.bg[i] === 1);
+      }
     } else if (r === Step.Failed && sim.fields.sourceCount[F.Trash] === 0) {
       this.reevalAt = 0;
     }

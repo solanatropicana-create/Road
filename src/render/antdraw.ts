@@ -1,7 +1,7 @@
 import type { Ant } from '../sim/ant';
 import type { Brood, Corpse } from '../sim/brood';
 import type { World } from '../world/world';
-import { Carry } from '../sim/types';
+import { Carry, Task } from '../sim/types';
 import { SOLID } from '../world/mat';
 import { PAL, RGB, hex, mixRGB, sampleRamp } from './palette';
 
@@ -26,6 +26,8 @@ interface Vis {
   tx: number;
   ty: number;
   gait: number;
+  /** Seconds standing still (idle ants groom). */
+  still: number;
 }
 
 interface Body {
@@ -239,7 +241,7 @@ export class AntPainter {
       const ty = a.y + 0.5;
       let v = this.vis.get(a);
       if (!v) {
-        v = { x: tx, y: ty, down: Math.atan2(a.ly, a.lx), face: a.hx * a.ly - a.hy * a.lx || 1, dx: a.hx, dy: a.hy, tx, ty, gait: Math.random() * 6 };
+        v = { x: tx, y: ty, down: Math.atan2(a.ly, a.lx), face: a.hx * a.ly - a.hy * a.lx || 1, dx: a.hx, dy: a.hy, tx, ty, gait: Math.random() * 6, still: 0 };
         this.vis.set(a, v);
       }
       if (tx !== v.tx || ty !== v.ty) {
@@ -266,6 +268,7 @@ export class AntPainter {
         v.y += (ey / dist) * step;
         v.gait += (step / (a.caste === 'queen' ? QUEEN.stride : WORKER.stride)) * Math.PI;
       }
+      v.still = dist > 0.05 || (a.timer > 0 && a.task === Task.Dig) ? 0 : v.still + dt;
       // Pose: legs toward whatever the ant grips; on the bare glass, belly
       // toward the floor of the frame with the body along its path.
       let down: number;
@@ -310,7 +313,10 @@ export class AntPainter {
       const busy = a.timer > 0 ? Math.sin(this.time * 18 + a.id) * 0.12 : 0;
       if (a === selected) this.marker(ctx, body, z);
       const wall = this.world.bg[a.y * this.world.w + a.x] === 1;
+      // Standing about for a while: groom, drawing a foreleg over the antennae.
+      this.groom = v.still > 1.5 && a.carry === Carry.None ? Math.sin(this.time * 7 + a.id) : null;
       this.ant(ctx, a, body, v.gait, l, z, busy, false, wall);
+      this.groom = null;
       ctx.restore();
     }
   }
@@ -410,6 +416,9 @@ export class AntPainter {
   }
 
   /** One side's three legs as a single stroked path (tripod gait). */
+  /** Grooming stroke (-1..1) for the ant being drawn, or null when it isn't grooming. */
+  private groom: number | null = null;
+
   private legs(ctx: CanvasRenderingContext2D, b: Body, gait: number, col: RGB, l: RGB, px: number, dead: boolean): void {
     ctx.strokeStyle = css(col, l);
     ctx.lineWidth = Math.max(px, 0.22);
@@ -425,6 +434,10 @@ export class AntPainter {
         // Curled in against the belly.
         footX = hipX + (1 - k) * 0.35;
         footY = hipY + 0.3;
+      } else if (k === 0 && this.groom !== null) {
+        // The foreleg comes up past the mandibles and strokes the antenna.
+        footX = b.head[0] + b.head[2] * 0.6 + this.groom * 0.35;
+        footY = b.head[1] - b.head[3] * 0.2 + this.groom * 0.25;
       }
       const kneeX = (hipX + footX) / 2 + (k === 2 ? -0.25 : 0.25);
       const kneeY = dead ? hipY + 0.85 : Math.min(hipY, footY) - 0.45;

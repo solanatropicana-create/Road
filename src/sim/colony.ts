@@ -357,7 +357,12 @@ export class Colony {
       if (nest.frontier.length > 0) need[Task.Dig] = need[Task.Dig]! + 0.6;
     }
     need[Task.Nurse] = this.brood.length > 0 ? 0.12 + Math.min(1.2, (this.looseEggs + this.hungryLarvae * 1.5) / (adults * 0.15 + 2)) : 0;
-    need[Task.Clean] = f[F.Trash]! > 0 ? 0.12 + Math.min(0.8, f[F.Trash]! / 12) : 0;
+    // Cleaning demand follows the loads waiting to go out (husk bundles, the dead),
+    // not how much floor they happen to lie on.
+    let loads = Math.ceil(this.husks / 3);
+    for (const c of this.corpses) if (!c.carried) loads++;
+    if (loads === 0 && f[F.Trash]! > 0) loads = 1;
+    need[Task.Clean] = loads > 0 ? 0.08 + Math.min(0.8, loads / (adults * 0.08 + 4)) : 0;
     need[Task.Idle] = 0.28;
     for (const wk of WORK) need[WORK_TASK[wk]] = need[WORK_TASK[wk]]! * PRIO_MULT[this.prio[wk]]!;
     let sum = 0;

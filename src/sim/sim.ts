@@ -284,7 +284,8 @@ export class Sim {
         break;
       }
       case F.Trash: {
-        for (const c of col.corpses) if (!c.carried) push(c.y * w.w + c.x);
+        // Only the dead inside the nest need carrying out; outside they already are.
+        for (const c of col.corpses) if (!c.carried && w.bg[c.y * w.w + c.x] === 1) push(c.y * w.w + c.x);
         for (const c of nest.chambers) {
           // Husks wait on the floor of whichever room holds the stores.
           const store = col.husks > 0 && c.ready && (c.kind === 'granary' || c.kind === 'queen');
@@ -341,6 +342,12 @@ export class Sim {
       }
     }
     this.looseSeeds = found.length;
+    // Scavengers take the dead left lying out in the open.
+    const dead = this.colony.corpses;
+    for (let k = dead.length - 1; k >= 0; k--) {
+      const c = dead[k]!;
+      if (!c.carried && w.bg[c.y * w.w + c.x] === 0 && this.rng.chance(0.04)) dead.splice(k, 1);
+    }
     const eat = Math.max(0, Math.floor((found.length - 160) / 6)) + (this.rng.chance(0.3) ? 1 : 0);
     for (let k = 0; k < eat && found.length; k++) {
       const j = this.rng.int(0, found.length - 1);
