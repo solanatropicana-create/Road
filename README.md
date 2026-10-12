@@ -4,6 +4,13 @@
 
 Tasarım belgesi, görsel dil kararları ve açık sorular: [docs/GDD.md](docs/GDD.md)
 
+![Akşam ışığında kesit: tek şaft ve iki yanında yassı odalar](docs/img/hero.jpg)
+
+| | |
+|---|---|
+| ![Tohum taşıyan toplayıcılar, yakın plan](docs/img/macro.jpg) | ![Ambar: tohum yığını](docs/img/granary.jpg) |
+| ![Gece: kırmızı gözlem lambası ve ateş böcekleri](docs/img/night.jpg) | ![Fırtına: su şafttan iniyor](docs/img/storm.jpg) |
+
 ## Çalıştırma
 
 ```bash

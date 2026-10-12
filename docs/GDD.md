@@ -16,6 +16,8 @@ Gerçek ölçekte bir toprak kesitinde, bir *Messor structor* (hasatçı karınc
 
 ## 3. Görsel dil: seçtiğim yön ve nedenleri
 
+![Akşam ışığında kesit](img/hero.jpg)
+
 Hedef şu: ekran görüntüsünün kendisi paylaşılmak istensin. Bir doğa belgeselinin makro çekimi ile bir laboratuvar gözlem düzeneğinin arasında bir yerde duruyoruz. Çizgi film karıncası yok.
 
 ### 3.1 Gerçek ölçek: 1 hücre = 1 mm
@@ -77,6 +79,8 @@ Karıncalar toprak gibi piksel olarak değil, ekran çözünürlüğünde çizil
   - Yakında tam anatomi.
   - 150+ karıncada çizim maliyeti yaklaşık 2–3 ms.
 
+![Yakın plan: tohum taşıyan toplayıcılar ve kızıl başlı majörler](img/macro.jpg)
+
 **Neden:** Toprak piksel, karınca pürüzsüz. Bu bilerek yapılmış bir karışım. Sahne bir "tuval", karınca ise kameranın odaklandığı canlı. Yakın plan ekran görüntüleri ve klipler bu sayede belgesel gibi görünüyor. Bunu beğenmezsen karıncalar tekrar piksel yapılabilir; sorulardan biri bu (9. bölüm).
 
 ### 3.4 Toprak gerçek horizonlarla
@@ -101,6 +105,8 @@ Karıncalar toprak gibi piksel olarak değil, ekran çözünürlüğünde çizil
 **Neden:** Toprak bu oyunun asıl tuvali. Katmanlar hem güzel görünüyor hem de oyuna anlam katıyor: derin kazmak pahalı ama güvenli.
 
 ### 3.5 Gece: kırmızı gözlem lambası
+
+![Gece](img/night.jpg)
 
 - Gece yer üstü maviye ve karanlığa döner.
 - Yer altı ise kırmızı bir gözlem lambasıyla aydınlanır. Gerçek karınca bakıcıları da kırmızı ışık kullanır, çünkü karıncalar kırmızıyı göremez.
