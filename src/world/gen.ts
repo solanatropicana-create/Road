@@ -47,8 +47,10 @@ export function generate(seed: number): { world: World; plants: Plants; horizons
         world.tone[i] = rng.int(0, 255);
         continue;
       }
-      // Mottled boundaries: jitter the depth a little per cell.
-      const j = d + noise.fbm2(x / 5, y / 5, 2) * 4 + rng.range(-1.2, 1.2);
+      // Mottled boundaries: jitter the depth a little per cell, and let the clay
+      // horizon reach up in tongues along old cracks.
+      const tongue = noise.fbm2(x / 4 + 70, y / 16, 2);
+      const j = d + noise.fbm2(x / 5, y / 5, 2) * 4 + rng.range(-1.2, 1.2) + (d > 60 ? Math.max(0, tongue) * 14 : 0);
       let m = HUMUS;
       if (j >= hz.subsoil[x]!) m = SUBSOIL;
       else if (j >= hz.clay[x]!) m = CLAY;
@@ -57,13 +59,45 @@ export function generate(seed: number): { world: World; plants: Plants; horizons
       // Tone: soft blotches, crumb-sized aggregates (peds), and a little grain.
       const blotch = noise.fbm2(x / 9 + 50, y / 7, 3);
       const crumb = noise.n2(x / 2.2 + 9, y / 1.8 + 3);
-      world.tone[i] = clamp(Math.round(128 + blotch * 95 + crumb * 42 + rng.range(-10, 10)), 0, 255);
+      // Deeper horizons were laid down in thin beds: faint wavy lamination.
+      const beds = m === SUBSOIL || m === CLAY ? Math.sin((y + noise.fbm1(x / 40 + y / 30, 2) * 5) * 0.85) * (m === SUBSOIL ? 16 : 9) : 0;
+      world.tone[i] = clamp(Math.round(128 + blotch * 95 + crumb * 42 + beds + rng.range(-10, 10)), 0, 255);
       // Gravel grows more common with depth.
       const gravelP = m === SUBSOIL ? 0.05 : m === CLAY ? 0.018 : m === LOAM ? 0.006 : 0;
       if (rng.chance(gravelP)) {
         world.mat[i] = GRAVEL;
         world.tone[i] = rng.int(0, 255);
       }
+    }
+  }
+
+  // Krotovinas: old earthworm burrows backfilled with dark topsoil. Ants like
+  // to follow them, as the fill is softer than the soil around it.
+  for (let k = 0; k < 8; k++) {
+    let x = rng.range(10, w - 10);
+    let y = world.ground[Math.round(x)]! + rng.range(14, 40);
+    let a = Math.PI / 2 + rng.range(-0.9, 0.9);
+    const len = rng.int(30, 110);
+    const r = rng.range(1.2, 2.1);
+    for (let t = 0; t < len; t++) {
+      a += rng.range(-0.35, 0.35);
+      // Worms mostly go down, and turn back from the surface.
+      a += (Math.PI / 2 - a) * 0.04;
+      x += Math.cos(a) * 0.8;
+      y += Math.sin(a) * 0.8;
+      if (x < 3 || x > w - 4 || y > h - 20) break;
+      for (let oy = -2; oy <= 2; oy++)
+        for (let ox = -2; ox <= 2; ox++) {
+          if (ox * ox + oy * oy > r * r + 0.3) continue;
+          const xx = Math.round(x + ox);
+          const yy = Math.round(y + oy);
+          const i = yy * w + xx;
+          if (yy - world.ground[xx]! < 12 || !SOIL[world.mat[i]!] || world.mat[i] === GRAVEL) continue;
+          world.mat[i] = HUMUS;
+          // Lighter at the rim where the fill has mixed with the soil around it.
+          const edge = Math.sqrt(ox * ox + oy * oy) / (r + 0.5);
+          world.tone[i] = clamp(Math.round(185 + edge * 50 + noise.n2(xx / 2, yy / 2) * 30 + rng.range(-12, 12)), 0, 255);
+        }
     }
   }
 

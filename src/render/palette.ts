@@ -34,7 +34,7 @@ export const sampleRamp = (r: RGB[], t: number): RGB => {
  */
 export const PAL = {
   humus: ramp('#2a1d15', '#35251a', '#412e21', '#4e3828', '#5a4230'),
-  litterTop: ramp('#3c2a1b', '#563a22', '#6e4a2a'),
+  litterTop: ramp('#2a1d14', '#35261a', '#433021'),
   loam: ramp('#56402d', '#634a34', '#70553c', '#7d6045', '#8a6b4e'),
   clay: ramp('#71432a', '#814d30', '#905836', '#9e643e', '#ac7149'),
   subsoil: ramp('#8f7a5d', '#9c8768', '#a99473', '#b6a17f', '#c2ae8c'),

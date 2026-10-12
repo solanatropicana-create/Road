@@ -81,7 +81,7 @@ export class Game {
     if (this.selected && !this.selected.alive) this.selected = null;
     this.cam.follow = this.selected ? { x: this.selected.x, y: this.selected.y - 2 } : this.cam.follow;
     this.cam.update(dt);
-    this.renderer.render(this.sim, this.cam, dt);
+    this.renderer.render(this.sim, this.cam, dt, this.paused ? 0 : this.speed, this.selected);
     this.ui.update(dt);
     requestAnimationFrame((t) => this.frame(t));
   }

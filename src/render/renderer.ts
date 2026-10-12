@@ -6,11 +6,12 @@ import {
 import { PAL, RGB, ZONE_TINT, hex, mixRGB, pack, sampleRamp } from './palette';
 import { Backdrop, skyAt } from './backdrop';
 import { Camera } from './camera';
-import { SPRITES, WINGS, MOUTH, SpritePx } from './sprites';
+import { AntPainter } from './antdraw';
 import type { Sim } from '../sim/sim';
 import type { Ant } from '../sim/ant';
-import { Carry } from '../sim/types';
+import { TUNING } from '../config';
 import { smoothstep, clamp } from '../util/math';
+import { Noise } from '../util/noise';
 
 const BACKWALL_DARK = hex('#120b07');
 
@@ -42,6 +43,9 @@ export class Renderer {
   private lutB = new Uint16Array(512);
   private grain: HTMLCanvasElement;
   private vignette: HTMLCanvasElement | null = null;
+  private painter: AntPainter;
+  /** Static soil features too fine for the sim to care about (mottles, flecks). */
+  private detail: Uint8Array;
   dpr = 1;
   /** Seconds, for animation. */
   time = 0;
@@ -59,6 +63,31 @@ export class Renderer {
     this.base = new Uint32Array(world.size);
     this.backdrop = new Backdrop(world.w, world.h, seed);
     this.grain = this.makeGrain();
+    this.painter = new AntPainter(world);
+    this.detail = this.makeDetail(seed);
+  }
+
+  /**
+   * Redox mottles in the clay (grey where water stood, rust where iron
+   * oxidised), charcoal flecks in the topsoil, pale grains in the subsoil.
+   */
+  private makeDetail(seed: number): Uint8Array {
+    const w = this.world;
+    const n = new Noise(seed * 13 + 5);
+    const out = new Uint8Array(w.size);
+    for (let y = 0; y < w.h; y++) {
+      for (let x = 0; x < w.w; x++) {
+        const d = y - w.ground[x]!;
+        if (d < 2) continue;
+        const i = y * w.w + x;
+        const hsh = ((Math.imul(i, 2654435761) >>> 0) % 10000) / 10000;
+        if (d > 95 && n.fbm2(x / 3.2, y / 2.6, 2) > 0.42) out[i] = 1;
+        else if (d > 75 && n.fbm2(x / 2.8 + 40, y / 2.8 + 40, 2) > 0.52) out[i] = 2;
+        else if (d < 50 && hsh < 0.006) out[i] = 3;
+        else if (d > 170 && hsh < 0.02) out[i] = 4;
+      }
+    }
+    return out;
   }
 
   resize(cssW: number, cssH: number, dpr: number): void {
@@ -109,7 +138,12 @@ export class Renderer {
       case SUBSOIL: c = sampleRamp(PAL.subsoil, tone); break;
       case GRAVEL: c = sampleRamp(PAL.gravel, tone); break;
       case STONE: c = sampleRamp(PAL.stone[w.tint[i]! & 3]!, tone); break;
-      case ROOT: c = sampleRamp(PAL.root, tone); break;
+      case ROOT: {
+        // Fine roots: pale threads in whatever soil they run through.
+        const soil = sampleRamp(soilRamp(this.guessSoil(x, y)), 0.35 + tone * 0.3);
+        c = mixRGB(soil, [214, 190, 146], 0.22 + tone * 0.12);
+        break;
+      }
       case BEDROCK: c = sampleRamp(PAL.bedrock, tone); break;
       case SAND: {
         // Excavated soil dries paler than the face it came from, and looks grainier.
@@ -136,6 +170,13 @@ export class Renderer {
       } else if (dnOpen && w.bg[dn] === 1) {
         c = [c[0] * 0.72, c[1] * 0.72, c[2] * 0.74];
       }
+    }
+    const det = this.detail[i]!;
+    if (det && m !== GRAVEL && m !== STONE && m !== ROOT) {
+      if (det === 1 && (m === CLAY || m === SUBSOIL)) c = mixRGB(c, [124, 128, 124], 0.32);
+      else if (det === 2 && m !== HUMUS) c = mixRGB(c, [178, 94, 42], 0.3);
+      else if (det === 3) c = mixRGB(c, [28, 22, 20], 0.7);
+      else if (det === 4) c = mixRGB(c, [218, 208, 188], 0.45);
     }
     const moist = w.moist[i]!;
     if (moist > 0) {
@@ -260,89 +301,7 @@ export class Renderer {
     this.buf[y * w.w + x] = c;
   }
 
-  private drawSprite(ant: Ant, sprite: SpritePx[]): void {
-    const hx = ant.hx;
-    const hy = ant.hy;
-    const lx = ant.lx;
-    const ly = ant.ly;
-    for (const p of sprite) {
-      this.px(ant.x + p.u * hx + p.r * lx, ant.y + p.u * hy + p.r * ly, p.c);
-    }
-  }
-
-  private carryColor(ant: Ant): number {
-    switch (ant.carry) {
-      case Carry.Soil: {
-        const c = mixRGB(sampleRamp(soilRamp(ant.carryTint), ant.carryTone / 255), [230, 215, 190], 0.14);
-        return pack(c[0], c[1], c[2]);
-      }
-      case Carry.Seed: { const c = sampleRamp(PAL.seed, ant.carryTone / 255); return pack(c[0], c[1], c[2]); }
-      case Carry.Fruit: { const c = sampleRamp(PAL.fruit, 0.7); return pack(c[0], c[1], c[2]); }
-      case Carry.Egg: return pack(240, 234, 216);
-      case Carry.Larva: return pack(232, 222, 196);
-      case Carry.Pupa: return pack(226, 210, 172);
-      case Carry.Corpse: return pack(28, 20, 16);
-      case Carry.Refuse: { const c = sampleRamp(PAL.refuse, ant.carryTone / 255); return pack(c[0], c[1], c[2]); }
-      default: return 0;
-    }
-  }
-
-  private drawAnt(ant: Ant): void {
-    const frame = (ant.step >> 1) & 1;
-    this.drawSprite(ant, SPRITES[ant.caste][frame]!);
-    if (ant.caste === 'queen' && ant.wings) this.drawSprite(ant, WINGS);
-    if (ant.carry !== Carry.None) {
-      const m = MOUTH[ant.caste];
-      const c = this.carryColor(ant);
-      const ax = ant.x + m.u * ant.hx + m.r * ant.lx;
-      const ay = ant.y + m.u * ant.hy + m.r * ant.ly;
-      this.px(ax, ay, c);
-      // Bigger loads take two pixels.
-      if (ant.carry === Carry.Seed || ant.carry === Carry.Larva || ant.carry === Carry.Pupa || ant.carry === Carry.Corpse || ant.carry === Carry.Fruit) {
-        this.px(ax + ant.hx, ay + ant.hy, c);
-        if (ant.carry === Carry.Corpse || ant.carry === Carry.Pupa) this.px(ax - ant.lx, ay - ant.ly, c);
-      }
-    }
-  }
-
   private drawEntities(sim: Sim): void {
-    const col = sim.colony;
-    const egg = pack(240, 234, 216);
-    const larvaA = pack(234, 224, 198);
-    const larvaB = pack(206, 192, 160);
-    const pupa = pack(230, 214, 178);
-    const pupaEye = pack(90, 60, 40);
-    for (const b of col.brood) {
-      if (b.carried) continue;
-      if (b.stage === 0) {
-        this.px(b.x, b.y, egg);
-      } else if (b.stage === 1) {
-        // A larva grows from a speck to a fat curled grub.
-        const big = b.size > 0.5;
-        this.px(b.x, b.y, larvaA);
-        this.px(b.x + 1, b.y, larvaB);
-        if (big) {
-          this.px(b.x, b.y - 1, larvaA);
-          this.px(b.x - 1, b.y, larvaA);
-        }
-      } else {
-        this.px(b.x - 1, b.y, pupa);
-        this.px(b.x, b.y, pupa);
-        this.px(b.x + 1, b.y, pupa);
-        this.px(b.x, b.y - 1, pupa);
-        this.px(b.x + 1, b.y - 1, pupaEye);
-      }
-    }
-    const dead = pack(36, 28, 24);
-    for (const c of col.corpses) {
-      if (c.carried) continue;
-      this.px(c.x - 1, c.y, dead);
-      this.px(c.x, c.y, dead);
-      this.px(c.x + 1, c.y, dead);
-      this.px(c.x, c.y - 1, pack(60, 48, 40));
-    }
-    for (const a of col.ants) if (a.caste !== 'queen') this.drawAnt(a);
-    if (col.queen && col.queen.alive) this.drawAnt(col.queen);
     // Particles (dust, rain, wings).
     for (const p of sim.particles.list) {
       this.px(Math.round(p.x), Math.round(p.y), p.color);
@@ -386,7 +345,16 @@ export class Renderer {
 
   // ---------------------------------------------------------------- frame
 
-  render(sim: Sim, cam: Camera, dt: number): void {
+  /** Light multipliers (1 = neutral) at a world point, matching the slice. */
+  private lightAt = (x: number, y: number): RGB => {
+    const w = this.world;
+    const gx = clamp(Math.round(x), 0, w.w - 1);
+    const k = clamp(Math.round(y) - w.ground[gx]! + 128, 0, 511);
+    return [this.lutR[k]! / 256, this.lutG[k]! / 256, this.lutB[k]! / 256];
+  };
+
+  /** speed: sim time per real time (0 when paused). */
+  render(sim: Sim, cam: Camera, dt: number, speed = 1, selected: Ant | null = null): void {
     this.time += dt;
     const w = this.world;
     this.zoneKinds = sim.nest.zoneKinds();
@@ -423,6 +391,14 @@ export class Renderer {
     ctx.imageSmoothingEnabled = false;
     ctx.setTransform(z, 0, 0, z, ox, oy);
     ctx.drawImage(this.wc, 0, 0);
+    // Ants, brood and the dead, at full screen resolution over the slice.
+    const col = sim.colony;
+    const ants = col.queen && col.queen.alive ? [...col.ants.filter((a) => a.caste !== 'queen'), col.queen] : col.ants;
+    this.painter.update(ants, dt, speed);
+    const view = { x0: cam.x - cam.screenW / 2 / cam.zoom, y0: cam.y - cam.screenH / 2 / cam.zoom, x1: cam.x + cam.screenW / 2 / cam.zoom, y1: cam.y + cam.screenH / 2 / cam.zoom };
+    this.painter.drawCorpses(ctx, col.corpses, z, this.lightAt, view);
+    this.painter.drawBrood(ctx, col.brood, z, this.lightAt, view, TUNING.pupaTicks);
+    this.painter.draw(ctx, ants, z, this.lightAt, view, selected);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
     // Lightning: the whole frame flashes white for a moment.

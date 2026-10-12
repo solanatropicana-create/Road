@@ -3,7 +3,7 @@ import { generate, Horizons } from '../world/gen';
 import { World } from '../world/world';
 import { Plants } from '../world/plants';
 import { Physics } from '../world/physics';
-import { EMPTY, SAND, SEED, FRUIT, SOLID, REFUSE, WATER } from '../world/mat';
+import { EMPTY, SAND, SEED, FRUIT, SOLID, REFUSE, WATER, STONE, BEDROCK } from '../world/mat';
 import { ABSORB } from '../world/moisture';
 import { Nest } from './nest';
 import { Fields, F, FIELD_COUNT } from './fields';
@@ -97,11 +97,33 @@ export class Sim {
     return x > 40 && x < this.world.w - 40;
   }
 
+  /** Nearest column to x where no pebble sits over the burrow (she cannot dig through stone). */
+  private diggableNear(x: number): number {
+    const w = this.world;
+    const clear = (cx: number): boolean => {
+      for (let xx = cx - 3; xx <= cx + 3; xx++) {
+        const g = w.ground[xx]!;
+        for (let y = g - 4; y <= g + 8; y++) {
+          const m = w.mat[y * w.w + xx]!;
+          if (m === STONE || m === BEDROCK) return false;
+        }
+      }
+      return true;
+    };
+    for (let d = 0; d < 40; d++) {
+      for (const s of d === 0 ? [0] : [d, -d]) {
+        const cx = x + s;
+        if (cx > 40 && cx < w.w - 40 && clear(cx)) return cx;
+      }
+    }
+    return x;
+  }
+
   /** A mated queen lands at column x and starts her colony. */
   found(x: number): void {
     if (this.nest.founded) return;
     const w = this.world;
-    x = Math.max(40, Math.min(w.w - 40, Math.round(x)));
+    x = this.diggableNear(Math.max(40, Math.min(w.w - 40, Math.round(x))));
     // Land on top of whatever is there (litter, a pebble), then walk down into the burrow.
     let y = 1;
     while (y < w.h - 1 && !SOLID[w.mat[(y + 1) * w.w + x]!]) y++;
@@ -113,6 +135,11 @@ export class Sim {
     this.colony.queen = q;
     this.colony.middenSide = this.rng.chance(0.5) ? -1 : 1;
     this.nest.found(x);
+    // Plants the crater cut through go entirely: a stem severed at the base would
+    // leave flowers and seeds hanging in the air, out of every forager's reach.
+    for (const p of [...this.plants.list]) {
+      if (p.parts.some((pt) => w.plan[pt.i] && !w.plant[pt.i] && w.bg[pt.i] === 0)) this.plants.remove(p);
+    }
     this.nest.scan();
     for (let f = 0; f < FIELD_COUNT; f++) this.buildField(f);
   }

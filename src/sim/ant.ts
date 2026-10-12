@@ -58,6 +58,11 @@ export class Ant {
   private search = 0;
   private lastDir = -1;
   private stuck = 0;
+  /** Steps walked on the surface with the current load. */
+  private trip = 0;
+  /** Steps spent following a food scent, and when scents count again after giving up. */
+  private sniffSteps = 0;
+  private noSniffUntil = 0;
   /** Steps spent unable to find a way to the current target. */
   private lost = 0;
   private buried = 0;
@@ -436,8 +441,8 @@ export class Ant {
       if (this.lost > 90) this.discard(sim);
       return;
     }
-    // Hopelessly stuck on the surface with a load: drop it and go back to work.
-    if (++this.stuck > 600) {
+    // Hopelessly lost on the surface with a load: drop it and go back to work.
+    if (++this.trip > 900) {
       this.discard(sim);
       return;
     }
@@ -445,12 +450,23 @@ export class Ant {
     if (this.dropDist === 0) {
       // Most spoil lands close, some is carried far: a low, wide crater mound.
       this.dropDist = refuse ? sim.rng.int(34, 70) : Math.round(10 + Math.pow(sim.rng.next(), 1.6) * 70);
-      // Spoil goes down whichever side of the crater the ant came up on.
-      const side = Math.sign(this.x - ex) || (sim.rng.chance(0.5) ? -1 : 1);
+      // Spoil goes down whichever side of the crater the ant came up on, unless
+      // that side already carries much more of the heap than the other.
+      const [left, right] = sim.colony.spoilSides;
+      let side = Math.sign(this.x - ex) || (sim.rng.chance(0.5) ? -1 : 1);
+      if (side > 0 && right > left * 1.3 + 20) side = -1;
+      else if (side < 0 && left > right * 1.3 + 20) side = 1;
       this.dumpDir = refuse ? sim.colony.middenSide : side;
       this.stuck = 0;
+      this.trip = 0;
     }
     const away = Math.abs(this.x - ex);
+    // Keep the mound low and wide: walk on over the heap rather than piling it higher.
+    // The allowed height falls off gently from the crater and rises as the nest
+    // grows, so all the spoil fits in one broad, low cone (as real Messor mounds).
+    const heap = w.ground[this.x]! - this.y;
+    const maxHeap = Math.max(1.5, Math.sqrt(sim.nest.openCells * 0.09) + 2 - away * 0.07);
+    if (!refuse && heap > maxHeap && away >= this.dropDist && this.stuck < 200 && this.x > 4 && this.x < w.w - 5) this.dropDist = away + 3;
     const canDrop = !w.plan[i] && this.grounded(sim, i) && Math.sign(this.x - ex) !== -this.dumpDir;
     if ((canDrop && (away >= this.dropDist || this.stuck > 90)) || (!w.plan[i] && this.stuck > 200)) {
       // Let go: the load becomes a grain on the ground here.
@@ -459,6 +475,7 @@ export class Ant {
         w.set(i, REFUSE, tone, 0);
       } else {
         w.set(i, SAND, this.carryTone, this.carryTint);
+        sim.colony.spoilSides[this.x < ex ? 0 : 1]++;
       }
       this.carry = Carry.None;
       this.dropDist = 0;
@@ -491,7 +508,8 @@ export class Ant {
     if (bestK >= 0) {
       const before = Math.abs(this.x - ex);
       this.moveTo(sim, bestK);
-      if (Math.abs(this.x - ex) <= before) this.stuck++;
+      // Climbing over the heap counts as progress; only backing off or shuffling doesn't.
+      if (Math.abs(this.x - ex) < before || (Math.abs(this.x - ex) === before && DY[bestK]! >= 0)) this.stuck++;
     } else {
       this.stuck++;
       this.wander(sim);
@@ -599,6 +617,7 @@ export class Ant {
     const food = this.findAdjacent(sim, (n) => this.isForageFood(sim, n));
     if (food >= 0) {
       this.startAct(Act.Pick, food, 10 + sim.rng.int(0, 8));
+      this.sniffSteps = 0;
       return;
     }
     if (++this.search > TUNING.forageGiveUpTicks * this.speed) {
@@ -651,8 +670,14 @@ export class Ant {
 
   /** Random search biased by trail pheromone, outward from the nest, mostly on the ground. */
   private searchStep(sim: Sim, i: number): void {
-    const k0 = this.sniff(sim, i);
+    // A scent that leads nowhere (seed on a stem cut off or buried under spoil)
+    // is given up on for a while, or the whole forage force would crowd round it.
+    const k0 = sim.tick >= this.noSniffUntil ? this.sniff(sim, i) : -1;
     if (k0 >= 0) {
+      if (++this.sniffSteps > 25) {
+        this.sniffSteps = 0;
+        this.noSniffUntil = sim.tick + TICK_HZ * 20;
+      }
       this.moveTo(sim, k0);
       return;
     }

@@ -27,6 +27,8 @@ export class Colony {
   queen: Ant | null = null;
   readonly brood: Brood[] = [];
   readonly corpses: Corpse[] = [];
+  /** Loads of spoil dropped left and right of the entrance (keeps the mound even). */
+  readonly spoilSides: [number, number] = [0, 0];
   readonly broodCell: Int32Array;
   private broodById = new Map<number, Brood>();
 

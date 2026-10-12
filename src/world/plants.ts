@@ -70,6 +70,8 @@ export class Plants {
     if (!SOIL[w.mat[ground * w.w + x]!]) return null;
     const p = new Plant(kind, x, ground, this.rng);
     this.design(p);
+    // Nothing takes root in the nest's crater (it would grow with its stem cut).
+    if (p.parts.some((pt) => w.plan[pt.i])) return null;
     this.roots(p);
     this.list.push(p);
     if (instant) {
@@ -175,32 +177,62 @@ export class Plants {
   private roots(p: Plant): void {
     const w = this.world;
     const r = this.rng;
-    const count = p.kind === 'grass' ? r.int(3, 6) : r.int(2, 4);
-    const maxLen = p.kind === 'grass' ? 46 : 30;
-    for (let k = 0; k < count; k++) {
-      let x = p.x + r.int(-1, 1);
-      let y = p.baseY + 1;
-      let dx = r.range(-0.9, 0.9);
-      const len = r.int(Math.floor(maxLen * 0.4), maxLen);
-      let fx = x;
+    const put = (x: number, y: number): void => {
+      const xi = Math.round(x);
+      const yi = Math.round(y);
+      if (!w.inside(xi, yi)) return;
+      const i = yi * w.w + xi;
+      if (SOIL[w.mat[i]!]) w.set(i, ROOT, r.int(0, 255));
+    };
+    if (p.kind !== 'grass') {
+      // Clover and shepherd's purse: one tapering taproot with a few laterals.
+      let x = p.x;
+      let a = Math.PI / 2 + r.range(-0.2, 0.2);
+      const len = r.int(22, 40);
       for (let t = 0; t < len; t++) {
-        fx += dx + r.range(-0.6, 0.6);
-        dx *= 0.92;
-        y += r.chance(0.85) ? 1 : 0;
-        x = Math.round(fx);
-        if (!w.inside(x, y)) break;
-        const i = y * w.w + x;
-        if (SOIL[w.mat[i]!]) w.set(i, ROOT, r.int(0, 255));
-        // Fine side rootlets.
-        if (r.chance(0.12)) {
-          const s = r.chance(0.5) ? -1 : 1;
-          for (let q = 1; q < r.int(3, 7); q++) {
-            const j = (y + (q >> 1)) * w.w + x + s * q;
-            if (j < w.size && SOIL[w.mat[j]!]) w.set(j, ROOT, r.int(0, 255));
-          }
-        }
+        a += r.range(-0.25, 0.25) + (Math.PI / 2 - a) * 0.15;
+        x += Math.cos(a);
+        const y = p.baseY + 1 + t;
+        put(x, y);
+        if (t < len * 0.45) put(x + 1, y);
+        if (t > 3 && r.chance(0.1)) this.rootlet(x, y, r.chance(0.5) ? 0.5 : Math.PI - 0.5, r.int(4, 10), put);
+      }
+      return;
+    }
+    // Grass: a fibrous mat of fine roots, mostly straight down, wandering.
+    const count = r.int(5, 9);
+    for (let k = 0; k < count; k++) {
+      let x = p.x + r.range(-1.5, 1.5);
+      let y = p.baseY + 1;
+      let a = Math.PI / 2 + r.range(-0.55, 0.55);
+      const len = r.int(12, 48);
+      for (let t = 0; t < len; t++) {
+        a += r.range(-0.3, 0.3) + (Math.PI / 2 - a) * 0.08;
+        x += Math.cos(a);
+        y += Math.max(0.35, Math.sin(a));
+        put(x, y);
+        if (r.chance(0.06)) this.rootlet(x, y, a + (r.chance(0.5) ? 0.9 : -0.9), r.int(2, 6), put);
       }
     }
+  }
+
+  /** A fine side root: short, thread-like, curling downward. */
+  private rootlet(x: number, y: number, a: number, len: number, put: (x: number, y: number) => void): void {
+    for (let q = 0; q < len; q++) {
+      a += this.rng.range(-0.3, 0.3) + (Math.PI / 2 - a) * 0.12;
+      x += Math.cos(a);
+      y += Math.sin(a);
+      put(x, y);
+    }
+  }
+
+  /** Take a plant out entirely: stem, leaves, flowers and any seeds still on it. */
+  remove(p: Plant): void {
+    const w = this.world;
+    for (const pt of p.parts) if (w.plant[pt.i]) w.setPlant(pt.i, 0);
+    for (const s of p.slots) if (w.plant[s]) w.setPlant(s, 0);
+    const k = this.list.indexOf(p);
+    if (k >= 0) this.list.splice(k, 1);
   }
 
   private growStep(p: Plant): void {
