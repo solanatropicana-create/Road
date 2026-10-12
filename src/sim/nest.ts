@@ -170,7 +170,7 @@ export class Nest {
     return true;
   }
 
-  private stampDisc(cx: number, cy: number, r: number, out: number[] | null, above = 1): void {
+  private stampDisc(cx: number, cy: number, r: number, out: number[] | null, above = 0): void {
     const w = this.world;
     const R = Math.ceil(r);
     for (let dy = -R; dy <= R; dy++) {
@@ -234,11 +234,16 @@ export class Nest {
   /** Recount what's dug, find the digging frontier, refresh chamber floors and stores. */
   scan(): void {
     const w = this.world;
-    // Adopt debris and pockets that ended up inside the nest outside the plan.
-    for (const i of w.claimed) {
-      if (w.plan[i]) continue;
-      w.plan[i] = 1;
-      this.planCells.push(i);
+    // Adopt debris and pockets that ended up inside the nest outside the plan,
+    // but only where they touch the nest (two passes, so a clump joins up from
+    // the side that touches). Anything else is out in the meadow: not ours.
+    for (let pass = 0; pass < 2; pass++) {
+      for (const i of w.claimed) {
+        if (w.plan[i]) continue;
+        if (!w.plan[i - 1] && !w.plan[i + 1] && !w.plan[i - w.w] && !w.plan[i + w.w]) continue;
+        w.plan[i] = 1;
+        this.planCells.push(i);
+      }
     }
     w.claimed.length = 0;
     const mat = w.mat;

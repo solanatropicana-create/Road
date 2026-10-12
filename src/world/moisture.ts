@@ -132,7 +132,8 @@ export class Moisture {
         const p = open(below) ? 0.25 : open(w.mat[i - 1]!) || open(w.mat[i + 1]!) ? 0.06 : 0;
         if (p > 0 && this.rng.next() < ((m - slump) / (256 - slump)) * p) {
           w.set(i, SAND, w.tone[i], mat);
-          if (!w.plan[i]) w.claimed.push(i);
+          // Only a fall into the nest is the colony's to clear; slumps out in the meadow aren't.
+          if (!w.plan[i] && (w.plan[i + W] || w.plan[i - 1] || w.plan[i + 1])) w.claimed.push(i);
           this.collapses++;
         }
       }

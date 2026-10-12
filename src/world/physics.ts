@@ -137,6 +137,13 @@ export class Physics {
         return;
       }
     }
+    // Puddles in the open dry off in half a minute or so. (Checked before the
+    // water moves on: a droplet sliding about on flat ground must dry too, or it
+    // lingers for ever and cuts the ants' path across the surface.)
+    if (w.bg[i] === 0 && w.mat[i - W] === EMPTY && this.rng.next() < 1 / 400) {
+      w.set(i, EMPTY, w.tone[i], w.tint[i]);
+      return;
+    }
     // Run off.
     for (const d of [dir, -dir]) {
       if (x + d < 1 || x + d >= W - 1) continue;
@@ -156,11 +163,6 @@ export class Physics {
         this.move(i, j);
         return;
       }
-    }
-    // Puddles in the open dry off in half a minute or so.
-    if (w.bg[i] === 0 && w.mat[i - W] === EMPTY && this.rng.next() < 1 / 400) {
-      w.set(i, EMPTY, w.tone[i], w.tint[i]);
-      return;
     }
     // Standing water keeps soaking away slowly.
     if (this.rng.next() < 0.3) w.wake(i);

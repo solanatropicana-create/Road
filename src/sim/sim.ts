@@ -6,7 +6,7 @@ import { Physics } from '../world/physics';
 import { EMPTY, SAND, SEED, FRUIT, SOLID, REFUSE, WATER, STONE, BEDROCK } from '../world/mat';
 import { ABSORB } from '../world/moisture';
 import { Nest } from './nest';
-import { Fields, F, FIELD_COUNT } from './fields';
+import { Fields, F, FIELD_COUNT, FAR } from './fields';
 import { Colony } from './colony';
 import { Ant } from './ant';
 import { Particles } from './particles';
@@ -252,10 +252,17 @@ export class Sim {
       case F.Gran: {
         // Only granaries hold physical stores; without one, food goes into the
         // colony's shared crops at the royal chamber (see Ant.doForage).
+        // Seed is laid up from the far end of the room: filling from the doorway
+        // would heap the store across it and seal the granary off.
+        const entr = this.fields.dist[F.Entr]!;
         for (const c of nest.chambers) {
           if (c.kind !== 'granary' || !c.ready || c.seeds >= c.capacity) continue;
           const lim = c.floorY - Math.round(c.h * 0.45);
-          for (const i of c.floor) if (((i / w.w) | 0) >= lim) push(i);
+          let door = FAR;
+          for (const i of c.floor) door = Math.min(door, entr[i]!);
+          let n = 0;
+          for (const i of c.floor) if (((i / w.w) | 0) >= lim && entr[i]! >= door + 5 && entr[i] !== FAR) { push(i); n++; }
+          if (n === 0) for (const i of c.floor) if (((i / w.w) | 0) >= lim) push(i);
         }
 
         break;

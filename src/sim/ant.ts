@@ -793,8 +793,10 @@ export class Ant {
       if (r === Step.Arrived) {
         if (col.feedLarvaNear(this.x, this.y)) this.carry = Carry.None;
       } else if (r === Step.Failed && sim.fields.sourceCount[F.Larva] === 0) {
-        // No one hungry any more: put the food back in the store.
-        this.task = Task.Forage;
+        // No one hungry any more: share it out mouth to mouth (it was already
+        // harvested once, so it doesn't count as a new delivery).
+        col.reserve++;
+        this.carry = Carry.None;
       }
       return;
     }
@@ -810,7 +812,9 @@ export class Ant {
       }
       return;
     }
-    if (f[F.Larva]! > 0 && f[F.Store]! === 0 && col.reserve > 0) {
+    // Fetch food only while the hungry outnumber the meals already on their way.
+    const feedMore = col.hungryLarvae > col.mealsCarried;
+    if (feedMore && f[F.Larva]! > 0 && f[F.Store]! === 0 && col.reserve > 0) {
       // No stores yet: take food from the shared crops by the queen.
       if (this.descend(sim, F.Royal) === Step.Arrived) {
         col.reserve--;
@@ -819,7 +823,7 @@ export class Ant {
       }
       return;
     }
-    if (f[F.Larva]! > 0 && f[F.Store]! > 0) {
+    if (feedMore && f[F.Larva]! > 0 && f[F.Store]! > 0) {
       if (this.descend(sim, F.Store) === Step.Arrived) {
         const cell = this.findAdjacent(sim, (n) => {
           const m = w.mat[n]!;

@@ -59,6 +59,8 @@ export class Colony {
   readonly share: Record<number, number> = {};
   readonly count: Record<number, number> = {};
   hungryLarvae = 0;
+  /** Nurses currently carrying food to the brood. */
+  mealsCarried = 0;
   looseEggs = 0;
   starving = false;
 
@@ -185,7 +187,7 @@ export class Colony {
         if (b.fed >= req && b.age >= TUNING.larvaTicks * sp) {
           b.stage = 2;
           b.age = 0;
-        } else if (b.age > TUNING.larvaTicks * 3.5) {
+        } else if (b.age > TUNING.larvaTicks * 3.5 && !b.carried) {
           dead.push(b);
           this.deaths['larva starved'] = (this.deaths['larva starved'] ?? 0) + 1;
           // Nurses eat brood they cannot raise; little is wasted.
@@ -240,7 +242,9 @@ export class Colony {
     const adults = this.adults;
     const breedMult = [0.55, 1, 1.6][this.breeding]!;
     const cap = 8 + adults * TUNING.broodPerWorker * breedMult;
-    const foodFactor = adults < 6 ? 0.8 : this.stored < adults * 0.25 ? 2.6 : this.stored < adults * 0.8 ? 1.4 : 1;
+    // Food on hand: the granaries plus what the workers carry in their crops.
+    const food = this.stored + this.reserve;
+    const foodFactor = adults < 6 ? 0.8 : food < adults * 0.25 ? 2.6 : food < adults * 0.8 ? 1.4 : 1;
     this.eggTimer = Math.round(TUNING.eggInterval * [1.8, 1, 0.6][this.breeding]! * foodFactor * sim.rng.range(0.8, 1.2));
     if (this.brood.length >= cap) return;
     // Don't lay into a famine: the larvae already hatched need feeding first.
@@ -347,11 +351,12 @@ export class Colony {
     need[Task.Dig] = nest.frontier.length > 0 ? 0.3 + Math.min(1, nest.pendingCells / (adults * 5 + 40)) : 0;
     // Hunger reorganises the colony: empty stores pull workers out to forage
     // and leave digging for later.
-    const shortage = clamp(1 - this.stored / (adults * 2 + 12), 0, 1);
+    const food = this.stored + this.reserve;
+    const shortage = clamp(1 - food / (adults * 2 + 12), 0, 1);
     need[Task.Forage] = 0.3 + 0.9 * shortage + (this.starving ? 0.8 : 0);
     // Nobody goes out in the rain.
     if (sim.raining) need[Task.Forage] = need[Task.Forage]! * 0.08;
-    if (this.starving || this.stored < adults * 0.3) need[Task.Dig] = need[Task.Dig]! * 0.35;
+    if (this.starving || food < adults * 0.3) need[Task.Dig] = need[Task.Dig]! * 0.35;
     // Nowhere left to put seed: fewer foragers, more diggers (the granary needs finishing).
     if (f[F.Gran] === 0 && this.adults > 4) {
       need[Task.Forage] = need[Task.Forage]! * 0.3;
@@ -452,12 +457,15 @@ export class Colony {
     const occ = this.occ ?? (this.occ = new Int32Array(sim.world.size));
     for (const i of this.occCells) occ[i] = 0;
     this.occCells.length = 0;
+    let meals = 0;
     for (let k = 0; k < this.ants.length; k++) {
       const a = this.ants[k]!;
       const i = a.y * sim.world.w + a.x;
       occ[i] = k + 1;
       this.occCells.push(i);
+      if (a.task === Task.Nurse && (a.carry === Carry.Seed || a.carry === Carry.Fruit)) meals++;
     }
+    this.mealsCarried = meals;
     for (let k = 0; k < this.ants.length; k++) {
       const a = this.ants[k]!;
       if (a.alive) a.tick(sim);
