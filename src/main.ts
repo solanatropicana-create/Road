@@ -122,6 +122,18 @@ export class Game {
     }
   }
 
+  /** A fresh, unlanded world from another seed (the title screen's "another site"). */
+  newWorld(seed: number): void {
+    this.sim = new Sim(seed);
+    this.renderer = new Renderer(this.canvas, this.sim.world, seed);
+    this.selected = null;
+    this.director.stop();
+    this.lastSaveTick = 0;
+    this.resize();
+    this.cam.fit();
+    this.cam.zoom = this.cam.tzoom;
+  }
+
   setSpeed(i: number): void {
     this.speed = SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, i))]!;
     this.paused = false;

@@ -23,6 +23,15 @@ npm run dev            # http://localhost:5173
 - `?seed=123` aynı haritayı yeniden üretir.
 - `?paused=1` duraklatılmış başlatır.
 
+## Modlar
+
+Açılış ekranı iki yol sunar:
+
+- **İzle:** Koloni her şeye kendi karar verir. Sağdaki "Koloni" paneli işçilerin ne yaptığını, yavruları ve odaları salt okunur gösterir. Bir odaya tıklayınca kamera oraya gider.
+- **Yönlendir:** Koloni beyni sensin: iş öncelikleri, üreme, majör oranı, oda siparişleri.
+
+Mod, tuşlar panelinden (?) her an değiştirilebilir. İzle'ye geçince bütün ayarlar koloninin kendi varsayılanına döner.
+
 ## Kontroller
 
 | | |

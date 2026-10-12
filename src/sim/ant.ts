@@ -475,8 +475,8 @@ export class Ant {
     }
     const ex = sim.nest.foundX;
     if (this.dropDist === 0) {
-      // Most spoil lands close, some is carried far: a low, wide crater mound.
-      this.dropDist = refuse ? sim.rng.int(34, 70) : Math.round(7 + Math.pow(sim.rng.next(), 2.2) * 60);
+      // Spoil lands past the crater rim, thinning out over a hand's width: a low, wide ring.
+      this.dropDist = refuse ? sim.rng.int(34, 70) : Math.round(12 + Math.pow(sim.rng.next(), 1.5) * 110);
       // Spoil goes down whichever side of the crater the ant came up on
       // (crossing the pit with a load is not worth it).
       const side = Math.sign(this.x - ex) || (sim.rng.chance(0.5) ? -1 : 1);
@@ -499,14 +499,22 @@ export class Ant {
     // The allowed height falls off gently from the crater and rises as the nest
     // grows, so all the spoil fits in one broad, low cone (as real Messor mounds).
     const heap = w.ground[this.x]! - this.y;
-    const maxHeap = Math.max(1.5, Math.sqrt(sim.nest.openCells * 0.16) + 3 - away * 0.09);
-    if (!refuse && heap > maxHeap && away >= this.dropDist && this.stuck < 200 && this.x > 4 && this.x < w.w - 5) this.dropDist = away + 3;
+    // A crater ring a centimetre or so high at its rim, thinning out over a hand's width.
+    const rim = Math.min(TUNING.moundMax, 2 + Math.sqrt(sim.nest.openCells) * 0.14);
+    const maxHeap = Math.max(1.5, rim - away * 0.12);
+    // The chaff pile stays a low drift too (wind takes most of it; see Sim.settleSpoil).
+    const cap = refuse ? Math.min(maxHeap, TUNING.middenMax) : maxHeap;
+    if (heap > cap && away >= this.dropDist && this.stuck < 200 && this.x > 4 && this.x < w.w - 5) this.dropDist = away + 3;
     const canDrop = !w.plan[i] && this.grounded(sim, i) && Math.sign(this.x - ex) !== -this.dumpDir;
     if ((canDrop && (away >= this.dropDist || this.stuck > 90)) || (!w.plan[i] && this.stuck > 200)) {
       // Let go: the load becomes a grain on the ground here.
       if (refuse) {
-        const tone = this.carry === Carry.Corpse ? sim.rng.int(0, 25) : sim.rng.int(140, 255);
-        w.set(i, REFUSE, tone, 0);
+        // Chaff, like spoil, mostly goes to the part of the ring off the slice.
+        if (this.carry !== Carry.Corpse && sim.rng.next() < TUNING.spoilOffSlice) sim.chaffPuff(i);
+        else w.set(i, REFUSE, this.carry === Carry.Corpse ? sim.rng.int(0, 25) : sim.rng.int(140, 255), 0);
+      } else if (sim.rng.next() < TUNING.spoilOffSlice) {
+        // Spread off the slice (out of view): only a puff of dust shows here.
+        sim.dust(i, this.carryTint & 0x7f);
       } else {
         w.set(i, SAND, this.carryTone, this.carryTint);
       }

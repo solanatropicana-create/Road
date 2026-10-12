@@ -2,7 +2,7 @@ import { Rng } from '../util/rng';
 import { generate, Horizons } from '../world/gen';
 import { World } from '../world/world';
 import { Plants } from '../world/plants';
-import { Physics } from '../world/physics';
+import { Physics, PACKED } from '../world/physics';
 import { EMPTY, SAND, SEED, FRUIT, SOLID, REFUSE, WATER, STONE, BEDROCK } from '../world/mat';
 import { ABSORB } from '../world/moisture';
 import { Nest } from './nest';
@@ -172,6 +172,25 @@ export class Sim {
         vy: this.rng.range(-0.15, 0.05),
         life: this.rng.int(10, 24),
         gravity: 0.01,
+        color: pack(c[0], c[1], c[2]),
+      });
+    }
+  }
+
+  /** A load of husks scattered off the slice: a few flakes drift down here. */
+  chaffPuff(cell: number): void {
+    const w = this.world;
+    const x = cell % w.w;
+    const y = (cell / w.w) | 0;
+    for (let k = 0; k < 2; k++) {
+      const c = sampleRamp(PAL.refuse, 0.6 + this.rng.next() * 0.4);
+      this.particles.add({
+        x: x + this.rng.range(-0.5, 0.5),
+        y: y + this.rng.range(-0.5, 0.5),
+        vx: this.rng.range(-0.25, 0.25),
+        vy: this.rng.range(-0.2, 0),
+        life: this.rng.int(12, 26),
+        gravity: 0.008,
         color: pack(c[0], c[1], c[2]),
       });
     }
@@ -396,6 +415,7 @@ export class Sim {
     this.particles.step();
     this.physics.moisture.step();
     this.seasonal();
+    if (this.tick % 20 === 0) this.settleSpoil();
     this.rain();
     const m = this.physics.moisture;
     this.pendingCollapse += m.collapses;
@@ -481,6 +501,11 @@ export class Sim {
     // Ground soaks rain up to a point; past that the rain pools and runs off.
     // Loose spoil on the crater sheds most of it toward the mouth.
     const soak = ABSORB[m]! > 0 ? Math.max(0, 1 - w.moist[hit]! / 170) * (m === SAND ? 0.35 : 1) : 0;
+    // Rain loosens settled spoil, so the mound slumps lower with every shower.
+    if (m === SAND && !w.plan[hit] && w.tint[hit]! & PACKED && this.rng.next() < 0.5) {
+      w.tint[hit] = w.tint[hit]! & ~PACKED;
+      w.wake(hit);
+    }
     if (this.rng.next() < soak) {
       this.physics.moisture.add(hit, 40);
     } else if (prev >= 0 && prev < w.size && w.mat[prev] === EMPTY && this.rng.next() < 0.7) {
@@ -518,6 +543,38 @@ export class Sim {
       }
     }
     cells.length = j;
+  }
+
+  /**
+   * Spoil on the surface creeps: a grain that stands proud of its neighbours
+   * two cells away (a slope steeper than about 1 in 2) works loose and slides.
+   * Wind, foot traffic and drying do this slowly; rain does it fast (see impact).
+   */
+  private settleSpoil(): void {
+    if (!this.nest.founded) return;
+    const w = this.world;
+    const x0 = this.nest.foundX;
+    const top = (x: number): number => {
+      let y = 1;
+      while (y < w.h - 1 && w.mat[y * w.w + x] === EMPTY) y++;
+      return y;
+    };
+    for (let k = 0; k < 12; k++) {
+      const x = x0 + this.rng.int(-220, 220);
+      if (x < 3 || x >= w.w - 3) continue;
+      const y = top(x);
+      const i = y * w.w + x;
+      // Husks on the surface blow away or rot within a day or two.
+      if (w.mat[i] === REFUSE && !w.plan[i]) {
+        // (The dead outside take longer: scavengers and decay.)
+        if (this.rng.next() < TUNING.chaffDecay * (w.tone[i]! >= 140 ? 1 : 0.3)) w.set(i, EMPTY, 0, 0);
+        continue;
+      }
+      if (w.mat[i] !== SAND || w.plan[i] || !(w.tint[i]! & PACKED)) continue;
+      if (y > top(x - 2) - 2 && y > top(x + 2) - 2) continue;
+      w.tint[i] = w.tint[i]! & ~PACKED;
+      w.wake(i);
+    }
   }
 
   /** Seeds blow in from the meadow beyond the frame; now and then a berry drops. */

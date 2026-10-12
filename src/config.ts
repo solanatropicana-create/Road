@@ -47,6 +47,20 @@ export const TUNING = {
   nestCellsPerAnt: 14,
   nestCellsBase: 900,
 
+  // --- spoil (excavated soil carried to the surface)
+  /**
+   * Share of spoil loads that end up off the slice. A real nest's spoil lies
+   * in a ring all round the entrance; a thin slice through it shows only a
+   * little of that ring, so most loads are carried out of view.
+   */
+  spoilOffSlice: 0.6,
+  /** Highest the spoil ring may stand at the crater rim, in mm. */
+  moundMax: 14,
+  /** Highest the chaff (seed husk) pile may stand, in mm. */
+  middenMax: 6,
+  /** Chance that a surface grain of chaff, when checked, has blown away or rotted. */
+  chaffDecay: 0.12,
+
   // --- foraging
   forageGiveUpTicks: TICK_HZ * 45,
   pheromoneDeposit: 1,

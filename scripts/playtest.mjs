@@ -32,6 +32,8 @@ export async function openGame({
   height = 900,
   mobile = false,
   freshStorage = true,
+  /** 'guide' (colony brain) or 'watch' (the colony runs itself): picked on the title screen when landing. */
+  mode = 'guide',
 } = {}) {
   if (!dir) throw new Error('openGame needs { dir } for screenshots');
   mkdirSync(dir, { recursive: true });
@@ -157,6 +159,7 @@ s.save(out)`;
 
     /** Land the queen: no argument = "Let her choose"; a number = world x in mm (0..640). */
     async land(x) {
+      if (await page.isVisible('#title')) await page.click(`#title [data-mode="${mode}"]`);
       if (x === undefined) {
         await page.click('#anywhere');
       } else {

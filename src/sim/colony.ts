@@ -35,6 +35,14 @@ export class Colony {
   prio: Record<Work, number> = { dig: 2, forage: 2, nurse: 2, clean: 2 };
   breeding = 1;
   majorShare = 0.12;
+
+  /** Back to the colony's own defaults (the player stops steering). */
+  resetSettings(): void {
+    this.prio = { dig: 2, forage: 2, nurse: 2, clean: 2 };
+    this.breeding = 1;
+    this.majorShare = 0.12;
+    this.orders.length = 0;
+  }
   orders: ChamberKind[] = [];
 
   /** Which side of the entrance the refuse heap goes. */
