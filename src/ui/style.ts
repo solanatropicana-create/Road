@@ -65,6 +65,7 @@ export const CSS = `
 .btn { all: unset; cursor: pointer; border: 1px solid var(--line); border-radius: 6px; padding: 7px 8px; font-size: 12px; text-align: center; color: var(--ink); }
 .btn:hover { border-color: rgba(226,180,92,0.5); background: var(--accent-dim); }
 .btn.on { border-color: var(--accent); background: var(--accent-dim); color: var(--accent); }
+.btn:focus-visible, .seg button:focus-visible, .collapse:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .queue { margin-top: 8px; font-family: var(--mono); font-size: 11px; color: var(--ink-dim); min-height: 14px; }
 .hint { font-size: 11px; color: var(--ink-faint); line-height: 1.45; margin-top: 8px; }
 input[type=range] { width: 100%; accent-color: var(--accent); }
