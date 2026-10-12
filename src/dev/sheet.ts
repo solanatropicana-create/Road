@@ -56,10 +56,11 @@ function ant(id: string, label: string, caste: Ant['caste'], under: boolean, set
   subjects.push({ id, label, x, y: GROUND - 3, under, ants: [a], draw: (ctx, z, view) => painter.draw(ctx, [a], z, light, view, null) });
 }
 
-function critter(id: string, label: string, kind: CritterKind, under: boolean, extra: Partial<Critter> = {}, dy = 0): void {
+/** h: roughly how tall the animal stands, mm (the cell centres on it). */
+function critter(id: string, label: string, kind: CritterKind, under: boolean, h: number, extra: Partial<Critter> = {}, dy = 0): void {
   const x = place(under);
   const c: Critter = { kind, x, y: GROUND - 1 + dy, vx: 0, vy: 0, dir: 1, t: 40, state: 0, timer: 0, life: 1000, peck: 0, air: false, body: [], tone: 160, ...extra };
-  subjects.push({ id, label, x, y: GROUND - 4 + dy, under, draw: (ctx, _z, view) => { c.t += 1; drawCritters(ctx, [c], world, light, view); } });
+  subjects.push({ id, label, x: x + 0.5, y: GROUND - h / 2 + dy, under, draw: (ctx, _z, view) => { c.t += 1; drawCritters(ctx, [c], world, light, view); } });
 }
 
 // ---- ants
@@ -67,6 +68,12 @@ ant('worker', 'Minor worker (7 mm)', 'worker', false);
 ant('worker-seed', 'Worker carrying a seed', 'worker', false, (a) => { a.carry = Carry.Seed; a.carryTone = 120; });
 ant('worker-soil', 'Worker carrying soil', 'worker', true, (a) => { a.carry = Carry.Soil; a.carryTone = 90; a.task = Task.Dig; });
 ant('worker-larva', 'Nurse carrying a larva', 'worker', true, (a) => { a.carry = Carry.Larva; a.task = Task.Nurse; });
+ant('worker-egg', 'Nurse carrying an egg', 'worker', true, (a) => { a.carry = Carry.Egg; a.task = Task.Nurse; });
+ant('worker-pupa', 'Nurse carrying a pupa', 'worker', true, (a) => { a.carry = Carry.Pupa; a.task = Task.Nurse; });
+ant('worker-corpse', 'Cleaner carrying a dead nestmate', 'worker', true, (a) => { a.carry = Carry.Corpse; a.task = Task.Clean; });
+ant('worker-husk', 'Cleaner carrying a husk', 'worker', false, (a) => { a.carry = Carry.Refuse; a.carryTone = 140; a.task = Task.Clean; });
+ant('worker-prey', 'Forager carrying a piece of insect', 'worker', false, (a) => { a.carry = Carry.Prey; a.carryTone = 90; });
+ant('worker-fruit', 'Forager carrying a sloe', 'worker', false, (a) => { a.carry = Carry.Fruit; a.carryTone = 60; });
 ant('major', 'Major (9 mm)', 'soldier', false);
 ant('queen', 'Queen (13 mm)', 'queen', true, (a) => { a.task = Task.Idle; });
 ant('gyne', 'Winged young queen', 'gyne', false, (a) => { a.wings = true; });
@@ -96,20 +103,21 @@ ant('cpose', 'Worker in the "C" pose (phorid)', 'worker', false, (a) => { a.cpos
 }
 
 // ---- animals
-critter('hopper', 'Grasshopper (25 mm)', 'hopper', false);
-critter('beetle', 'Harpalus ground beetle (13 mm)', 'beetle', false);
-critter('spider', 'Zodarion spider (4 mm)', 'spider', false, { tone: 200 });
-critter('phorid', 'Phorid fly (2 mm)', 'phorid', false, { air: true }, -6);
-critter('antlion', 'Antlion larva', 'antlion', false, { px: 0, pr: 8 } as Partial<Critter>);
-critter('woodlouse', 'Blind woodlouse (nest guest)', 'woodlouse', true);
-critter('cricket', 'Ant cricket (nest guest)', 'cricket', true);
-critter('beetlet', 'Attaephilus beetle (nest guest)', 'beetlet', true);
+critter('hopper', 'Grasshopper (25 mm)', 'hopper', false, 9);
+critter('beetle', 'Harpalus ground beetle (13 mm)', 'beetle', false, 5);
+critter('spider', 'Zodarion spider (4 mm)', 'spider', false, 3, { tone: 200 });
+critter('spider-walk', 'Zodarion, walking', 'spider', false, 3, { tone: 200, state: 2 });
+critter('phorid', 'Phorid fly (2 mm)', 'phorid', false, 2, { air: true }, -6);
+critter('antlion', 'Antlion larva', 'antlion', false, 4, { px: 0, pr: 8 } as Partial<Critter>);
+critter('woodlouse', 'Blind woodlouse (nest guest)', 'woodlouse', true, 1.5);
+critter('cricket', 'Ant cricket (nest guest)', 'cricket', true, 1.6);
+critter('beetlet', 'Attaephilus beetle (nest guest)', 'beetlet', true, 1);
 {
   // An earthworm through the soil below the open ground.
   const x = place(false);
   const body: number[] = [];
   for (let k = 0; k < 60; k++) body.push((GROUND + 12 + Math.round(Math.sin(k / 9) * 4)) * W + x + 25 - k);
-  critter('worm', 'Earthworm (in the soil)', 'worm', false, { body, x: x + 25, y: GROUND + 12 });
+  critter('worm', 'Earthworm (in the soil)', 'worm', false, 4, { body, x: x + 25, y: GROUND + 12 });
   subjects[subjects.length - 1]!.x = x;
   subjects[subjects.length - 1]!.y = GROUND + 10;
 }

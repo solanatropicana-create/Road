@@ -914,31 +914,139 @@ export class AntPainter {
         ctx.fill();
         break;
       }
-      case Carry.Soil:
-        blob(0.55, 0.48, mixRGB(sampleRamp(PAL.loam, a.carryTone / 255), [230, 215, 190], 0.14), 0.4);
+      case Carry.Soil: {
+        // A pellet of crumbs packed in the jaws.
+        const col = mixRGB(sampleRamp(PAL.loam, a.carryTone / 255), [230, 215, 190], 0.14);
+        const t = a.carryTone;
+        for (let k = 0; k < 5; k++) {
+          const ang = k * 1.9 + t * 0.07;
+          const r = k === 0 ? 0 : 0.28;
+          ctx.fillStyle = css(mixRGB(col, k % 2 ? [40, 28, 20] : [250, 236, 210], 0.12), l);
+          ctx.beginPath();
+          ctx.ellipse(mx + 0.4 + Math.cos(ang) * r, my + Math.sin(ang) * r * 0.8, 0.3 - k * 0.02, 0.24, ang, 0, Math.PI * 2);
+          ctx.fill();
+        }
         break;
+      }
       case Carry.Fruit:
         blob(0.8, 0.75, fruitColor(a.carryTone));
+        ctx.fillStyle = css([255, 245, 225], l, 0.4);
+        ctx.beginPath();
+        ctx.ellipse(mx + 0.3, my - 0.35, 0.3, 0.16, -0.4, 0, Math.PI * 2);
+        ctx.fill();
         break;
-      case Carry.Prey:
-        // A leg or a piece of wing case.
-        blob(1.0, 0.45, preyColor(a.carryTone), 0.5);
+      case Carry.Prey: {
+        // A leg segment or a shard of wing case, angular, with a glint.
+        const col = preyColor(a.carryTone);
+        ctx.fillStyle = css(col, l);
+        ctx.beginPath();
+        ctx.moveTo(mx - 0.1, my - 0.2);
+        ctx.lineTo(mx + 1.5, my - 0.55);
+        ctx.lineTo(mx + 1.8, my - 0.15);
+        ctx.lineTo(mx + 0.9, my + 0.3);
+        ctx.lineTo(mx + 0.1, my + 0.25);
+        ctx.closePath();
+        ctx.fill();
+        ctx.fillStyle = css([255, 245, 225], l, 0.3);
+        ctx.beginPath();
+        ctx.ellipse(mx + 0.9, my - 0.3, 0.5, 0.08, -0.2, 0, Math.PI * 2);
+        ctx.fill();
         break;
+      }
       case Carry.Egg:
         blob(0.4, 0.3, [240, 234, 216]);
+        ctx.fillStyle = css([255, 255, 255], l, 0.55);
+        ctx.beginPath();
+        ctx.arc(mx + 0.32, my - 0.12, 0.09, 0, Math.PI * 2);
+        ctx.fill();
         break;
-      case Carry.Larva:
-        blob(0.75, 0.5, [234, 224, 198], 0.5);
+      case Carry.Larva: {
+        // A crook-necked grub, held by the middle.
+        const col: RGB = [236, 226, 200];
+        ctx.fillStyle = css(col, l);
+        ctx.beginPath();
+        ctx.ellipse(mx + 0.55, my + 0.1, 0.62, 0.48, 0.35, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(mx + 1.05, my - 0.32, 0.3, 0.26, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = css([170, 150, 118], l, 0.6);
+        ctx.lineWidth = 0.05;
+        ctx.beginPath();
+        for (let k = 0; k < 4; k++) {
+          const sx = mx + 0.1 + k * 0.28;
+          ctx.moveTo(sx, my - 0.25 + k * 0.05);
+          ctx.quadraticCurveTo(sx + 0.12, my + 0.1, sx + 0.05, my + 0.45);
+        }
+        ctx.stroke();
+        ctx.fillStyle = css([150, 120, 80], l, 0.7);
+        ctx.beginPath();
+        ctx.ellipse(mx + 0.55, my + 0.05, 0.25, 0.15, 0.3, 0, Math.PI * 2);
+        ctx.fill();
         break;
-      case Carry.Pupa:
-        blob(1.1, 0.5, [228, 212, 176], 0.2);
+      }
+      case Carry.Pupa: {
+        // A naked pupa: a pale ant folded up, eyes darkening.
+        const col: RGB = [230, 214, 178];
+        ctx.fillStyle = css(col, l);
+        ctx.beginPath();
+        ctx.ellipse(mx + 0.2, my + 0.05, 0.75, 0.42, 0.15, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(mx + 1.15, my - 0.05, 0.42, 0.36, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = css([90, 70, 52], l, 0.7);
+        ctx.beginPath();
+        ctx.arc(mx + 1.3, my - 0.12, 0.09, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = css([180, 160, 124], l, 0.7);
+        ctx.lineWidth = 0.06;
+        ctx.beginPath();
+        ctx.moveTo(mx + 0.9, my + 0.3);
+        ctx.quadraticCurveTo(mx + 0.4, my + 0.55, mx - 0.2, my + 0.35);
+        ctx.stroke();
         break;
-      case Carry.Corpse:
-        blob(1.4, 0.5, DEAD_COL, 0.15, 0.4);
+      }
+      case Carry.Corpse: {
+        // A dead nestmate, curled, carried by the waist.
+        const col = DEAD_COL;
+        ctx.fillStyle = css(col, l);
+        ctx.beginPath();
+        ctx.ellipse(mx + 0.2, my + 0.2, 0.8, 0.55, 0.4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(mx + 1.1, my - 0.25, 0.6, 0.3, -0.2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.beginPath();
+        ctx.ellipse(mx + 1.85, my - 0.1, 0.42, 0.36, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = css(col, l);
+        ctx.lineWidth = 0.1;
+        ctx.lineCap = 'round';
+        ctx.beginPath();
+        for (let k = 0; k < 3; k++) {
+          const hx = mx + 0.8 + k * 0.3;
+          ctx.moveTo(hx, my);
+          ctx.quadraticCurveTo(hx + 0.2, my + 0.45, hx - 0.1, my + 0.6);
+        }
+        ctx.stroke();
         break;
-      case Carry.Refuse:
-        blob(0.6, 0.3, sampleRamp(PAL.refuse, a.carryTone / 255), 0.5);
+      }
+      case Carry.Refuse: {
+        // A split husk: a pale, hollow shell.
+        const col = sampleRamp(PAL.refuse, a.carryTone / 255);
+        ctx.fillStyle = css(col, l);
+        ctx.beginPath();
+        ctx.ellipse(mx + 0.45, my, 0.62, 0.32, 0.5, Math.PI * 0.1, Math.PI * 1.15);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = css(mixRGB(col, [60, 40, 20], 0.35), l, 0.8);
+        ctx.lineWidth = 0.06;
+        ctx.beginPath();
+        ctx.ellipse(mx + 0.45, my, 0.62, 0.32, 0.5, Math.PI * 0.1, Math.PI * 1.15);
+        ctx.stroke();
         break;
+      }
     }
   }
 
