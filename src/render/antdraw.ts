@@ -314,9 +314,11 @@ export class AntPainter {
       if (a === selected) this.marker(ctx, body, z);
       const wall = this.world.bg[a.y * this.world.w + a.x] === 1;
       // Standing about for a while: groom, drawing a foreleg over the antennae.
-      this.groom = v.still > 1.5 && a.carry === Carry.None ? Math.sin(this.time * 7 + a.id) : null;
+      this.groom = v.still > 1.5 && a.carry === Carry.None && a.meet === 0 ? Math.sin(this.time * 7 + a.id) : null;
+      this.meeting = a.meet > 0;
       this.ant(ctx, a, body, v.gait, l, z, busy, false, wall);
       this.groom = null;
+      this.meeting = false;
       ctx.restore();
     }
   }
@@ -416,6 +418,8 @@ export class AntPainter {
   }
 
   /** One side's three legs as a single stroked path (tripod gait). */
+  /** The ant being drawn is touching antennae with a nestmate. */
+  private meeting = false;
   /** Grooming stroke (-1..1) for the ant being drawn, or null when it isn't grooming. */
   private groom: number | null = null;
 
@@ -452,7 +456,8 @@ export class AntPainter {
     const [ax, ay] = b.antenna;
     const t = this.time;
     // Antennae never stop: they sweep and tap in a slow, irregular rhythm.
-    const sway = dead ? 0.6 : Math.sin(t * 3.1 + id * 1.7) * 0.35 + Math.sin(t * 7.3 + id) * 0.12;
+    // Meeting a nestmate: both antennae reach forward and drum quickly.
+    const sway = dead ? 0.6 : this.meeting ? -0.3 + Math.sin(t * 26 + id) * 0.18 : Math.sin(t * 3.1 + id * 1.7) * 0.35 + Math.sin(t * 7.3 + id) * 0.12;
     const ex = ax + hb + 0.55;
     const ey = ay - 0.75;
     ctx.strokeStyle = css(col, l);

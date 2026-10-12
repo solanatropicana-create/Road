@@ -27,6 +27,9 @@ export class Colony {
   queen: Ant | null = null;
   readonly brood: Brood[] = [];
   readonly corpses: Corpse[] = [];
+  /** Ant index + 1 at each cell, rebuilt each tick (0 = none). */
+  occ: Int32Array | null = null;
+  private occCells: number[] = [];
   /** Loads of spoil dropped left and right of the entrance (keeps the mound even). */
   readonly spoilSides: [number, number] = [0, 0];
   readonly broodCell: Int32Array;
@@ -444,6 +447,16 @@ export class Colony {
     }
     this.consume(sim);
     if (this.queen?.alive) this.queen.tick(sim);
+    // Who stands where, so ants that meet head-on can stop and touch antennae.
+    const occ = this.occ ?? (this.occ = new Int32Array(sim.world.size));
+    for (const i of this.occCells) occ[i] = 0;
+    this.occCells.length = 0;
+    for (let k = 0; k < this.ants.length; k++) {
+      const a = this.ants[k]!;
+      const i = a.y * sim.world.w + a.x;
+      occ[i] = k + 1;
+      this.occCells.push(i);
+    }
     for (let k = 0; k < this.ants.length; k++) {
       const a = this.ants[k]!;
       if (a.alive) a.tick(sim);

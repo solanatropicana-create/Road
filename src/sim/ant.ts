@@ -60,6 +60,9 @@ export class Ant {
   private stuck = 0;
   /** Steps walked on the surface with the current load. */
   private trip = 0;
+  /** Ticks left touching antennae with a nestmate met head-on, and when it may happen again. */
+  meet = 0;
+  private meetAgain = 0;
   /** Steps spent following a food scent, and when scents count again after giving up. */
   private sniffSteps = 0;
   private noSniffUntil = 0;
@@ -121,6 +124,11 @@ export class Ant {
       if (--this.timer === 0) this.finish(sim);
       return;
     }
+    if (this.meet > 0) {
+      this.meet--;
+      return;
+    }
+    if (this.caste !== 'queen' && sim.tick >= this.meetAgain && this.greet(sim)) return;
     const slow = this.carry !== Carry.None ? TUNING.carryingSlowdown : 1;
     this.mv += this.speed * slow;
     while (this.mv >= 1 && this.alive) {
@@ -161,6 +169,29 @@ export class Ant {
   }
 
   // ---------------------------------------------------------------- movement
+
+  /**
+   * Ants that meet head-on stop for a moment and touch antennae (and swap a
+   * drop of food or a whiff of colony odour). Brief, and not too often, or the
+   * shaft would jam.
+   */
+  private greet(sim: Sim): boolean {
+    const occ = sim.colony.occ;
+    if (!occ) return false;
+    const w = sim.world;
+    const ahead = (this.y + this.hy) * w.w + this.x + this.hx;
+    const k = occ[ahead]!;
+    if (!k) return false;
+    const o = sim.colony.ants[k - 1];
+    if (!o || o === this || o.meet > 0 || o.hx !== -this.hx || o.hy !== -this.hy) return false;
+    this.meetAgain = sim.tick + TICK_HZ * 12;
+    if (sim.rng.next() > 0.35) return false;
+    const t = sim.rng.int(9, 18);
+    this.meet = t;
+    o.meet = t;
+    o.meetAgain = sim.tick + TICK_HZ * 12;
+    return true;
+  }
 
   private moveTo(sim: Sim, k: number): void {
     this.x += DX[k]!;

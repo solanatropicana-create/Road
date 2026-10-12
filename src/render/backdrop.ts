@@ -68,6 +68,8 @@ export class Backdrop {
   private blades: Blade[] = [];
   private bokeh: Bokeh[] = [];
   private flies: Bokeh[] = [];
+  /** Wildflowers in the meadow behind, far out of focus: soft discs of colour on stalks. */
+  private flowers: { x: number; h: number; r: number; col: RGB; phase: number; layer: number }[] = [];
 
   constructor(worldW: number, worldH: number, seed: number) {
     this.canvas = document.createElement('canvas');
@@ -96,6 +98,17 @@ export class Backdrop {
         a: rng.range(0.05, 0.16),
         vx: rng.range(-0.02, 0.02),
         phase: rng.range(0, 6.28),
+      });
+    }
+    const palette: RGB[] = [hex('#f2e6c8'), hex('#e8c45a'), hex('#d98cab'), hex('#b9a3d9'), hex('#f0f0ea')];
+    for (let k = 0; k < 22; k++) {
+      this.flowers.push({
+        x: rng.range(0, worldW),
+        h: rng.range(18, 65),
+        r: rng.range(3, 7),
+        col: palette[rng.int(0, palette.length - 1)]!,
+        phase: rng.range(0, 6.28),
+        layer: rng.int(0, 1),
       });
     }
     for (let k = 0; k < 14; k++) {
@@ -170,6 +183,32 @@ export class Backdrop {
         c.quadraticCurveTo(x0 + b.lean * b.h * 0.2 * s, (y0 + tipY) / 2, tipX, tipY);
         c.stroke();
       }
+    }
+
+    // Wildflowers: blurred heads on their stalks, dimmed by night and haze.
+    for (const f of this.flowers) {
+      const sway = Math.sin(time * 0.5 + f.phase) * 2;
+      const x0 = f.x * s;
+      const y0 = (ground[Math.max(0, Math.min(worldW - 1, f.x | 0))]! + 4) * s;
+      const tx = x0 + sway * s;
+      const ty = y0 - f.h * s;
+      const stem = mixRGB(mixRGB(hex('#6f8f5a'), hex('#131b28'), night), sky.low, 0.3);
+      c.strokeStyle = css(stem, 0.7);
+      c.lineWidth = 1.2 * s * (1 + f.layer * 0.5);
+      c.beginPath();
+      c.moveTo(x0, y0);
+      c.quadraticCurveTo(x0, (y0 + ty) / 2, tx, ty);
+      c.stroke();
+      const col = mixRGB(mixRGB(f.col, hex('#1a2333'), night * 0.85), sky.low, 0.25 * (1 - f.layer));
+      const r = f.r * s * (1 + f.layer * 0.5);
+      const g2 = c.createRadialGradient(tx, ty, 0, tx, ty, r);
+      g2.addColorStop(0, css(col, 0.85));
+      g2.addColorStop(0.7, css(col, 0.55));
+      g2.addColorStop(1, css(col, 0));
+      c.fillStyle = g2;
+      c.beginPath();
+      c.arc(tx, ty, r, 0, Math.PI * 2);
+      c.fill();
     }
 
     // Bokeh: soft discs of light with a slightly brighter rim.
