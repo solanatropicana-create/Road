@@ -38,6 +38,14 @@ export const CSS = `
 #card .legend { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 10px; color: var(--ink-faint); }
 #card .legend span { display: inline-flex; align-items: center; gap: 4px; }
 #card .legend i { width: 8px; height: 8px; border-radius: 2px; filter: brightness(1.5) saturate(1.2); }
+#card .notes { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+#card .notes-head { display: flex; justify-content: space-between; align-items: baseline; }
+#card .notes ol { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+#card .notes.open ol { max-height: 260px; overflow: auto; }
+#card .notes li { display: grid; grid-template-columns: 54px 1fr; gap: 6px; font-size: 11px; color: var(--ink-dim); line-height: 1.35; }
+#card .notes li time { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); font-variant-numeric: tabular-nums; padding-top: 1px; }
+#card .notes li:first-child span { color: var(--ink); }
+#card .notes li b { color: var(--accent); font-weight: 500; }
 #card .clock { display: flex; justify-content: space-between; margin-top: 8px; font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
 
 #brain { top: 14px; right: 14px; width: 272px; max-height: calc(100vh - 100px); overflow: auto; }
@@ -93,6 +101,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
   #brain.collapsed .body { display: none; }
   #bar { bottom: 8px; }
   #inspect { display: none !important; }
+  #card .notes, #card .legend { display: none; }
 }
 .collapse { all: unset; cursor: pointer; float: right; font-family: var(--mono); font-size: 10px; color: var(--ink-faint); }
 `;

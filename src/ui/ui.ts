@@ -31,6 +31,15 @@ export class UI {
   private lastChambers = 0;
   private refresh = 0;
   private pointer = { x: 0, y: 0, inside: false };
+  /** The field journal: what happened and when, newest last. */
+  private journal: { at: string; html: string }[] = [];
+  private notesOpen = false;
+  private milestone = 0;
+  private notedChambers = new Set<number>();
+  private firstStore = false;
+  private firstMajor = false;
+  private drowned = 0;
+  private starvedDay = -1;
 
   constructor(game: Game, root: HTMLElement) {
     this.game = game;
@@ -69,6 +78,14 @@ export class UI {
       legend.appendChild(h('span', '', `<i style="background:rgb(${c[0]},${c[1]},${c[2]})"></i>${label}`));
     }
     card.appendChild(legend);
+    const notes = h('div', 'notes', `<div class="notes-head"><span class="eyebrow">Field notes</span><button class="collapse" id="notes-all">all</button></div><ol id="notes"></ol>`);
+    card.appendChild(notes);
+    (notes.querySelector('#notes-all') as HTMLElement).onclick = () => {
+      this.notesOpen = !this.notesOpen;
+      notes.classList.toggle('open', this.notesOpen);
+      (notes.querySelector('#notes-all') as HTMLElement).textContent = this.notesOpen ? 'less' : 'all';
+      this.renderNotes();
+    };
     r.appendChild(card);
 
     // --- colony brain
@@ -222,11 +239,12 @@ export class UI {
     over.id = 'over';
     r.appendChild(over);
 
-    for (const id of ['pop', 'maj', 'brood', 'food', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark']) {
+    for (const id of ['pop', 'maj', 'brood', 'food', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark', 'notes']) {
       this.els[id] = r.querySelector(`#${id}`) as HTMLElement;
     }
     this.syncBrain();
     this.syncBar();
+    this.renderNotes();
   }
 
   toast(html: string, ms = 5200): void {
@@ -237,6 +255,58 @@ export class UI {
     t.style.animationDuration = `${ms / 1000}s`;
     box.appendChild(t);
     setTimeout(() => t.remove(), ms);
+  }
+
+  /** Write an entry in the field journal (and optionally pop it up as a toast). */
+  note(html: string, toast = false): void {
+    const sim = this.game.sim;
+    const mins = Math.floor(sim.dayT * 24 * 60);
+    const at = `D${sim.day} ${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+    this.journal.push({ at, html });
+    if (this.journal.length > 80) this.journal.shift();
+    this.renderNotes();
+    if (toast) this.toast(html);
+  }
+
+  private renderNotes(): void {
+    const list = this.els.notes;
+    if (!list) return;
+    const shown = this.notesOpen ? this.journal.slice().reverse() : this.journal.slice(-3).reverse();
+    list.innerHTML = shown.map((n) => `<li><time>${n.at}</time><span>${n.html}</span></li>`).join('') || '<li><time></time><span>Nothing yet. Choose where the queen lands.</span></li>';
+  }
+
+  /** Things worth writing down, noticed by watching the colony's numbers. */
+  private observe(): void {
+    const sim = this.game.sim;
+    const col = sim.colony;
+    const marks = [10, 25, 50, 100, 150, 200, 300, 500];
+    while (this.milestone < marks.length && col.adults >= marks[this.milestone]!) {
+      this.note(`The colony reaches <b>${marks[this.milestone]}</b> workers`, marks[this.milestone]! >= 50);
+      this.milestone++;
+    }
+    for (const c of sim.nest.chambers) {
+      if (!c.ready || this.notedChambers.has(c.id)) continue;
+      this.notedChambers.add(c.id);
+      const depth = c.floorY - sim.world.ground[Math.round(c.cx)]!;
+      this.note(`${CHAMBER_LABEL[c.kind]} finished, <b>${(depth / 10).toFixed(1)} cm</b> down`);
+    }
+    if (!this.firstStore && col.stored > 0) {
+      this.firstStore = true;
+      this.note('First seeds laid up in the <b>granary</b>', true);
+    }
+    if (!this.firstMajor && col.majors > 0) {
+      this.firstMajor = true;
+      this.note('The first <b>major</b> ecloses: big head, seed-cracking jaws', true);
+    }
+    const drowned = col.deaths['brood drowned'] ?? 0;
+    if (drowned > this.drowned && sim.weather.rain < 0.15) {
+      this.note(`Flood: <b>${drowned - this.drowned}</b> brood drowned`, true);
+      this.drowned = drowned;
+    }
+    if ((col.deaths['starvation'] ?? 0) > 0 && col.starving && this.starvedDay !== sim.day) {
+      this.starvedDay = sim.day;
+      this.note('Workers are <b>starving</b>; foragers can\'t keep up', true);
+    }
   }
 
   private syncBrain(): void {
@@ -348,7 +418,7 @@ export class UI {
     if (sim.phase === 'choose') {
       if (sim.canFound(p.x)) {
         sim.found(p.x);
-        this.toast('The queen lands and <b>tears off her wings</b>');
+        this.note('The queen lands and <b>tears off her wings</b>', true);
         setTimeout(() => this.toast('Drag to look around · scroll to zoom · click an ant to follow it · <b>H</b> hides the panels', 9000), 2500);
         game.cam.tzoom = Math.max(game.cam.tzoom, game.cam.fitZoom() * 2.4);
         game.cam.tx = p.x;
@@ -393,8 +463,11 @@ export class UI {
     const col = sim.colony;
     const phase = sim.phase;
     if (phase !== this.lastPhase) {
-      if (phase === 'growing' && this.lastPhase === 'founding') this.toast('The first workers have <b>hatched</b>');
-      if (phase === 'failed') this.showOver();
+      if (phase === 'growing' && this.lastPhase === 'founding') this.note('The first workers have <b>hatched</b>', true);
+      if (phase === 'failed') {
+        this.note('The colony has died out');
+        this.showOver();
+      }
       this.els.prompt!.style.display = phase === 'choose' ? 'block' : 'none';
       this.lastPhase = phase;
     }
@@ -404,7 +477,12 @@ export class UI {
       this.lastChambers = sim.nest.chambers.length;
       this.syncBrain();
     }
-    while (sim.events.length) this.toast(sim.events.shift()!);
+    while (sim.events.length) {
+      const e = sim.events.shift()!;
+      // The rain stopping is worth a glance, not a line in the journal.
+      if (e.includes('rain stops')) this.toast(e);
+      else this.note(e, true);
+    }
     this.tooltip();
     this.refresh -= dt;
     if (this.refresh > 0) return;
@@ -430,6 +508,7 @@ export class UI {
     }
     this.drawSpark();
     this.inspector();
+    this.observe();
   }
 
   private drawSpark(): void {
