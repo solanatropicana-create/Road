@@ -4,6 +4,8 @@
 
 Tasarım belgesi, görsel dil kararları ve açık sorular: [docs/GDD.md](docs/GDD.md)
 
+Oynanabilir sürüm (özel link): https://claude.ai/artifact/Ja2FVX7Gs5UHxjRM7yPXha
+
 ![Akşam ışığında kesit: tek şaft ve iki yanında yassı odalar](docs/img/hero.jpg)
 
 | | |
@@ -35,6 +37,7 @@ npm run dev            # http://localhost:5173
 | P | Kazı planını göster/gizle (kehribar noktalar) |
 | T | Koku izlerini (feromon) göster/gizle |
 | H | Panelleri gizle (temiz ekran görüntüsü için) |
+| ? | Tuşlar paneli (yeni koloni de buradan) |
 | Esc | Takibi bırak |
 
 ## Komutlar
@@ -47,6 +50,8 @@ npm run dev            # http://localhost:5173
 | `npm run headless -- 7 20` | Görüntüsüz: 7 numaralı harita, 20 dakika, büyüme raporu |
 | `scripts/batch.sh 40` | 8 haritayı paralel 40 dakika çalıştırır (sağlamlık testi) |
 | `node scripts/shot.mjs ad 7 9000` | Çalışan dev sunucusundan ekran görüntüsü (`shots/`) |
+| `node scripts/beauty.mjs` | Belgelerdeki seçilmiş görüntüler (paneller gizli) |
+| `node scripts/play.mjs ad 3 40` | Oyuncu gibi oynar: kraliçeyi indirir, 16× hızda bekler, ekran görüntüsü alır |
 
 ## Kod yapısı
 
@@ -55,8 +60,8 @@ src/
   config.ts        ölçek, zaman ve ayar sabitleri
   world/           hücre dünyası, toprak üretimi, bitkiler, düşen kum fiziği, su ve nem
   sim/             koloni, karınca davranışı, yuva planlayıcı, mesafe alanları, yavru
-  render/          piksel kesit, makro arka plan, ışık ve hava, kamera, sprite'lar
-  ui/              koloni beyni paneli, HUD, araç ipuçları
+  render/          piksel kesit, makro arka plan, ışık ve hava, kamera, vektör karıncalar (antdraw.ts)
+  ui/              koloni beyni, saha defteri, belgesel kamera (director.ts), ipuçları
 scripts/           görüntüsüz test, toplu test, ekran görüntüsü, tek dosya derleme
 ```
 
