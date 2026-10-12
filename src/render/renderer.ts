@@ -325,6 +325,51 @@ export class Renderer {
     }
   }
 
+  /** Show the colony's dig plan: always (toggled with P), or for a few seconds after an order. */
+  planAlways = false;
+  planFlash = 0;
+
+  /**
+   * The dig plan as a survey overlay: amber dots on soil the colony means to
+   * remove, and a pin where the player asked it to grow.
+   */
+  private drawPlan(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }, z: number, dt: number): void {
+    this.planFlash = Math.max(0, this.planFlash - dt);
+    const a = this.planAlways ? 1 : Math.min(1, this.planFlash / 1.5);
+    if (a <= 0) return;
+    const ctx = this.ctx;
+    const w = this.world;
+    const dots = new Path2D();
+    const r = Math.max(0.16, 1.2 / z);
+    for (const i of sim.nest.planCells) {
+      if (!SOLID[w.mat[i]!] || w.bg[i] !== 1) continue;
+      const x = i % w.w;
+      const y = (i - x) / w.w;
+      // Every other cell keeps it a light dotted hatch rather than a solid fill.
+      if (((x + y) & 1) !== 0 || x < view.x0 - 1 || x > view.x1 + 1 || y < view.y0 - 1 || y > view.y1 + 1) continue;
+      dots.rect(x + 0.5 - r, y + 0.5 - r, r * 2, r * 2);
+    }
+    ctx.fillStyle = `rgba(226,180,92,${0.55 * a})`;
+    ctx.fill(dots);
+    const m = sim.nest.marker;
+    if (m) {
+      const px = 1 / z;
+      ctx.strokeStyle = `rgba(226,180,92,${0.95 * a})`;
+      ctx.lineWidth = 1.5 * px;
+      ctx.beginPath();
+      ctx.arc(m.x + 0.5, m.y + 0.5, 5, 0, Math.PI * 2);
+      ctx.moveTo(m.x + 0.5 - 9, m.y + 0.5);
+      ctx.lineTo(m.x + 0.5 - 2, m.y + 0.5);
+      ctx.moveTo(m.x + 0.5 + 2, m.y + 0.5);
+      ctx.lineTo(m.x + 0.5 + 9, m.y + 0.5);
+      ctx.moveTo(m.x + 0.5, m.y + 0.5 - 9);
+      ctx.lineTo(m.x + 0.5, m.y + 0.5 - 2);
+      ctx.moveTo(m.x + 0.5, m.y + 0.5 + 2);
+      ctx.lineTo(m.x + 0.5, m.y + 0.5 + 9);
+      ctx.stroke();
+    }
+  }
+
   /** Whether the camera is close enough that loose specks are drawn smooth instead of as pixels. */
   private closeUp = false;
 
@@ -500,6 +545,7 @@ export class Renderer {
     this.painter.update(ants, dt, speed);
     const view = { x0: cam.x - cam.screenW / 2 / cam.zoom, y0: cam.y - cam.screenH / 2 / cam.zoom, x1: cam.x + cam.screenW / 2 / cam.zoom, y1: cam.y + cam.screenH / 2 / cam.zoom };
     if (this.closeUp) this.grains(view);
+    this.drawPlan(sim, view, z, dt);
     this.painter.drawCorpses(ctx, col.corpses, z, this.lightAt, view);
     this.painter.drawBrood(ctx, col.brood, z, this.lightAt, view, TUNING.pupaTicks);
     this.painter.draw(ctx, ants, z, this.lightAt, view, selected);

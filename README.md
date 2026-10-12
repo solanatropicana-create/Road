@@ -24,6 +24,9 @@ npm run dev            # http://localhost:5173
 | Boşluk | Duraklat |
 | 1–5 | Hız (1× … 16×) |
 | F | Tüm kesiti göster |
+| C | Belgesel kamera: kendi başına özneler seçer, alt yazıyla anlatır |
+| P | Kazı planını göster/gizle (kehribar noktalar) |
+| H | Panelleri gizle (temiz ekran görüntüsü için) |
 | Esc | Takibi bırak |
 
 ## Komutlar

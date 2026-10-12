@@ -107,6 +107,7 @@ export class UI {
       </div>
       <div class="btns" style="margin-top:6px; grid-template-columns: 1fr;"><button class="btn" id="mark">Mark where to grow</button></div>
       <div class="queue" id="queue"></div>
+      <div class="hint">Amber dots show where the colony means to dig. <b>P</b> keeps them on.</div>
       <h3 class="eyebrow">Sandbox</h3>
       <div class="btns"><button class="btn" id="rain">Bring rain</button><button class="btn" id="storm">Storm</button></div>
       <div class="hint">Weather comes on its own every day or two. These let you test a nest's design now.</div>
@@ -148,11 +149,15 @@ export class UI {
       b.onclick = () => {
         const col = this.game.sim.colony;
         if (col.orders.length < 4) col.orders.push(b.dataset.order as ChamberKind);
+        this.game.renderer.planFlash = 6;
         this.syncBrain();
       };
     });
     (brain.querySelector('#deeper') as HTMLElement).onclick = () => {
-      if (this.game.sim.nest.deepen()) this.toast('The colony starts a <b>deeper shaft</b>');
+      if (this.game.sim.nest.deepen()) {
+        this.toast('The colony starts a <b>deeper shaft</b>');
+        this.game.renderer.planFlash = 6;
+      }
     };
     (brain.querySelector('#mark') as HTMLElement).onclick = () => {
       this.markerMode = !this.markerMode;
@@ -420,6 +425,9 @@ export class UI {
         if (game.director.active) game.director.stop();
         game.selected = null;
         game.cam.fit();
+      } else if (e.key === 'p' || e.key === 'P') {
+        game.renderer.planAlways = !game.renderer.planAlways;
+        this.toast(game.renderer.planAlways ? 'Showing the <b>dig plan</b> (P to hide)' : 'Dig plan hidden');
       } else if (e.key === 'c' || e.key === 'C') {
         game.director.toggle();
       } else if (e.key === 'h' || e.key === 'H') {
@@ -459,6 +467,7 @@ export class UI {
       if (w.inside(x, y) && y > w.ground[x]! + 10) {
         sim.nest.marker = { x, y };
         this.toast('The colony will <b>grow toward the marker</b>');
+        game.renderer.planFlash = 8;
       }
       this.markerMode = false;
       this.syncBrain();
