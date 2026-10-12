@@ -426,6 +426,7 @@ export class Renderer {
     for (let k = 0; k < SEED_BUCKETS; k++) seedPaths.push(new Path2D());
     const gloss = new Path2D();
     const shoots = new Path2D();
+    const meniscus = new Path2D();
     let any = false;
     // One light level for the whole view keeps this to a handful of fills.
     const l = this.lightAt((x0 + x1) / 2, (y0 + y1) / 2);
@@ -433,6 +434,14 @@ export class Renderer {
       for (let x = x0; x <= x1; x++) {
         const i = y * w.w + x;
         const m = w.mat[i];
+        if (m === WATER) {
+          // The top of standing water catches the light.
+          if (w.mat[i - w.w] !== WATER) {
+            meniscus.rect(x, y, 1, 0.22);
+            any = true;
+          }
+          continue;
+        }
         if (m !== SEED && m !== REFUSE) continue;
         any = true;
         const hsh = Math.imul(i, 2654435761) >>> 0;
@@ -483,6 +492,8 @@ export class Renderer {
     ctx.lineWidth = 0.22;
     ctx.lineCap = 'round';
     ctx.stroke(shoots);
+    ctx.fillStyle = lit([205, 228, 242], 0.6);
+    ctx.fill(meniscus);
   }
 
   /** Dust, shed wings and rain at screen resolution, for close-ups. */
