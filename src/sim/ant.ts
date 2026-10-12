@@ -79,6 +79,8 @@ export class Ant {
   wings = false;
   /** Founding queen: 0 landing, 1 digging her burrow, 2 settled. */
   phase = 2;
+  /** An alate that has taken off on the nuptial flight (gone from the nest). */
+  flown = false;
   delivered = 0;
 
   constructor(caste: Caste, x: number, y: number, life: number, speed: number) {
@@ -98,7 +100,8 @@ export class Ant {
   // ---------------------------------------------------------------- tick
 
   tick(sim: Sim): void {
-    this.age++;
+    // Ants age with their metabolism: slowly through the cold of winter.
+    this.age += sim.agingRate;
     if (this.caste !== 'queen' && this.age >= this.life) {
       sim.colony.kill(this, 'old age');
       return;
@@ -147,10 +150,14 @@ export class Ant {
       this.queenThink(sim);
       return;
     }
+    if (this.caste === 'gyne' || this.caste === 'male') {
+      this.alateThink(sim);
+      return;
+    }
     // Hopelessly lost with a load: let it go and rethink.
     if (this.lost > 240) this.discard(sim);
-    // Rain: anyone outside empty-handed heads for shelter.
-    if (sim.raining && this.carry === Carry.None && sim.world.bg[this.y * sim.world.w + this.x] === 0) {
+    // Rain, cold or midday heat: anyone outside empty-handed heads for shelter.
+    if (sim.forageWeather < 0.05 && this.carry === Carry.None && sim.world.bg[this.y * sim.world.w + this.x] === 0) {
       this.descend(sim, F.Rest);
       return;
     }
@@ -396,6 +403,8 @@ export class Ant {
       if (!Nest.diggable(w, n)) return;
       if (m === SEED || m === FRUIT || m === REFUSE) {
         // Clutter in a tunnel: seed goes to the granary, husks to the midden.
+        // (A seed in undug soil was buried in the seed bank: a find.)
+        if (m === SEED && w.bg[n] === 1 && !w.zone[n] && w.tint[n] === 0) sim.buriedSeed();
         this.carryTone = w.tone[n]!;
         w.set(n, EMPTY, w.tone[n], w.tint[n]);
         if (m === REFUSE) {
@@ -407,7 +416,8 @@ export class Ant {
         }
         return;
       }
-      const src = m === SAND ? w.tint[n]! & 0x7f : m;
+      // (Loose soil remembers only where it came from: not whether it was packed or a plug.)
+      const src = m === SAND ? w.tint[n]! & 0x3f : m;
       this.carryTone = w.tone[n]!;
       this.carryTint = src;
       w.set(n, EMPTY, w.tone[n], w.bg[n] ? src : 0);
@@ -514,7 +524,7 @@ export class Ant {
         else w.set(i, REFUSE, this.carry === Carry.Corpse ? sim.rng.int(0, 25) : sim.rng.int(140, 255), 0);
       } else if (sim.rng.next() < TUNING.spoilOffSlice) {
         // Spread off the slice (out of view): only a puff of dust shows here.
-        sim.dust(i, this.carryTint & 0x7f);
+        sim.dust(i, this.carryTint & 0x3f);
       } else {
         w.set(i, SAND, this.carryTone, this.carryTint);
       }
@@ -905,6 +915,27 @@ export class Ant {
     }
   }
 
+  // ---------------------------------------------------------------- alates
+
+  /**
+   * A winged young queen or male: rests with the colony until the flight,
+   * then climbs out of the crater and takes off from the surface.
+   */
+  private alateThink(sim: Sim): void {
+    const w = sim.world;
+    if (sim.flight) {
+      const outside = w.bg[this.y * w.w + this.x] === 0;
+      if (outside && w.walk[this.y * w.w + this.x] && sim.rng.next() < 0.08) {
+        this.flown = true;
+        sim.takeOff(this);
+        return;
+      }
+      if (this.descend(sim, F.Out) !== Step.Moved) this.wander(sim);
+      return;
+    }
+    this.doIdle(sim);
+  }
+
   // ---------------------------------------------------------------- queen
 
   private queenThink(sim: Sim): void {
@@ -923,6 +954,9 @@ export class Ant {
       if (qc && qc.ready && sim.nest.chamberAt(this.y * w.w + this.x) === qc) {
         this.phase = 2;
         this.task = Task.Idle;
+        // Claustral founding: she shuts herself in until her first daughters open the door.
+        sim.nest.seal();
+        sim.events.push({ key: 'sealedIn' });
         return;
       }
       const r = this.descend(sim, F.Dig);

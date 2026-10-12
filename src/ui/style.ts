@@ -84,6 +84,7 @@ export const CSS = `
 #card .clock #skyico { display: inline-flex; color: var(--accent); }
 #card .clock #skyico .ico { width: 16px; height: 16px; }
 #card .clock #time { margin-left: auto; }
+#card .clock.sub { margin-top: 3px; font-size: 11px; color: var(--ink-faint); justify-content: space-between; }
 
 /* --- one-line strip (phones, where the card is hidden) */
 #strip { display: none; position: absolute; top: 8px; left: 8px; right: 8px; pointer-events: none; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; gap: 10px; align-items: baseline; font-family: var(--mono); font-size: 12px; color: var(--ink-dim); white-space: nowrap; overflow: hidden; }
@@ -209,6 +210,12 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .roomrow.dig small { color: var(--accent); }
 #ui.m-watch #brain, #ui.m-guide #colony { display: none !important; }
 
+/* --- winter rest band */
+#winter { left: 50%; bottom: 74px; transform: translateX(-50%); display: none; align-items: center; gap: 10px; padding: 7px 14px; font-size: 13px; width: max-content; max-width: calc(100vw - 24px); }
+#winter .wico { color: #cfe2f2; }
+#winter .linkbtn { color: var(--accent); font-size: 12px; }
+#ui.cinema #winter { display: none !important; }
+
 /* --- scale bar: true scale, the slice's signature */
 #scale { position: absolute; right: 22px; bottom: 22px; pointer-events: none; display: flex; flex-direction: column; align-items: flex-end; gap: 4px; font-family: var(--mono); font-size: 11px; color: var(--ink); text-shadow: 0 1px 4px rgba(0,0,0,0.9); }
 #scale i { display: block; height: 4px; border: 1px solid rgba(239,230,214,0.85); border-top: none; box-shadow: 0 1px 3px rgba(0,0,0,0.6); }
@@ -237,6 +244,23 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .mode p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-dim); }
 .mode.last::before { content: ''; position: absolute; top: 12px; right: 12px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 #title #resume { display: block; width: 100%; padding: 11px; font-size: 13px; margin-bottom: 14px; }
+.sitecard { display: grid; grid-template-columns: 34px 1fr 34px; align-items: center; gap: 8px; margin: 4px 0 16px; padding: 14px 10px; text-align: left; border: 1px solid var(--line); border-radius: 5px; pointer-events: auto;
+  background: var(--grain), rgba(16,12,9,0.78); }
+.sitenav { all: unset; cursor: pointer; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: var(--ink-dim); }
+.sitenav:hover { color: var(--accent); background: rgba(255,255,255,0.05); }
+.sitenav .ico { width: 18px; height: 18px; }
+.sitenav.next .ico { transform: scaleX(-1); }
+.sitename { font-family: var(--serif); font-weight: 600; font-size: 20px; color: var(--ink); }
+.sitedesc { margin-top: 4px; font-size: 13px; line-height: 1.45; color: var(--ink-dim); }
+.sitesp { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; font-family: var(--mono); font-size: 12px; color: var(--ink-faint); }
+.sitesp i { font-family: var(--serif); font-size: 13px; color: var(--ink-dim); }
+.traits { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.traits li { font-size: 12px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--ink-dim); }
+.traits li b { margin-right: 5px; font-family: var(--mono); }
+.traits li.pro { border-color: rgba(156,194,122,0.5); }
+.traits li.pro b { color: var(--ok); }
+.traits li.con { border-color: rgba(232,138,110,0.5); }
+.traits li.con b { color: var(--danger); }
 .title-foot { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px 18px; font-family: var(--mono); font-size: 12px; color: var(--ink-faint); }
 .title-foot .seg button { padding: 4px 10px; }
 #ui.titled #bar, #ui.titled #keys, #ui.titled #toasts, #ui.titled #caption { display: none !important; }
@@ -285,10 +309,13 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
   #caption .line { font-size: 13px; }
   #ui.cinema #caption { bottom: 20px; }
   #prompt { top: 30%; }
+  #winter { bottom: 112px; }
   #colony { top: auto; bottom: 112px; left: 8px; right: 8px; width: auto; max-height: 46vh; }
   #bar .lbl { display: none; }
   #scale { top: 54px; bottom: auto; right: 12px; }
   #title .modes { grid-template-columns: 1fr; margin-top: 20px; }
+  .sitecard { grid-template-columns: 28px 1fr 28px; padding: 10px 6px; }
+  .sitedesc { display: none; }
   #title .tagline { font-size: 16px; }
   .mode { padding: 14px 16px; }
   .mode h3 { font-size: 20px; margin-top: 6px; }

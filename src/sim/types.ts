@@ -35,6 +35,7 @@ export const TASK_LABEL: Record<TaskKind, string> = {
 };
 
 /** Minor worker, major ("soldier", the big-headed seed crusher) or queen. */
-export type Caste = 'worker' | 'soldier' | 'queen';
+/** gyne: a winged young queen; male: a winged male. Both leave on the nuptial flight. */
+export type Caste = 'worker' | 'soldier' | 'queen' | 'gyne' | 'male';
 
 export type ChamberKind = 'queen' | 'nursery' | 'granary' | 'rest';

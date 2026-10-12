@@ -11,6 +11,7 @@ import { Moisture } from '../world/moisture';
 import { Plants, Plant } from '../world/plants';
 import { Rng } from '../util/rng';
 import { Noise } from '../util/noise';
+import { Calendar } from './calendar';
 
 /**
  * Saving a colony: the whole simulation object graph, written generically.
@@ -21,7 +22,7 @@ import { Noise } from '../util/noise';
  */
 
 const CLASSES: Record<string, { prototype: object }> = {
-  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise,
+  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar,
 };
 
 const TYPED: Record<string, new (b: ArrayBuffer) => ArrayBufferView> = {
@@ -34,7 +35,7 @@ const TYPED_NAME = new Map<unknown, string>(Object.entries(TYPED).map(([k, c]) =
 
 /** Properties not worth saving: rebuilt from the rest on load. */
 const SKIP: Record<string, string[]> = {
-  Sim: ['fields', 'src', 'events'],
+  Sim: ['fields', 'src', 'events', 'flyers'],
   Physics: ['stamp'],
   Colony: ['occ'],
 };
@@ -146,8 +147,9 @@ async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-export const SAVE_KEY = 'underfoot.save';
-export const META_KEY = 'underfoot.meta';
+// v2: the colony calendar (weeks, seasons). Older saves are not compatible and are ignored.
+export const SAVE_KEY = 'underfoot.save2';
+export const META_KEY = 'underfoot.meta2';
 
 /** The saved colony's summary, if there is one (storage may be unavailable). */
 export function savedMeta(): SaveMeta | null {
@@ -195,10 +197,11 @@ export async function loadSim(blob: string): Promise<{ sim: Sim; extra: unknown 
   Brood.nextId = json.statics.brood;
   // Rebuild what was left out.
   const w = sim.world;
-  const s = sim as unknown as { fields: Fields; src: Int32Array; events: string[] };
+  const s = sim as unknown as { fields: Fields; src: Int32Array; events: string[]; flyers: unknown[] };
   s.fields = new Fields(w);
   s.src = new Int32Array(w.size);
   s.events = [];
+  s.flyers = [];
   (sim.physics as unknown as { stamp: Uint8Array }).stamp = new Uint8Array(w.size);
   (sim.colony as unknown as { occ: Int32Array | null }).occ = null;
   for (let f = 0; f < FIELD_COUNT; f++) (sim as unknown as { buildField(f: number): void }).buildField(f);

@@ -6,6 +6,7 @@ import { TICK_HZ, SPEEDS, DAY_TICKS } from './config';
 import type { Ant } from './sim/ant';
 import { Director } from './ui/director';
 import { saveSim, loadSim, SAVE_KEY, META_KEY } from './sim/save';
+import { SITE_IDS, SiteId, siteForSeed } from './world/sites';
 
 /**
  * Owns the loop: a fixed-rate simulation, rendered every animation frame.
@@ -19,6 +20,8 @@ export class Game {
   director: Director;
   speed = 1;
   paused = false;
+  /** Pass the winter rest quickly (the colony sleeps; there is little to watch). */
+  winterSkip = true;
   selected: Ant | null = null;
   private acc = 0;
   private last = performance.now();
@@ -35,9 +38,9 @@ export class Game {
   /** Sim tick of the last save: the colony is also saved every few in-game hours. */
   private lastSaveTick = 0;
 
-  constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement, seed: number) {
+  constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement, seed: number, site: SiteId) {
     this.canvas = canvas;
-    this.sim = new Sim(seed);
+    this.sim = new Sim(seed, site);
     this.renderer = new Renderer(canvas, this.sim.world, seed);
     this.cam = new Camera(this.sim.world.w, this.sim.world.h);
     this.director = new Director(this);
@@ -123,8 +126,8 @@ export class Game {
   }
 
   /** A fresh, unlanded world from another seed (the title screen's "another site"). */
-  newWorld(seed: number): void {
-    this.sim = new Sim(seed);
+  newWorld(seed: number, site: SiteId = siteForSeed(seed)): void {
+    this.sim = new Sim(seed, site);
     this.renderer = new Renderer(this.canvas, this.sim.world, seed);
     this.selected = null;
     this.director.stop();
@@ -149,7 +152,9 @@ export class Game {
     this.last = now;
     // Time stands still until the queen lands, so a seed always starts from the same meadow.
     if (!this.paused && this.sim.phase !== 'choose') {
-      this.acc += dt * TICK_HZ * this.speed;
+      // Winter rest goes by fast unless the player wants to watch it.
+      const winter = this.winterSkip && this.sim.dormant && this.sim.phase !== 'failed';
+      this.acc += dt * TICK_HZ * (winter ? WINTER_SPEED : this.speed);
       // Never spend more than ~12 ms of a frame simulating; drop the rest.
       const start = performance.now();
       let n = 0;
@@ -171,6 +176,8 @@ export class Game {
       this.tpsTime = 0;
     }
     if (this.selected && !this.selected.alive) this.selected = null;
+    const v = this.sim.view;
+    this.cam.setBounds(v.x0, 0, v.x1, v.y1);
     if (this.director.active) this.director.update(dt);
     else this.cam.follow = this.selected ? { x: this.selected.x, y: this.selected.y - 2 } : this.cam.follow;
     this.cam.update(dt);
@@ -183,9 +190,14 @@ export class Game {
   }
 }
 
+/** Sim speed while fast-forwarding through the winter rest. */
+const WINTER_SPEED = 96;
+
 const params = new URLSearchParams(location.search);
 const seed = Number(params.get('seed') ?? Math.floor(Math.random() * 1e6));
-const game = new Game(document.getElementById('view') as HTMLCanvasElement, document.getElementById('ui')!, seed);
+const siteParam = params.get('site') as SiteId | null;
+const site = siteParam && SITE_IDS.includes(siteParam) ? siteParam : siteForSeed(seed);
+const game = new Game(document.getElementById('view') as HTMLCanvasElement, document.getElementById('ui')!, seed, site);
 // ?paused=1 starts frozen (used by the screenshot script for reproducible states).
 if (params.get('paused')) game.paused = true;
 (window as unknown as { game: Game }).game = game;

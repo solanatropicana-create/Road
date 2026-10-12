@@ -1,6 +1,6 @@
 import { World } from './world';
 import { Rng } from '../util/rng';
-import { EMPTY, WATER, HUMUS, LOAM, CLAY, SUBSOIL, GRAVEL, SAND, SEED, REFUSE, ROOT } from './mat';
+import { EMPTY, WATER, HUMUS, LOAM, CLAY, SUBSOIL, GRAVEL, SAND, SEED, REFUSE, ROOT, SANDY, LIME, ROCK, WOOD } from './mat';
 
 /**
  * `tint` of a refuse grain that is a germinated seed. The high bit, so it never
@@ -17,7 +17,7 @@ const table = (entries: [number, number][]): Float32Array => {
 /** How readily each material soaks up water (chance per contact per tick). */
 export const ABSORB = table([
   [HUMUS, 0.5], [LOAM, 0.3], [SUBSOIL, 0.35], [CLAY, 0.06], [GRAVEL, 0.45], [SAND, 0.55], [SEED, 0.6], [REFUSE, 0.3],
-  [ROOT, 0.5],
+  [ROOT, 0.5], [SANDY, 0.6], [LIME, 0.12], [ROCK, 0.03], [WOOD, 0.4],
 ]);
 
 /**
@@ -25,10 +25,17 @@ export const ABSORB = table([
  * root channels and the loose fill of old worm burrows (preferential flow),
  * and barely into clay.
  */
-const SEEP = table([[HUMUS, 0.6], [LOAM, 0.45], [SUBSOIL, 0.45], [CLAY, 0.12], [GRAVEL, 0.5], [SAND, 0.5], [SEED, 0.45], [REFUSE, 0.45], [ROOT, 0.9]]);
+const SEEP = table([
+  [HUMUS, 0.6], [LOAM, 0.45], [SUBSOIL, 0.45], [CLAY, 0.12], [GRAVEL, 0.5], [SAND, 0.5], [SEED, 0.45], [REFUSE, 0.45], [ROOT, 0.9],
+  // Sand drains straight through; water runs down along woody roots and rock cracks.
+  [SANDY, 0.75], [LIME, 0.15], [ROCK, 0.1], [WOOD, 0.9],
+]);
 
-/** Moisture above which a ceiling of this soil gives way. Clay holds best. */
-const SLUMP = table([[HUMUS, 125], [LOAM, 140], [SUBSOIL, 135], [CLAY, 190], [GRAVEL, 150]]);
+/**
+ * Moisture above which a ceiling of this soil gives way. Clay holds best. Ants
+ * pack and plaster their walls, so it takes a long soaking to bring one down.
+ */
+const SLUMP = table([[HUMUS, 170], [LOAM, 185], [SUBSOIL, 180], [CLAY, 220], [GRAVEL, 190], [SANDY, 150], [LIME, 235]]);
 
 /**
  * Soil moisture: water soaks in, spreads (mostly downward), dries near the

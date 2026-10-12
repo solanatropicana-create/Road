@@ -3,8 +3,9 @@ import { Ant } from './ant';
 import { Brood, Corpse } from './brood';
 import { Carry, Task, TaskKind, Work, WORK, ChamberKind } from './types';
 import { F } from './fields';
-import { TUNING, TICK_HZ, W } from '../config';
-import { EMPTY, SEED, FRUIT, SOLID, WATER } from '../world/mat';
+import { TUNING, TICK_HZ, DAY_TICKS } from '../config';
+import { devRate, metabolism } from './calendar';
+import { EMPTY, SEED, FRUIT, SOLID, WATER, POWDER } from '../world/mat';
 import { clamp } from '../util/math';
 
 /** Multipliers for the colony brain's priority levels: off, low, normal, high. */
@@ -23,6 +24,10 @@ export interface Sample {
 export class Colony {
   readonly ants: Ant[] = [];
   queen: Ant | null = null;
+  /** Winged young queens and males, waiting in the nest for the nuptial flight. */
+  readonly alates: Ant[] = [];
+  /** Alates that flew this year and in all (for the journal). */
+  flown = { gynes: 0, males: 0, total: 0 };
   readonly brood: Brood[] = [];
   readonly corpses: Corpse[] = [];
   /** Ant index + 1 at each cell, rebuilt each tick (0 = none). */
@@ -77,7 +82,21 @@ export class Colony {
   private starveTimer = 0;
   private eggTimer = TICK_HZ * 2;
 
-  constructor(size: number) {
+  /** World width (cells), for indexing the brood map. */
+  private readonly w: number;
+  /**
+   * Temperature the brood is kept at, °C: nurses carry brood to whichever
+   * room is best (up into sun-warmed chambers by day, deeper at night and in
+   * the heat), so this is the best temperature the nest offers right now.
+   */
+  broodTemp = 20;
+  /** Temperature where most of the colony sits (food use and ageing). */
+  nestTemp = 15;
+  /** Id of the first worker (the nanitics are the handful after it). */
+  private firstWorkerId = 0;
+
+  constructor(size: number, width: number) {
+    this.w = width;
     this.broodCell = new Int32Array(size);
     for (const t of TASKS) {
       this.share[t] = 0;
@@ -112,7 +131,7 @@ export class Colony {
     b.x = x;
     b.y = y;
     b.carried = false;
-    this.broodCell[y * W + x] = b.id;
+    this.broodCell[y * this.w + x] = b.id;
     if (!this.broodById.has(b.id)) {
       this.broodById.set(b.id, b);
       this.brood.push(b);
@@ -120,14 +139,14 @@ export class Colony {
   }
 
   liftBrood(b: Brood): void {
-    const i = b.y * W + b.x;
+    const i = b.y * this.w + b.x;
     if (this.broodCell[i] === b.id) this.broodCell[i] = 0;
     b.carried = true;
   }
 
   private removeBrood(b: Brood): void {
     if (!b.carried) {
-      const i = b.y * W + b.x;
+      const i = b.y * this.w + b.x;
       if (this.broodCell[i] === b.id) this.broodCell[i] = 0;
     }
     this.broodById.delete(b.id);
@@ -136,7 +155,8 @@ export class Colony {
   }
 
   feedings(b: Brood): number {
-    return TUNING.larvaFeedings + (b.major ? 2 : 0);
+    // Sexuals are big: a young queen takes far more food than a worker.
+    return TUNING.larvaFeedings + (b.major ? 2 : 0) + (b.sex === 1 ? 3 : b.sex === 2 ? 1 : 0);
   }
 
   isHungry(b: Brood): boolean {
@@ -148,7 +168,7 @@ export class Colony {
   feedLarvaNear(x: number, y: number): boolean {
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
-        const b = this.broodAt((y + dy) * W + x + dx);
+        const b = this.broodAt((y + dy) * this.w + x + dx);
         if (b && this.isHungry(b)) {
           b.fed++;
           return true;
@@ -165,18 +185,38 @@ export class Colony {
 
   private advanceBrood(sim: Sim): void {
     const sp = this.speedup();
+    // Development-ticks gained this tick: full speed only in the warmth.
+    const rate = devRate(this.broodTemp);
     const adults = this.adults;
     let hungry = 0;
     let loose = 0;
     const dead: Brood[] = [];
     const world = sim.world;
     for (const b of this.brood) {
-      b.age++;
+      b.age += rate;
       if (!b.carried) {
-        const m = world.mat[b.y * W + b.x]!;
+        const m = world.mat[b.y * this.w + b.x]!;
+        // Grains that slid onto it (seed, chaff, loose soil): the nurses pull it out at once.
+        if (POWDER[m]) {
+          const spot = this.freeFloorNear(sim, b.x, b.y, 5);
+          if (spot >= 0) {
+            this.liftBrood(b);
+            this.placeBrood(b, spot % this.w, (spot / this.w) | 0);
+            continue;
+          }
+        }
+        // Water in the room: the nurses carry brood to a dry spot (if there are nurses yet).
+        if (m === WATER && adults > 0 && sim.rng.next() < 0.03) {
+          const spot = this.freeFloorNear(sim, b.x, b.y - 3, 8);
+          if (spot >= 0) {
+            this.liftBrood(b);
+            this.placeBrood(b, spot % this.w, (spot / this.w) | 0);
+            continue;
+          }
+        }
         if (m === WATER || SOLID[m]) {
           // Flooded or buried brood dies unless the water drains in time.
-          if (++b.wet > TICK_HZ * 25) {
+          if (++b.wet > TICK_HZ * 60) {
             dead.push(b);
             this.deaths['brood drowned'] = (this.deaths['brood drowned'] ?? 0) + 1;
             continue;
@@ -189,13 +229,13 @@ export class Colony {
           b.age = 0;
           const majors = this.majors;
           b.major = adults > 20 && majors < adults * this.majorShare && sim.rng.chance(0.6);
-        } else if (!b.carried && sim.nest.chamberAt(b.y * W + b.x)?.kind !== 'nursery') loose++;
+        } else if (!b.carried && sim.nest.chamberAt(b.y * this.w + b.x)?.kind !== 'nursery') loose++;
       } else if (b.stage === 1) {
         const req = this.feedings(b);
-        if (b.fed >= req && b.age >= TUNING.larvaTicks * sp) {
+        if (b.fed >= req && b.age >= TUNING.larvaTicks * sp * (b.sex ? 1.3 : 1)) {
           b.stage = 2;
           b.age = 0;
-        } else if (b.age > TUNING.larvaTicks * 3.5 && !b.carried) {
+        } else if (b.age > TUNING.larvaTicks * 5 && !b.carried) {
           dead.push(b);
           this.deaths['larva starved'] = (this.deaths['larva starved'] ?? 0) + 1;
           // Nurses eat brood they cannot raise; little is wasted.
@@ -208,7 +248,7 @@ export class Colony {
             this.reserve--;
           }
         }
-      } else if (b.age >= TUNING.pupaTicks * sp && !b.carried) {
+      } else if (b.age >= TUNING.pupaTicks * sp * (b.sex ? 1.3 : 1) && !b.carried) {
         dead.push(b);
         this.eclose(sim, b);
       }
@@ -224,17 +264,29 @@ export class Colony {
   }
 
   private eclose(sim: Sim, b: Brood): void {
+    if (b.sex) {
+      // A winged sexual: it stays in the nest until the flight next spring.
+      const a = new Ant(b.sex === 1 ? 'gyne' : 'male', b.x, b.y, DAY_TICKS * 45, TUNING.workerSpeed * 0.9);
+      a.wings = true;
+      a.orient(sim, 0, 0);
+      if (this.alates.length === 0) sim.events.push({ key: 'firstAlates' });
+      this.alates.push(a);
+      return;
+    }
     const major = b.major;
     const [l0, l1] = major ? TUNING.soldierLife : TUNING.workerLife;
     const nanitic = this.born < 6;
     const life = sim.rng.int(l0, l1) * (nanitic ? 0.6 : 1);
     const ant = new Ant(major ? 'soldier' : 'worker', b.x, b.y, Math.round(life), major ? TUNING.soldierSpeed : TUNING.workerSpeed * sim.rng.range(0.9, 1.1));
+    if (!this.firstWorkerId) this.firstWorkerId = ant.id;
     ant.orient(sim, 0, 0);
     ant.reevalAt = 0;
     this.ants.push(ant);
     this.born++;
     if (!this.hadWorkers) {
       this.hadWorkers = true;
+      // The first daughter opens the sealed burrow.
+      sim.nest.unseal();
       sim.nest.widenFoundingShaft();
     }
   }
@@ -244,24 +296,34 @@ export class Colony {
   private lay(sim: Sim): void {
     const q = this.queen;
     if (!q || !q.alive || q.phase !== 2) return;
-    const qc = sim.nest.queenChamber();
-    if (!qc || !qc.ready) return;
-    if (--this.eggTimer > 0) return;
+    // (She lays wherever she is, even if a slump has half-filled the royal chamber.)
+    // No eggs through the winter rest, and few in the cold.
+    if (sim.dormant) return;
+    const warm = devRate(this.broodTemp);
+    if (warm <= 0) return;
+    this.eggTimer -= warm;
+    if (this.eggTimer > 0) return;
     const adults = this.adults;
     const breedMult = [0.55, 1, 1.6][this.breeding]!;
-    const cap = 8 + adults * TUNING.broodPerWorker * breedMult;
+    const cap = 10 + adults * TUNING.broodPerWorker * breedMult;
     // Food on hand: the granaries plus what the workers carry in their crops.
     const food = this.stored + this.reserve;
     const foodFactor = adults < 6 ? 0.8 : food < adults * 0.25 ? 2.6 : food < adults * 0.8 ? 1.4 : 1;
-    this.eggTimer = Math.round(TUNING.eggInterval * [1.8, 1, 0.6][this.breeding]! * foodFactor * sim.rng.range(0.8, 1.2));
+    const perWeek = (TUNING.eggsBase + adults * TUNING.eggsPerWorker) * breedMult;
+    this.eggTimer = Math.round((DAY_TICKS / perWeek) * foodFactor * sim.rng.range(0.8, 1.2));
     if (this.brood.length >= cap) return;
+    // From late August a big, well-fed colony raises winged young queens and males.
+    const doy = sim.doy;
+    const sexual = doy > 200 && doy < 275 && adults >= TUNING.alateMinWorkers && food >= adults && sim.rng.chance(0.3);
     // Don't lay into a famine: the larvae already hatched need feeding first.
     const larvae = this.brood.filter((b) => b.stage === 1).length;
     if (adults > 0 && this.stored + this.reserve * 0.5 < larvae * 1.5 + 3) return;
     if (adults === 0 && this.born === 0 && this.brood.length >= 8) return;
     const spot = this.freeFloorNear(sim, q.x, q.y, 6);
     if (spot < 0) return;
-    this.placeBrood(new Brood(spot % W, (spot / W) | 0), spot % W, (spot / W) | 0);
+    const egg = new Brood(spot % this.w, (spot / this.w) | 0);
+    if (sexual) egg.sex = sim.rng.chance(0.3) ? 1 : 2;
+    this.placeBrood(egg, spot % this.w, (spot / this.w) | 0);
   }
 
   private freeFloorNear(sim: Sim, x: number, y: number, r: number): number {
@@ -274,7 +336,7 @@ export class Colony {
         const yy = y + dy;
         if (!w.inside(xx, yy)) continue;
         const i = yy * w.w + xx;
-        if (!w.walk[i] || this.broodCell[i] || !SOLID[w.mat[i + w.w]!] || w.bg[i] !== 1) continue;
+        if (!w.walk[i] || this.broodCell[i] || !SOLID[w.mat[i + w.w]!] || w.bg[i] !== 1 || w.mat[i] === WATER) continue;
         const d = dx * dx + dy * dy + sim.rng.next();
         if (d < bd) {
           bd = d;
@@ -328,7 +390,9 @@ export class Colony {
   private consume(sim: Sim): void {
     const adults = this.adults;
     if (adults === 0) return;
-    this.need += adults / TUNING.adultSeedTicks + (this.queen?.alive ? 1 / TUNING.queenSeedTicks : 0);
+    // Cold ants eat little: through the winter rest the stores last.
+    const meta = metabolism(this.nestTemp);
+    this.need += ((adults + this.alates.length * 1.5) / TUNING.adultSeedTicks + (this.queen?.alive ? 1 / TUNING.queenSeedTicks : 0)) * meta;
     while (this.need >= 1) {
       this.need -= 1;
       if (this.eatOne(sim)) this.hunger = Math.max(0, this.hunger - 0.5);
@@ -362,8 +426,13 @@ export class Colony {
     const food = this.stored + this.reserve;
     const shortage = clamp(1 - food / (adults * 2 + 12), 0, 1);
     need[Task.Forage] = 0.3 + 0.9 * shortage + (this.starving ? 0.8 : 0);
-    // Nobody goes out in the rain.
-    if (sim.raining) need[Task.Forage] = need[Task.Forage]! * 0.08;
+    // Nobody goes out in the rain, the cold, or the midday heat of summer.
+    need[Task.Forage] = need[Task.Forage]! * (0.08 + 0.92 * sim.forageWeather);
+    if (sim.dormant) {
+      // Winter rest: the colony clusters deep and waits.
+      need[Task.Forage] = 0;
+      need[Task.Dig] = need[Task.Dig]! * 0.05;
+    } else if (this.nestTemp < 8) need[Task.Dig] = need[Task.Dig]! * 0.3;
     if (this.starving || food < adults * 0.3) need[Task.Dig] = need[Task.Dig]! * 0.35;
     // Nowhere left to put seed: fewer foragers, more diggers (the granary needs finishing).
     if (f[F.Gran] === 0 && this.adults > 4) {
@@ -378,7 +447,7 @@ export class Colony {
     for (const c of this.corpses) if (!c.carried && sim.world.bg[c.y * sim.world.w + c.x] === 1) loads++;
     if (loads === 0 && f[F.Trash]! > 0) loads = 1;
     need[Task.Clean] = loads > 0 ? 0.08 + Math.min(0.8, loads / (adults * 0.08 + 4)) : 0;
-    need[Task.Idle] = 0.28;
+    need[Task.Idle] = sim.dormant ? 3 : 0.28;
     for (const wk of WORK) need[WORK_TASK[wk]] = need[WORK_TASK[wk]]! * PRIO_MULT[this.prio[wk]]!;
     let sum = 0;
     for (const t of TASKS) sum += need[t]!;
@@ -387,13 +456,19 @@ export class Colony {
     for (const a of this.ants) this.count[a.task] = (this.count[a.task] ?? 0) + 1;
   }
 
+  /**
+   * Age polyethism, in weeks: young workers nurse, then dig and clean, and
+   * the older ones go out to forage (a few weeks in). The first, tiny
+   * workers (nanitics) skip the nursery and forage at once: the colony needs food.
+   */
   private affinity(a: Ant, t: TaskKind): number {
-    const age = a.ageFrac;
+    const wk = a.age / DAY_TICKS;
+    const nanitic = a.id <= this.firstWorkerId + 8;
     let v = 0;
     switch (t) {
-      case Task.Nurse: v = age < 0.25 ? 1 : age < 0.5 ? 0.3 : -0.5; break;
-      case Task.Dig: v = age > 0.12 && age < 0.7 ? 0.6 : 0; break;
-      case Task.Forage: v = age > 0.45 ? 1 : age > 0.3 ? 0.2 : -0.6; break;
+      case Task.Nurse: v = wk < 3 ? 1 : wk < 7 ? 0.3 : -0.5; break;
+      case Task.Dig: v = wk > 1 && wk < 30 ? 0.6 : 0; break;
+      case Task.Forage: v = wk > 6 || nanitic ? 1 : wk > 3 ? 0.2 : -0.6; break;
       case Task.Clean: v = 0.2; break;
     }
     if (a.caste === 'soldier') {
@@ -450,6 +525,42 @@ export class Colony {
     return false;
   }
 
+  // ---------------------------------------------------------------- climate
+
+  /** Where in the nest it is warmest for the brood, and how warm the colony is. */
+  private temperatures(sim: Sim): void {
+    const w = sim.world;
+    let best = -99;
+    let bestRate = -1;
+    let deep = 0;
+    let n = 0;
+    const consider = (depth: number): void => {
+      const t = sim.soilT(depth);
+      const r = devRate(t);
+      // Prefer the faster room; between equals, the one nearer 26 °C.
+      if (r > bestRate + 1e-3 || (Math.abs(r - bestRate) <= 1e-3 && Math.abs(t - 26) < Math.abs(best - 26))) {
+        bestRate = r;
+        best = t;
+      }
+    };
+    for (const c of sim.nest.chambers) {
+      if (!c.ready) continue;
+      const depth = c.floorY - w.ground[Math.round(c.cx)]!;
+      consider(depth);
+      deep += depth;
+      n++;
+    }
+    if (n === 0) {
+      const q = this.queen;
+      const depth = q ? Math.max(5, q.y - w.ground[q.x]!) : 20;
+      consider(depth);
+      deep = depth;
+      n = 1;
+    }
+    this.broodTemp = best;
+    this.nestTemp = sim.soilT(deep / n);
+  }
+
   // ---------------------------------------------------------------- tick
 
   tick(sim: Sim): void {
@@ -458,6 +569,7 @@ export class Colony {
     this.advanceBrood(sim);
     this.lay(sim);
     if (sim.tick % 30 === 0) {
+      this.temperatures(sim);
       this.refreshStore(sim);
       this.updateDemand(sim);
     }
@@ -484,6 +596,13 @@ export class Colony {
       let j = 0;
       for (const a of this.ants) if (a.alive) this.ants[j++] = a;
       this.ants.length = j;
+    }
+    // Alates sit out the months in the nest; on the flight day they climb out and take off.
+    for (const a of this.alates) if (a.alive) a.tick(sim);
+    if (this.alates.some((a) => !a.alive || a.flown)) {
+      let j = 0;
+      for (const a of this.alates) if (a.alive && !a.flown) this.alates[j++] = a;
+      this.alates.length = j;
     }
     if (this.hadWorkers && this.ants.length === 0 && !this.failed) this.failed = true;
     if (sim.tick % (TICK_HZ * 5) === 0) {

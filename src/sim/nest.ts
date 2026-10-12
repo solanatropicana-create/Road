@@ -1,9 +1,8 @@
 import { World } from '../world/world';
+import { PACKED, PLUG } from '../world/physics';
 import { Rng } from '../util/rng';
 import { Noise } from '../util/noise';
-import {
-  EMPTY, STONE, BEDROCK, ROOT, CLAY, GRAVEL, SEED, REFUSE, FRUIT, HARDNESS, SOLID, LITTER,
-} from '../world/mat';
+import { EMPTY, ROOT, CLAY, GRAVEL, SEED, REFUSE, FRUIT, HARDNESS, SOLID, LITTER, SAND, SOIL, HUMUS, HARD, LIME } from '../world/mat';
 import type { ChamberKind } from './types';
 
 export interface Chamber {
@@ -103,7 +102,8 @@ export class Nest {
     this.founded = true;
     this.foundX = x;
     const g = w.ground[x]!;
-    const depth = 26;
+    // Claustral chamber a few centimetres down: below the worst of the day's heat and the rain.
+    const depth = 48;
     const tx = x + this.rng.int(-5, 5);
     const path = this.astar(x, g, tx, g + depth) ?? [];
     const pts: [number, number][] = path.map((i) => [i % w.w, (i / w.w) | 0]);
@@ -140,6 +140,36 @@ export class Nest {
     }
   }
 
+  /**
+   * Shut the nest: pack the top of each entrance shaft with soil (a few mm
+   * thick) so rain runs off and the cold stays out. The plug is dug out
+   * again when the nest opens.
+   */
+  seal(): void {
+    const w = this.world;
+    w.sealed = true;
+    const e0 = this.entrances[0]!;
+    const cx = e0 % w.w;
+    w.sealBox = [cx - 9, cx + 9, w.ground[cx]! - 30, w.ground[cx]! + 12];
+    for (const e of this.entrances) {
+      const ex = e % w.w;
+      const g = w.ground[ex]!;
+      for (let y = g; y <= g + 3; y++) {
+        for (let x = ex - 3; x <= ex + 3; x++) {
+          const i = y * w.w + x;
+          if (!w.plan[i] || w.bg[i] !== 1 || w.mat[i] !== EMPTY) continue;
+          const src = w.mat[i + 2] && SOIL[w.mat[i + 2]!] ? w.mat[i + 2]! : HUMUS;
+          w.set(i, SAND, this.rng.int(60, 200), src | PACKED | PLUG);
+        }
+      }
+    }
+  }
+
+  /** Open up: the plug becomes ordinary loose soil in the plan, for the diggers. */
+  unseal(): void {
+    this.world.sealed = false;
+  }
+
   /** After the first workers hatch they widen the queen's burrow into a proper shaft. */
   widenFoundingShaft(): void {
     const w = this.world;
@@ -160,7 +190,7 @@ export class Nest {
   private markPlan(i: number, out: number[] | null): boolean {
     const w = this.world;
     const m = w.mat[i]!;
-    if (m === STONE || m === BEDROCK) return false;
+    if (HARD[m]) return false;
     // Above ground only open air and litter can be claimed (to keep the mouth clear).
     if (w.bg[i] !== 1 && m !== EMPTY && m !== LITTER) return false;
     if (w.plan[i]) return false;
@@ -203,7 +233,7 @@ export class Nest {
         if (nx * nx + ny * ny > r * r) continue;
         const i = y * w.w + x;
         const m = w.mat[i]!;
-        if (m === STONE || m === BEDROCK || w.bg[i] !== 1) continue;
+        if (HARD[m] || w.bg[i] !== 1) continue;
         if (!w.plan[i]) {
           w.plan[i] = 1;
           this.planCells.push(i);
@@ -227,6 +257,7 @@ export class Nest {
   static diggable(w: World, i: number): boolean {
     if (!w.plan[i]) return false;
     const m = w.mat[i]!;
+    if (w.sealed && m === SAND && w.tint[i]! & PLUG) return false;
     if (m === SEED || m === FRUIT || m === REFUSE) return w.zone[i] === 0 && w.bg[i] === 1;
     return HARDNESS[m]! > 0;
   }
@@ -423,7 +454,7 @@ export class Nest {
     if (!w.inside(x, y) || y <= w.ground[x]! + 10) return 'sky';
     if (x < 24 || x > w.w - 24 || y > w.h - 40) return 'edge';
     const m = w.mat[y * w.w + x]!;
-    if (m === STONE || m === BEDROCK) return 'rock';
+    if (HARD[m]) return 'rock';
     return null;
   }
 
@@ -546,7 +577,7 @@ export class Nest {
         if (w.bg[i] !== 1 || y < w.ground[x]! + 8) return -1;
         if (this.planDist[i]! < 4) return -1;
         const m = w.mat[i]!;
-        if (m === STONE || m === BEDROCK || m === ROOT) rock++;
+        if (HARD[m] || m === ROOT || m === LIME) rock++;
         n++;
       }
     }
@@ -559,7 +590,7 @@ export class Nest {
   private cost(i: number, avoidRooms = false): number {
     const w = this.world;
     const m = w.mat[i]!;
-    if (m === STONE || m === BEDROCK) return Infinity;
+    if (HARD[m]) return Infinity;
     if (w.bg[i] !== 1) return Infinity;
     // Route around rooms full of stores rather than through them.
     if (avoidRooms && w.zone[i] && m !== EMPTY) return Infinity;

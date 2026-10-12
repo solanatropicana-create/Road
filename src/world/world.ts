@@ -33,6 +33,19 @@ export class World {
   readonly plant: Uint8Array;
   readonly ptone: Uint8Array;
 
+  /** The nest's mouth is shut: plug cells are not to be dug out until it opens. */
+  sealed = false;
+  /** Around the shut mouth (x0, x1, y0, y1): rain soaks into the plug there instead of pooling and leaking in. */
+  sealBox: [number, number, number, number] = [0, -1, 0, -1];
+
+  /** Is this cell over or in the shut mouth of the nest? */
+  inSealBox(i: number): boolean {
+    if (!this.sealed) return false;
+    const x = i % this.w;
+    const y = (i - x) / this.w;
+    const b = this.sealBox;
+    return x >= b[0] && x <= b[1] && y >= b[2] && y <= b[3];
+  }
   /** Bumped whenever walkability changes anywhere. */
   walkVersion = 0;
   /** Underground cells that became part of the nest outside the plan (debris to clear). */

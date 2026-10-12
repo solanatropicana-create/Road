@@ -3,7 +3,7 @@ import { generate, Horizons } from '../world/gen';
 import { World } from '../world/world';
 import { Plants } from '../world/plants';
 import { Physics, PACKED } from '../world/physics';
-import { EMPTY, SAND, SEED, FRUIT, SOLID, REFUSE, WATER, STONE, BEDROCK } from '../world/mat';
+import { EMPTY, SAND, SEED, FRUIT, SOLID, REFUSE, WATER, HARD, ROCK, WOOD, LIME } from '../world/mat';
 import { ABSORB } from '../world/moisture';
 import { Nest } from './nest';
 import { Fields, F, FIELD_COUNT, FAR } from './fields';
@@ -11,14 +11,20 @@ import { Colony } from './colony';
 import { Ant } from './ant';
 import { Particles } from './particles';
 import { Task } from './types';
-import { TUNING, TICK_HZ, DAY_TICKS } from '../config';
+import { TUNING, TICK_HZ, DAY_TICKS, GROUND_Y } from '../config';
 import { pack, sampleRamp, PAL, mixRGB } from '../render/palette';
 import { HUMUS, LOAM, CLAY, SUBSOIL } from '../world/mat';
+import { Calendar, Season, forageWindow } from './calendar';
+import { SITES, SiteId, Variant, siteForSeed } from '../world/sites';
 
 /** An event for the player; `key` names a message in the UI's string table. */
 export interface SimEvent {
   key: string;
   n?: number;
+  m?: number;
+  /** Who or what the message is about (words looked up by the UI). */
+  who?: string;
+  what?: string;
   /** A chamber kind the message is about. */
   kind?: string;
 }
@@ -32,7 +38,12 @@ export interface Weather {
   until: number;
   next: number;
   storm: boolean;
+  /** This shower falls as snow (it is below freezing). */
+  snowing?: boolean;
 }
+
+/** Seeds blowing in from the meadow beyond the slice, by month (none in winter). */
+const SEED_RAIN_MONTH = [0, 0, 0, 0.35, 0.6, 1, 1, 1, 0.8, 0.5, 0.15, 0];
 
 export interface Drop {
   x: number;
@@ -66,24 +77,100 @@ export class Sim {
   private pendingSprout = 0;
   /** Day starts mid-morning. */
   readonly dayOffset = 0.32;
+  /** Weeks, months and seasons; temperatures from the site's climate. */
+  readonly cal: Calendar;
+  /** Which real place this slice is, and what makes this map of it different. */
+  readonly site: SiteId;
+  readonly variant: Variant;
+  /** A tree at the edge of the slice (shade, roots, autumn leaves), if any. */
+  readonly tree: { x: number; r: number } | null;
+  /**
+   * The part of the world the colony knows so far (x0..x1, down to y1): the
+   * view starts small around the nest and widens and deepens as the nest and
+   * the foragers' range grow. Eased toward `viewGoal`.
+   */
+  readonly view = { x0: 0, x1: 0, y1: 0 };
+  private viewGoal = { x0: 0, x1: 0, y1: 0 };
+  /** What the diggers have run into so far (each is told once). */
+  private discovered: Record<string, boolean> = {};
+  /** Year the last batch of buried seeds was reported. */
+  seedFindYear = 0;
+  /** Snow lying on the ground, mm. */
+  snow = 0;
+  /** Cloud cover 0..1 (full under rain). */
+  cloud = 0.2;
+  private cloudGoal = 0.2;
+  /** Soil-surface temperature now, °C (refreshed twice a second of sim time). */
+  surfaceT = 15;
+  season: Season = 'spring';
+  /** Winter rest: no foraging, no laying, brood paused, the colony clustered deep. */
+  dormant = false;
+  /** When to shut the nest (soon after rain starts or the cold comes, once the foragers are in). */
+  private sealAt = 0;
+  /** When to open it again after rain (once the puddles in the crater have soaked away). */
+  private openAt = 0;
+  /** Nuptial flight under way: the alates are climbing out and taking off. */
+  flight = false;
+  /** Colony year of the last flight (one a year). */
+  private flightYear = 0;
+  private flightCount = { gynes: 0, males: 0 };
+  /** When it last rained (flights follow rain, when the soil is soft for the new queens). */
+  private lastRain = -1e9;
+  /** Alates in the air after take-off (drawn until they are out of sight). */
+  readonly flyers: { x: number; y: number; vx: number; vy: number; caste: string; t: number }[] = [];
   seedRain = 0.4;
   /** Seeds lying loose on the surface (birds and mice keep this in check). */
   looseSeeds = 0;
   private src: Int32Array;
 
-  constructor(seed: number) {
+  constructor(seed: number, site: SiteId = siteForSeed(seed)) {
     this.seed = seed;
+    this.site = site;
     this.rng = new Rng(seed ^ 0xa5a5a5);
-    const gen = generate(seed);
+    const gen = generate(seed, site);
     this.world = gen.world;
     this.plants = gen.plants;
     this.horizons = gen.horizons;
+    this.variant = gen.variant;
+    this.tree = gen.tree;
+    this.cal = new Calendar(SITES[site].climate);
+    this.cal.tOffset = gen.variant.exposure * 1.5;
+    this.cal.heat = SITES[site].surfaceHeat;
     this.physics = new Physics(this.world, this.rng);
+    for (const i of gen.wet) this.physics.moisture.add(i, 215);
+    // Before the landing the whole meadow can be scanned, but only the top of the soil.
+    Object.assign(this.view, { x0: 0, x1: this.world.w, y1: GROUND_Y + 240 });
+    Object.assign(this.viewGoal, this.view);
     this.nest = new Nest(this.world, this.rng, seed);
     this.fields = new Fields(this.world);
-    this.colony = new Colony(this.world.size);
+    this.colony = new Colony(this.world.size, this.world.w);
     this.pher = new Float32Array(this.world.size);
     this.src = new Int32Array(this.world.size);
+  }
+
+  /** In-game days since the start (fractional). One in-game day is one week of the calendar. */
+  get simDays(): number {
+    return this.tick / DAY_TICKS + this.dayOffset;
+  }
+
+  /** Day of the year, 0..364. */
+  get doy(): number {
+    return this.cal.doy(this.simDays);
+  }
+
+  /** Soil temperature at a depth below the surface (mm), °C. */
+  soilT(depthMm: number): number {
+    return this.cal.soilTemp(depthMm, this.dayT, this.doy, this.cloud, this.snow);
+  }
+
+  /** How fast ants age right now (1 on a warm day; slow in the winter cold). */
+  get agingRate(): number {
+    return this.dormant ? 0.3 : 1;
+  }
+
+  /** How good the weather is for foraging right now, 0..1 (temperature and rain). */
+  get forageWeather(): number {
+    return this.raining ? 0 : forageWindow(this.surfaceT);
   }
 
   get dayT(): number {
@@ -117,7 +204,7 @@ export class Sim {
         const g = w.ground[xx]!;
         for (let y = g - 4; y <= g + 8; y++) {
           const m = w.mat[y * w.w + xx]!;
-          if (m === STONE || m === BEDROCK) return false;
+          if (HARD[m]) return false;
         }
       }
       return true;
@@ -145,6 +232,9 @@ export class Sim {
     q.task = Task.Found;
     q.orient(this, 1, 0);
     this.colony.queen = q;
+    this.cal.originDay = this.simDays;
+    // The colony's world starts as a hand's breadth around the burrow.
+    Object.assign(this.viewGoal, { x0: Math.max(0, x - 260), x1: Math.min(w.w, x + 260), y1: Math.min(w.h, w.ground[x]! + 200) });
     this.colony.middenSide = this.rng.chance(0.5) ? -1 : 1;
     this.nest.found(x);
     // Plants the crater cut through go entirely: a stem severed at the base would
@@ -337,6 +427,12 @@ export class Sim {
       }
       case F.Rest: {
         let any = false;
+        // Winter: the colony clusters in the deepest rooms, below the frost.
+        if (this.dormant) {
+          const rooms = nest.chambers.filter((c) => c.ready && c.kind !== 'granary').sort((a, b) => b.floorY - a.floorY).slice(0, 2);
+          for (const c of rooms) for (const i of c.floor) push(i);
+          if (rooms.length) break;
+        }
         for (const c of nest.chambers) {
           if (c.kind !== 'rest' || !c.ready) continue;
           any = true;
@@ -371,8 +467,8 @@ export class Sim {
   private gleaners(): void {
     const w = this.world;
     const found: number[] = [];
-    const y0 = 30;
-    const y1 = 100;
+    const y0 = Math.max(1, GROUND_Y - 70);
+    const y1 = GROUND_Y + 30;
     for (let y = y0; y < y1; y++) {
       for (let x = 1; x < w.w - 1; x++) {
         const i = y * w.w + x;
@@ -401,7 +497,11 @@ export class Sim {
 
   step(): void {
     this.tick++;
-    this.plants.tick();
+    if (this.tick % 15 === 0) this.climate();
+    if (this.tick % 30 === 0) this.updateView();
+    if (this.tick % 300 === 150 && this.nest.founded) this.discoveries();
+    // Plants grow and ripen only in the warm months.
+    if (this.cal.airMean(this.doy) > 6) this.plants.tick();
     this.physics.step();
     if (this.tick % 15 === 0) this.nest.scan();
     if (this.nest.founded) {
@@ -413,6 +513,18 @@ export class Sim {
     }
     if ((this.tick & 3) === 0) this.decayPheromone();
     this.particles.step();
+    // Alates on the wing climb and drift off, fluttering.
+    if (this.flyers.length) {
+      let j = 0;
+      for (const f of this.flyers) {
+        f.t++;
+        f.x += f.vx + Math.sin(f.t * 0.13 + f.x) * 0.12;
+        f.y += f.vy;
+        f.vx += (this.rng.next() - 0.45) * 0.01;
+        if (f.y > -20 && f.x > -20 && f.x < this.world.w + 20) this.flyers[j++] = f;
+      }
+      this.flyers.length = j;
+    }
     this.physics.moisture.step();
     this.seasonal();
     if (this.tick % 20 === 0) this.settleSpoil();
@@ -437,19 +549,34 @@ export class Sim {
     const already = w.rain > 0.15 || w.target > 0;
     // Already raining: a storm call strengthens it, otherwise it just lasts longer.
     if (already) this.events.push(storm && !w.storm ? { key: 'stormGrows' } : { key: 'rainLonger' });
-    else this.events.push({ key: storm ? 'storm' : 'rain' });
+    else {
+      w.snowing = this.cal.airMean(this.doy) < 1.5;
+      if (w.snowing) storm = false;
+      this.events.push({ key: w.snowing ? 'snow' : storm ? 'storm' : 'rain' });
+    }
     w.storm = w.storm || storm;
+    if (this.colony.hadWorkers && !this.world.sealed && !this.sealAt) this.sealAt = this.tick + TICK_HZ * 3;
+    this.openAt = 0;
     w.target = Math.max(already ? w.target : 0, storm ? 2.6 : this.rng.range(0.5, 1));
     w.until = Math.max(w.until, this.tick + Math.round((storm ? this.rng.range(45, 70) : this.rng.range(30, 60)) * TICK_HZ));
   }
 
   private rain(): void {
     const wt = this.weather;
-    if (wt.target === 0 && this.tick >= wt.next && this.phase === 'growing') this.startRain(this.rng.chance(0.25));
+    if (wt.target === 0 && this.tick >= wt.next && this.phase !== 'choose') {
+      // Summer showers are often thunderstorms; below freezing it snows.
+      const summer = this.season === 'summer';
+      this.startRain(summer && this.rng.chance(this.cal.climate.stormShare));
+    }
     if (wt.target > 0 && this.tick >= wt.until) {
       wt.target = 0;
-      wt.next = this.tick + Math.round(this.rng.range(DAY_TICKS * 0.9, DAY_TICKS * 2.2));
-      this.events.push({ key: 'rainStops' });
+      // Showers come at the site's monthly rate (in-game days are weeks).
+      const perWeek = this.cal.climate.showers[this.cal.month(this.doy)]!;
+      wt.next = this.tick + Math.round((DAY_TICKS / Math.max(0.2, perWeek)) * this.rng.range(0.5, 1.5));
+      this.events.push({ key: wt.snowing ? 'snowStops' : 'rainStops' });
+      wt.snowing = false;
+      // The rain is over: dig the door open again once the crater has drained (unless it is winter).
+      if (this.colony.hadWorkers && !this.dormant) this.openAt = this.tick + TICK_HZ * 25;
     }
     wt.rain += (wt.target - wt.rain) * 0.01;
     if (wt.rain < 0.01 && wt.target === 0) wt.rain = 0;
@@ -465,12 +592,18 @@ export class Sim {
     for (let k = 0; k < this.drops.length; k++) {
       const d = this.drops[k]!;
       let alive = true;
-      // Raindrops are quick: four cells a tick, checked one at a time.
-      for (let s = 0; s < 4 && alive; s++) {
+      // Raindrops are quick: four cells a tick, checked one at a time. Snow drifts down slowly.
+      const steps = wt.snowing ? 1 : 4;
+      for (let s = 0; s < steps && alive; s++) {
         const px = Math.round(d.x);
         const py = Math.round(d.y);
-        d.x += wind * 0.25;
-        d.y += 1;
+        if (wt.snowing) {
+          d.x += Math.sin(d.y * 0.15 + d.x) * 0.3 + wind * 0.5;
+          d.y += this.rng.next() < 0.6 ? 1 : 0;
+        } else {
+          d.x += wind * 0.25;
+          d.y += 1;
+        }
         const x = Math.round(d.x);
         const y = Math.round(d.y);
         if (x < 1 || x >= w.w - 1 || y >= w.h - 1) {
@@ -498,6 +631,11 @@ export class Sim {
   private impact(prev: number, hit: number): void {
     const w = this.world;
     const m = w.mat[hit]!;
+    // Snowflakes just add to the snow lying on the ground.
+    if (this.weather.snowing) {
+      this.snow = Math.min(60, this.snow + 0.004);
+      return;
+    }
     // Ground soaks rain up to a point; past that the rain pools and runs off.
     // Loose spoil on the crater sheds most of it toward the mouth.
     const soak = ABSORB[m]! > 0 ? Math.max(0, 1 - w.moist[hit]! / 170) * (m === SAND ? 0.35 : 1) : 0;
@@ -506,8 +644,8 @@ export class Sim {
       w.tint[hit] = w.tint[hit]! & ~PACKED;
       w.wake(hit);
     }
-    if (this.rng.next() < soak) {
-      this.physics.moisture.add(hit, 40);
+    if (this.rng.next() < soak || w.inSealBox(prev)) {
+      if (ABSORB[m]! > 0) this.physics.moisture.add(hit, 40);
     } else if (prev >= 0 && prev < w.size && w.mat[prev] === EMPTY && this.rng.next() < 0.7) {
       w.set(prev, WATER, this.rng.int(0, 255), w.tint[prev]);
     }
@@ -577,11 +715,202 @@ export class Sim {
     }
   }
 
+  /**
+   * Temperature, cloud and snow, and the turn of the seasons. The colony
+   * rests through the winter (when the mean air temperature is below about
+   * 7 °C: roughly November to late March in the Pannonian steppe).
+   */
+  private climate(): void {
+    const doy = this.doy;
+    const wt = this.weather;
+    // Cloud drifts toward a new cover every few hours; rain closes it.
+    if (this.rng.next() < 0.01) this.cloudGoal = Math.pow(this.rng.next(), 1.6) * 0.9;
+    const goal = wt.rain > 0.15 ? 1 : this.cloudGoal;
+    this.cloud += (goal - this.cloud) * 0.05;
+    this.surfaceT = this.cal.surfaceTemp(this.dayT, doy, this.cloud, this.snow);
+    // Snow melts in the sun and in thaw; meltwater soaks the topsoil.
+    if (this.snow > 0) {
+      const air = this.cal.airMean(doy);
+      const melt = Math.max(0, this.surfaceT) * 0.002 + Math.max(0, air - 1) * 0.004;
+      if (melt > 0) {
+        const before = this.snow;
+        this.snow = Math.max(0, this.snow - melt);
+        this.meltWater((before - this.snow) * 6);
+      }
+    }
+    const season = this.cal.season(doy);
+    if (season !== this.season) {
+      this.season = season;
+      if (this.nest.founded) this.events.push({ key: `season_${season}` });
+    }
+    if (this.raining) this.lastRain = this.tick;
+    this.nuptialFlight(doy);
+    const mean = this.cal.airMean(doy);
+    const dormant = this.dormant ? mean < 7.5 : mean < 6.5;
+    if (dormant !== this.dormant) {
+      this.dormant = dormant;
+      if (this.nest.founded) this.events.push({ key: dormant ? 'dormancy' : 'waking' });
+      if (this.colony.hadWorkers) {
+        if (dormant) this.sealAt = this.tick + TICK_HZ * 20;
+        else if (!this.raining) this.openNest();
+      }
+    }
+    if (this.openAt && this.tick >= this.openAt) {
+      this.openAt = 0;
+      if (!this.raining && !this.dormant) this.openNest();
+    }
+    // Shut the door once everyone is in (or after a while, leaving stragglers to shelter outside).
+    if (this.sealAt && this.tick >= this.sealAt) {
+      const outside = this.colony.ants.some((a) => this.world.bg[a.y * this.world.w + a.x] === 0);
+      if (!outside || this.tick > this.sealAt + TICK_HZ * 20) {
+        this.sealAt = 0;
+        if (!this.world.sealed && (this.raining || this.dormant)) {
+          this.nest.seal();
+          this.events.push({ key: 'plugged' });
+        }
+      }
+    }
+  }
+
+  /**
+   * The nuptial flight: once a year, between April and early June, on a warm,
+   * calm late morning soon after rain, the winged queens and males pour out of
+   * the crater and take off.
+   */
+  private nuptialFlight(doy: number): void {
+    const col = this.colony;
+    const year = this.cal.year(this.simDays);
+    if (this.flight) {
+      if (col.alates.length === 0 || this.dayT > 0.66 || this.raining) {
+        this.flight = false;
+        this.events.push({ key: 'flightDone', n: this.flightCount.gynes, m: this.flightCount.males });
+      }
+      return;
+    }
+    if (col.alates.length === 0 || year === this.flightYear || this.dormant) return;
+    if (doy < 95 || doy > 165 || this.dayT < 0.42 || this.dayT > 0.58) return;
+    const afterRain = this.tick - this.lastRain < DAY_TICKS * 2 || doy > 145;
+    if (!afterRain || this.raining || this.cloud > 0.6 || this.surfaceT < 20 || this.surfaceT > 36) return;
+    this.flight = true;
+    this.flightYear = year;
+    this.flightCount = { gynes: 0, males: 0 };
+    this.openNest();
+    this.events.push({ key: 'flight' });
+  }
+
+  /** An alate leaves the ground: off it goes, up and away on the breeze. */
+  takeOff(a: Ant): void {
+    if (a.caste === 'gyne') this.flightCount.gynes++;
+    else this.flightCount.males++;
+    this.colony.flown.total++;
+    this.flyers.push({ x: a.x + 0.5, y: a.y, vx: this.rng.range(-0.15, 0.25), vy: this.rng.range(-0.35, -0.22), caste: a.caste, t: 0 });
+  }
+
+  /**
+   * Widen and deepen the known world to take in the nest and wherever the
+   * ants have been, a little beyond. It never shrinks; it eases outward.
+   */
+  private updateView(): void {
+    const w = this.world;
+    const g = this.viewGoal;
+    if (this.nest.founded && this.tick % 300 === 0) {
+      let x0 = Infinity;
+      let x1 = -Infinity;
+      let y1 = 0;
+      for (const i of this.nest.planCells) {
+        const x = i % w.w;
+        const y = (i / w.w) | 0;
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y > y1) y1 = y;
+      }
+      for (const a of this.colony.ants) {
+        if (a.x < x0) x0 = a.x;
+        if (a.x > x1) x1 = a.x;
+        if (a.y > y1) y1 = a.y;
+      }
+      // Grow toward what the colony uses, but only so fast.
+      if (x0 - 140 < g.x0) g.x0 = Math.max(0, x0 - 140, g.x0 - 120);
+      if (x1 + 140 > g.x1) g.x1 = Math.min(w.w, x1 + 140, g.x1 + 120);
+      if (y1 + 110 > g.y1) g.y1 = Math.min(w.h, y1 + 110, g.y1 + 80);
+    }
+    const v = this.view;
+    const k = this.nest.founded ? 0.06 : 1;
+    v.x0 += (g.x0 - v.x0) * k;
+    v.x1 += (g.x1 - v.x1) * k;
+    v.y1 += (g.y1 - v.y1) * k;
+  }
+
+  /**
+   * What the diggers run into: an old burrow of the local digger (open
+   * tunnels the nest breaks into), limestone, a tree root, the lime layer.
+   */
+  private discoveries(): void {
+    const w = this.world;
+    const W = w.w;
+    const once = (key: string, ev: SimEvent): void => {
+      if (this.discovered[key]) return;
+      this.discovered[key] = true;
+      this.events.push(ev);
+    };
+    for (const i of this.nest.frontier) {
+      for (const n of [i - 1, i + 1, i - W, i + W]) {
+        const m = w.mat[n]!;
+        if (m === ROCK) once('rock', { key: 'hitRock', what: 'rock' });
+        else if (m === WOOD) once('wood', { key: 'hitRock', what: 'wood' });
+        else if (m === LIME) once('lime', { key: 'hitLime' });
+      }
+    }
+    if (!this.discovered.burrow) {
+      for (const i of this.nest.planCells) {
+        if (w.mat[i] !== EMPTY) continue;
+        for (const n of [i - 1, i + 1, i - W, i + W]) {
+          if (w.mat[n] === EMPTY && !w.plan[n] && w.bg[n] === 1) {
+            once('burrow', { key: 'foundBurrow', who: SITES[this.site].burrower ?? 'vole' });
+            break;
+          }
+        }
+        if (this.discovered.burrow) break;
+      }
+    }
+  }
+
+  /** A digger turned up a seed buried in the soil (reported once a year). */
+  buriedSeed(): void {
+    const y = this.cal.year(this.simDays);
+    if (this.seedFindYear === y) return;
+    this.seedFindYear = y;
+    this.events.push({ key: 'foundSeeds' });
+  }
+
+  /** Unshut the nest: the plug becomes soil to dig out. */
+  openNest(): void {
+    this.sealAt = 0;
+    if (this.world.sealed) {
+      this.nest.unseal();
+      this.nest.scan();
+    }
+  }
+
+  /** Meltwater (in cells' worth of moisture) soaks into the top of the soil. */
+  private meltWater(amount: number): void {
+    const w = this.world;
+    let left = amount;
+    while (left > 0) {
+      const x = this.rng.int(2, w.w - 3);
+      let y = 1;
+      while (y < w.h - 1 && w.mat[y * w.w + x] === EMPTY) y++;
+      this.physics.moisture.add(y * w.w + x, 60);
+      left -= 1;
+    }
+  }
+
   /** Seeds blow in from the meadow beyond the frame; now and then a berry drops. */
   private seasonal(): void {
     const w = this.world;
     if (this.tick % 150 === 0) this.gleaners();
-    if (this.looseSeeds < 260 && this.rng.next() < this.seedRain / TICK_HZ) {
+    const monthly = SEED_RAIN_MONTH[this.cal.month(this.doy)]!;
+    if (this.looseSeeds < 260 && this.rng.next() < (this.seedRain * monthly) / TICK_HZ) {
       const x = this.rng.int(12, w.w - 13);
       const i = 2 * w.w + x;
       if (w.mat[i] === EMPTY) w.set(i, SEED, this.rng.int(0, 255), 0);

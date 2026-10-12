@@ -1,21 +1,26 @@
 /**
- * Robustness check: run one seed for N minutes and print a compact timeline.
- * node batch.mjs <seed> <minutes> <foundX>
+ * Robustness check: run one seed for N in-game weeks (in-game days) and print
+ * a compact timeline: every 5 weeks the date, workers, brood, stores, nest size.
+ * node batch.mjs <seed> <weeks> <foundX>
  */
 declare const process: { argv: string[] };
 import { Sim } from '../src/sim/sim';
-import { TICK_HZ } from '../src/config';
+import { DAY_TICKS } from '../src/config';
 const seed = Number(process.argv[2] ?? 1);
-const minutes = Number(process.argv[3] ?? 30);
-const fx = Number(process.argv[4] ?? 320);
-const sim = new Sim(seed);
-// Burn a few random ticks first, like a real player who takes a moment to click.
-for (let t = 0; t < (seed * 37) % 90; t++) sim.step();
+const weeks = Number(process.argv[3] ?? 30);
+const sim = new Sim(seed, (process.argv[5] as never) ?? 'pannonian');
+const fx = Number(process.argv[4] ?? sim.world.w / 2);
 sim.found(fx);
+const M = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const line: string[] = [];
-for (let m = 1; m <= minutes; m++) {
-  for (let t = 0; t < TICK_HZ * 60; t++) sim.step();
-  if (m % 5 === 0) line.push(`${m}m:${sim.colony.adults}a/${sim.nest.openCells}o/${sim.colony.stored}f`);
+for (let wk = 1; wk <= weeks; wk++) {
+  for (let t = 0; t < DAY_TICKS; t++) sim.step();
+  if (wk % 5 === 0) {
+    const c = sim.colony;
+    const doy = sim.doy;
+    line.push(`Y${sim.cal.year(sim.simDays)}${M[sim.cal.month(doy)]}:${c.adults}a/${c.brood.length}b/${c.stored + c.reserve}f${c.alates.length ? `/${c.alates.length}al` : ''}`);
+  }
+  if (sim.phase === 'failed') break;
 }
 const c = sim.colony;
-console.log(`seed ${String(seed).padEnd(5)} ${sim.phase.padEnd(8)} ${line.join(' ')} | deliv ${c.delivered} deaths ${JSON.stringify(c.deaths)} ch ${sim.nest.chambers.map(x => x.kind[0] + (x.ready ? '' : '*')).join('')}`);
+console.log(`seed ${String(seed).padEnd(5)} ${sim.phase.padEnd(8)} ${line.join(' ')} | flown ${c.flown.total} deaths ${JSON.stringify(c.deaths)} ch ${sim.nest.chambers.map((x) => x.kind[0] + (x.ready ? '' : '*')).join('')}`);

@@ -54,6 +54,14 @@ export const PAL = {
   leafLitter: ramp('#5c351d', '#7a4625', '#94582c', '#a86a35', '#b97c42'),
   twig: ramp('#3b2a1d', '#4a3524', '#5b432f'),
   fruit: ramp('#24111a', '#361822', '#48202b', '#5a2a34'),
+  // Sand steppe: pale yellow quartz sand.
+  sandy: ramp('#a88c5c', '#b89c68', '#c6aa76', '#d3b885', '#dfc594'),
+  // Calcrete: chalky, near white with a buff cast.
+  lime: ramp('#b9b19b', '#c8c0aa', '#d5cdb8', '#e1dac7', '#ece6d6'),
+  // Limestone: cool grey with a warm streak.
+  rock: ramp('#6f6a62', '#7f7a71', '#908a80', '#a29c91', '#b5afa3'),
+  // Woody root bark.
+  wood: ramp('#3a281b', '#4a3423', '#5a402c', '#6a4d36', '#7a5a40'),
 };
 
 /**

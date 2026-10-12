@@ -5,6 +5,8 @@ import { Moisture, ABSORB } from './moisture';
 
 /** Flag in `tint` for loose soil that has settled and holds its shape. */
 export const PACKED = 0x80;
+/** Flag in `tint` for soil packed into the nest's mouth to shut it (rain, cold, a founding queen sealed in). */
+export const PLUG = 0x40;
 
 /**
  * Falling-sand rules for loose material (excavated soil, seeds, refuse).
@@ -60,6 +62,8 @@ export class Physics {
       return;
     }
     if (!POWDER[m] || this.stamp[i] === this.clock) return;
+    // A plug of packed soil in the nest's mouth holds like a little bridge.
+    if (m === SAND && this.world.tint[i]! & PLUG) return;
     const W = w.w;
     const below = i + W;
     const bm = w.mat[below]!;
@@ -119,6 +123,11 @@ export class Physics {
   private water(i: number, x: number): void {
     const w = this.world;
     const W = w.w;
+    // Over or in the shut mouth: the packed plug drinks it.
+    if (w.sealed && w.inSealBox(i)) {
+      w.set(i, EMPTY, w.tone[i], w.tint[i]);
+      return;
+    }
     const below = i + W;
     if (w.mat[below] === EMPTY) {
       this.move(i, below);

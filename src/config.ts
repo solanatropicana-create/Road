@@ -1,11 +1,12 @@
 /**
- * World scale: 1 cell = 1 mm. The world is a 64 x 36 cm slice of meadow soil,
- * which is roughly the size of a real observation formicarium.
+ * World scale: 1 cell = 1 mm. The world is a 128 x 72 cm slice of steppe
+ * soil. The colony starts in a small part of it; the view widens and deepens
+ * as the nest and the foragers' range grow.
  */
-export const W = 640;
-export const H = 360;
+export const W = 1280;
+export const H = 720;
 /** Mean ground line (cells from the top). Everything above is air. */
-export const GROUND_Y = 84;
+export const GROUND_Y = 160;
 
 /** Fixed simulation rate. Speed-ups run more ticks per frame. */
 export const TICK_HZ = 30;
@@ -21,23 +22,29 @@ export const TUNING = {
   queenSpeed: 0.3,
   carryingSlowdown: 0.85,
 
-  // --- brood development (ticks at 1x)
-  eggTicks: TICK_HZ * 22,
-  larvaTicks: TICK_HZ * 38,
-  pupaTicks: TICK_HZ * 28,
-  larvaFeedings: 2,
-  /** Ticks between eggs at "normal" breeding when the colony is well fed. */
-  eggInterval: TICK_HZ * 5,
-  /** Brood the colony will raise per nurse-capable worker (caps queen output). */
-  broodPerWorker: 0.9,
+  // --- brood development, in development-ticks: one in-game day is one week,
+  // and brood only develops at full speed in the warmth (see devRate). Messor:
+  // egg ~3.5 weeks, larva ~3, pupa ~3 (8–12 weeks egg to worker at 22–27 °C).
+  eggTicks: DAY_TICKS * 3.5,
+  larvaTicks: DAY_TICKS * 2.8,
+  pupaTicks: DAY_TICKS * 3.0,
+  larvaFeedings: 3,
+  /** Eggs a week from a founding queen, and extra per adult worker (at full warmth, normal breeding). */
+  eggsBase: 8,
+  eggsPerWorker: 0.55,
+  /** Workers a colony needs before it raises winged queens and males (from mid-July). */
+  alateMinWorkers: 100,
+  /** Brood the colony will raise per worker (caps queen output; growing colonies carry more brood than workers). */
+  broodPerWorker: 2.0,
 
-  // --- lifespans (ticks at 1x)
-  workerLife: [TICK_HZ * 60 * 20, TICK_HZ * 60 * 32] as const,
-  soldierLife: [TICK_HZ * 60 * 26, TICK_HZ * 60 * 40] as const,
+  // --- lifespans, in weeks of active life (ageing slows in the cold): workers live one to two years
+  workerLife: [DAY_TICKS * 50, DAY_TICKS * 95] as const,
+  soldierLife: [DAY_TICKS * 60, DAY_TICKS * 110] as const,
 
   // --- food (seeds). One seed feeds one adult for this many ticks.
   adultSeedTicks: TICK_HZ * 300,
-  queenSeedTicks: TICK_HZ * 30,
+  // A founding queen lives for months on her own body: she eats little.
+  queenSeedTicks: TICK_HZ * 150,
   starveTicks: TICK_HZ * 60,
 
   // --- digging (ticks to loosen one cell, by hardness 1..4)

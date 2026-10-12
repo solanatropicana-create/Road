@@ -30,8 +30,16 @@ export const LITTER = 16;
 /** Soft food (fallen fruit pulp). Slumps like a powder; ants carve it up. */
 export const FRUIT = 17;
 export const BEDROCK = 18;
+/** Quartz sand soil (sand steppe): soft and quick to dig, drains and dries fast. */
+export const SANDY = 19;
+/** Lime-enriched layer (calcrete), hard and pale: ants can only slowly bore it. */
+export const LIME = 20;
+/** Limestone: undiggable, but split by cracks full of soil. */
+export const ROCK = 21;
+/** A woody root of a tree, shrub or vine: too tough to bite through. */
+export const WOOD = 22;
 
-export const MAT_COUNT = 19;
+export const MAT_COUNT = 23;
 
 const table = (entries: [number, number][]): Uint8Array => {
   const t = new Uint8Array(32);
@@ -43,14 +51,19 @@ const table = (entries: [number, number][]): Uint8Array => {
 export const SOLID = table([
   [HUMUS, 1], [LOAM, 1], [CLAY, 1], [SUBSOIL, 1], [GRAVEL, 1], [STONE, 1], [ROOT, 1],
   [SAND, 1], [SEED, 1], [REFUSE, 1], [LITTER, 1], [FRUIT, 1], [BEDROCK, 1],
+  [SANDY, 1], [LIME, 1], [ROCK, 1], [WOOD, 1],
 ]);
 
 /** Hardness 1..4 for diggable materials; 0 means ants cannot dig it. */
 export const HARDNESS = table([
   [HUMUS, 1], [LOAM, 2], [CLAY, 3], [SUBSOIL, 2], [GRAVEL, 4], [SAND, 1], [REFUSE, 1], [ROOT, 4],
+  [SANDY, 1], [LIME, 4],
   // Litter only ever gets cleared where the nest plan needs the space (the entrance).
   [LITTER, 1],
 ]);
+
+/** Solid rock and wood: nothing can dig through it (the nest plan goes round). */
+export const HARD = table([[STONE, 1], [BEDROCK, 1], [ROCK, 1], [WOOD, 1]]);
 
 /** Powders: fall straight down and slide off slopes. */
 export const POWDER = table([[SAND, 1], [SEED, 1], [REFUSE, 1], [FRUIT, 1]]);
@@ -59,6 +72,6 @@ export const POWDER = table([[SAND, 1], [SEED, 1], [REFUSE, 1], [FRUIT, 1]]);
 export const FOOD = table([[SEEDHEAD, 1], [SEED, 1], [FRUIT, 1]]);
 
 /** Undisturbed soil that keeps a colour per horizon. */
-export const SOIL = table([[HUMUS, 1], [LOAM, 1], [CLAY, 1], [SUBSOIL, 1], [GRAVEL, 1]]);
+export const SOIL = table([[HUMUS, 1], [LOAM, 1], [CLAY, 1], [SUBSOIL, 1], [GRAVEL, 1], [SANDY, 1], [LIME, 1]]);
 
 export const PLANT = table([[STEM, 1], [LEAF, 1], [FLOWER, 1], [SEEDHEAD, 1]]);

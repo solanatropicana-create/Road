@@ -7,7 +7,10 @@ import { SPEEDS, TICK_HZ, DAY_TICKS, TUNING } from '../config';
 import { ZONE_TINT } from '../render/palette';
 import { savedMeta } from '../sim/save';
 import { t, num, getLang, setLang, Lang, Vars } from './i18n';
+import { metabolism } from '../sim/calendar';
+import type { Sim } from '../sim/sim';
 import { ICON, LOGO_ANT } from './icons';
+import { SITES, SITE_IDS } from '../world/sites';
 
 export type Mode = 'watch' | 'guide';
 const MODE_KEY = 'underfoot.mode';
@@ -45,6 +48,23 @@ const h = (tag: string, cls?: string, html?: string): HTMLElement => {
 /** Is there room to open the brain without hiding the slice (not a phone, upright or sideways)? */
 const roomy = (): boolean => innerWidth >= 760 && innerHeight > 500;
 
+/** "June · week 2" for the current calendar date. */
+export const dateText = (sim: Sim): string => {
+  const doy = sim.doy;
+  return t('dateLine', { month: t(`m${sim.cal.month(doy)}`), w: sim.cal.weekOfMonth(doy) });
+};
+
+const clockText = (sim: Sim): string => {
+  const mins = Math.floor(sim.dayT * 24 * 60);
+  return `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+};
+
+/** "Jun 2 · 08:48": a journal time stamp. */
+const stampText = (sim: Sim): string => {
+  const doy = sim.doy;
+  return `${t('dateShort', { m: t(`ms${sim.cal.month(doy)}`), w: sim.cal.weekOfMonth(doy) })} · ${clockText(sim)}`;
+};
+
 const depthCm = (c: Chamber, ground: Int16Array): string => num((c.floorY - ground[Math.round(c.cx)]!) / 10);
 
 /**
@@ -81,6 +101,7 @@ export class UI {
   private lowFoodDay = -1;
   private wingsNoted = false;
   private replaceArmedAt = 0;
+  private pluggedNoted = false;
   private followed: Ant | null = null;
   private lifeCardUntil = 0;
   private queueSig = '';
@@ -111,7 +132,7 @@ export class UI {
     card.id = 'card';
     card.innerHTML = `
       <div class="brand">${LOGO_ANT}<span class="wordmark-s">Underfoot</span></div>
-      <div class="species">${t('species')}</div>
+      <div class="species">${t(`site_${this.game.sim.site}`)}</div>
       <div class="specimen">${t('colonyNo', { n: String(this.game.sim.seed).padStart(4, '0') })}</div>
       <div class="pop"><b id="pop">0</b><span>${t('workers')}</span></div>
       <div class="grid">
@@ -124,7 +145,8 @@ export class UI {
     this.spark.height = 76;
     card.appendChild(this.spark);
     card.appendChild(h('div', 'sparkkey', `<span><i class="k-pop"></i>${t('sparkWorkers')}</span><span><i class="k-food"></i>${t('sparkSeeds')}</span>`));
-    card.appendChild(h('div', 'clock', `<span id="skyico"></span><span id="day"></span><span id="sky"></span><span id="time"></span>`));
+    card.appendChild(h('div', 'clock', `<span id="skyico"></span><span id="day"></span><span id="time"></span>`));
+    card.appendChild(h('div', 'clock sub', `<span id="year"></span><span id="sky"></span>`));
     const legend = h('div', 'legend');
     for (const [kind, key] of [['queen', 'legendQueen'], ['nursery', 'legendNursery'], ['granary', 'legendGranary'], ['rest', 'legendRest']] as const) {
       const c = ZONE_TINT[kind]!;
@@ -259,7 +281,7 @@ export class UI {
       <h3 class="eyebrow">${t('doingNow')}</h3>
       ${['dig', 'forage', 'nurse', 'clean'].map((k) => trow(k, t('work_' + k))).join('')}${trow('idle', t('work_idle'))}
       <h3 class="eyebrow">${t('brood')}</h3>
-      <div class="broodrow"><span>${ICON.egg}<b id="cb-e">0</b> ${t('eggs')}</span><span>${ICON.larva}<b id="cb-l">0</b> ${t('larvae')}</span><span>${ICON.pupa}<b id="cb-p">0</b> ${t('pupae')}</span><span id="cb-t"></span></div>
+      <div class="broodrow"><span>${ICON.egg}<b id="cb-e">0</b> ${t('eggs')}</span><span>${ICON.larva}<b id="cb-l">0</b> ${t('larvae')}</span><span>${ICON.pupa}<b id="cb-p">0</b> ${t('pupae')}</span><span id="cb-t"></span><span id="cb-a"></span></div>
       <h3 class="eyebrow">${t('rooms')}</h3>
       <div id="crooms"></div>
       </div>`;
@@ -371,9 +393,8 @@ export class UI {
         <button class="mode${this.mode === 'guide' ? ' last' : ''}" data-mode="guide">${ICON.brain}<h3>${t('modeGuide')}</h3><p>${t('modeGuideD')}</p></button>
       </div>
       <button class="btn on" id="resume" hidden></button>
+      ${this.siteCard()}
       <div class="title-foot">
-        <span class="site">${t('siteLabel', { n: String(this.game.sim.seed).padStart(4, '0') })}</span>
-        <button class="linkbtn" id="newsite">${ICON.dice}${t('newSite')}</button>
         <div class="seg" id="tlang"><button data-lang="en" class="${lang0 === 'en' ? 'on' : ''}">EN</button><button data-lang="tr" class="${lang0 === 'tr' ? 'on' : ''}">TR</button></div>
       </div></div>`;
     r.appendChild(title);
@@ -391,9 +412,17 @@ export class UI {
       };
     });
     (title.querySelector('#newsite') as HTMLElement).onclick = () => {
-      this.game.newWorld(Math.floor(Math.random() * 1e6));
+      this.game.newWorld(Math.floor(Math.random() * 1e6), this.game.sim.site);
       this.rebuild();
     };
+    title.querySelectorAll<HTMLElement>('[data-site-step]').forEach((b) => {
+      b.onclick = () => {
+        const k = SITE_IDS.indexOf(this.game.sim.site);
+        const next = SITE_IDS[(k + Number(b.dataset.siteStep) + SITE_IDS.length) % SITE_IDS.length]!;
+        this.game.newWorld(this.game.sim.seed, next);
+        this.rebuild();
+      };
+    });
     const meta = savedMeta();
     const resume = title.querySelector('#resume') as HTMLButtonElement;
     if (meta) {
@@ -490,11 +519,19 @@ export class UI {
     exit.id = 'cinema-exit';
     exit.onclick = () => this.toggleCinema();
     r.appendChild(exit);
+    // Winter rest: a quiet band while the months go by quickly.
+    const winter = h('div', 'panel', `<span class="wico">❄</span><span>${t('winterSkip')}</span><button class="linkbtn" id="winter-btn"></button>`);
+    winter.id = 'winter';
+    r.appendChild(winter);
+    (winter.querySelector('#winter-btn') as HTMLElement).onclick = () => {
+      this.game.winterSkip = !this.game.winterSkip;
+      this.syncWinter();
+    };
     const scale = h('div', '', '<i></i><span></span>');
     scale.id = 'scale';
     r.appendChild(scale);
 
-    for (const id of ['title', 'colony', 'scale', 'skyico', 'crooms', 'cb-e', 'cb-l', 'cb-p', 'cb-t', 'pop', 'maj', 'brood', 'food', 'fooddays', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark', 'notes', 'caption', 'watch', 'keys', 'broodtrend', 'majval', 's-pop', 's-brood', 's-food', 's-day', 'v-plan', 'v-trails']) {
+    for (const id of ['title', 'colony', 'scale', 'skyico', 'year', 'winter', 'crooms', 'cb-e', 'cb-l', 'cb-p', 'cb-t', 'cb-a', 'pop', 'maj', 'brood', 'food', 'fooddays', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark', 'notes', 'caption', 'watch', 'keys', 'broodtrend', 'majval', 's-pop', 's-brood', 's-food', 's-day', 'v-plan', 'v-trails']) {
       this.els[id] = r.querySelector(`#${id}`) as HTMLElement;
     }
     this.syncCollapse();
@@ -502,6 +539,27 @@ export class UI {
     this.syncBar();
     this.renderNotes();
     this.applyPhase(this.game.sim.phase);
+  }
+
+  /** The title's site card: where this is, which ant, and what is special about this map. */
+  private siteCard(): string {
+    const sim = this.game.sim;
+    const id = sim.site;
+    const sp = SITES[id].species;
+    const species = t(sp === 'group' ? 'speciesGroup' : sp === 'muticus' ? 'speciesMuticus' : 'speciesStructor');
+    const traits = sim.variant.traits
+      .map((tr) => `<li class="${tr.sign > 0 ? 'pro' : tr.sign < 0 ? 'con' : 'neu'}"><b>${tr.sign > 0 ? '+' : tr.sign < 0 ? '−' : '·'}</b>${t(tr.key)}</li>`)
+      .join('');
+    return `<div class="sitecard">
+      <button class="sitenav" data-site-step="-1" title="${t('prevSite')}">${ICON.back}</button>
+      <div class="siteinfo">
+        <div class="sitename">${t(`site_${id}`)}</div>
+        <div class="sitedesc">${t(`site_${id}D`)}</div>
+        <div class="sitesp"><i>${species}</i><span>·</span>${t('siteLabel', { n: String(sim.seed).padStart(4, '0') })}<button class="linkbtn" id="newsite">${ICON.dice}${t('newSite')}</button></div>
+        ${traits ? `<ul class="traits">${traits}</ul>` : ''}
+      </div>
+      <button class="sitenav next" data-site-step="1" title="${t('nextSite')}">${ICON.back}</button>
+    </div>`;
   }
 
   /** Rebuild every panel (after a language change), keeping the state. */
@@ -628,8 +686,7 @@ export class UI {
       if (vars && typeof vars.n === 'number' && typeof last.vars?.n === 'number') vars = { ...vars, n: last.vars.n + vars.n };
       last.vars = vars;
     } else {
-      const mins = Math.floor(sim.dayT * 24 * 60);
-      const at = `${t('dayShort', { n: sim.day })} ${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
+      const at = stampText(sim);
       this.journal.push({ at, tick: sim.tick, key, vars, loc: opts.loc });
       if (this.journal.length > 80) this.journal.shift();
     }
@@ -692,7 +749,8 @@ export class UI {
   /** Seeds the colony eats in one in-game day (workers, plus the queen). */
   private dailyNeed(): number {
     const col = this.game.sim.colony;
-    return (col.adults * DAY_TICKS) / TUNING.adultSeedTicks + (col.queen?.alive ? DAY_TICKS / TUNING.queenSeedTicks : 0);
+    const meta = metabolism(col.nestTemp);
+    return ((col.adults * DAY_TICKS) / TUNING.adultSeedTicks + (col.queen?.alive ? DAY_TICKS / TUNING.queenSeedTicks : 0)) * meta;
   }
 
   /** Things worth writing down, noticed by watching the colony's numbers. */
@@ -1067,12 +1125,18 @@ export class UI {
     while (sim.events.length) {
       const e = sim.events.shift()!;
       if (phase === 'failed') continue;
-      // Passing weather is worth a glance, not a line in the journal.
-      if (e.key === 'rainStops' || e.key === 'rainLonger') this.toast(t(`ev_${e.key}`));
+      // Passing weather is worth a glance, not a line in the journal (it rains most weeks).
+      // Plugging the door is noted the first time only.
+      const quiet = ['rain', 'rainStops', 'rainLonger', 'snow', 'snowStops'].includes(e.key) || (e.key === 'plugged' && this.pluggedNoted);
+      if (e.key === 'plugged') this.pluggedNoted = true;
+      if (quiet) this.toast(t(`ev_${e.key}`));
       else {
         const vars: Vars = {};
         if (e.n !== undefined) vars.n = e.n;
+        if (e.m !== undefined) vars.m = e.m;
         if (e.kind) vars.kind = `ch_${e.kind}`;
+        if (e.who) vars.who = t(`who_${e.who}`);
+        if (e.what) vars.what = t(`what_${e.what}`);
         this.note(`ev_${e.key}`, vars, { toast: true, merge: !e.kind });
       }
     }
@@ -1099,20 +1163,23 @@ export class UI {
     this.els.food!.classList.toggle('warn', col.starving);
     this.els.fooddays!.textContent = col.adults > 0 ? foodText : '';
     this.els.fooddays!.classList.toggle('warn', col.adults >= 10 && days < LOW_FOOD_DAYS);
-    const sky = sim.weather.rain > 0.15 ? (sim.weather.storm ? 'skyStorm' : 'skyRain') : sim.dayT < 0.23 || sim.dayT > 0.8 ? 'skyNight' : 'skyClear';
+    const night = sim.cal.daylight(sim.dayT, sim.doy) < 0.05;
+    const sky = sim.weather.snowing && sim.weather.rain > 0.15 ? 'skySnow' : sim.weather.rain > 0.15 ? (sim.weather.storm ? 'skyStorm' : 'skyRain') : night ? 'skyNight' : 'skyClear';
     const mins = Math.floor(sim.dayT * 24 * 60);
     const clock = `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
-    this.els.day!.textContent = t('day', { n: sim.day });
-    this.els.sky!.textContent = t(sky);
+    this.els.day!.textContent = dateText(sim);
+    this.els.sky!.textContent = `${t(sky)} · ${t('tempNow', { t: Math.round(sim.surfaceT) })}`;
+    this.els.sky!.title = t('tempTitle', { s: Math.round(sim.surfaceT), n: Math.round(col.nestTemp) });
+    this.els.year!.textContent = `${t(`season_${sim.season}`)} · ${t('yearN', { n: sim.cal.year(sim.simDays) })}`;
     if (sky !== this.skySig) {
       this.skySig = sky;
-      this.els.skyico!.innerHTML = sky === 'skyStorm' ? ICON.storm : sky === 'skyRain' ? ICON.rain : sky === 'skyNight' ? ICON.moon : ICON.sun;
+      this.els.skyico!.innerHTML = sky === 'skyStorm' ? ICON.storm : sky === 'skyRain' || sky === 'skySnow' ? ICON.rain : sky === 'skyNight' ? ICON.moon : ICON.sun;
     }
     this.els.time!.textContent = clock;
     this.els['s-pop']!.textContent = String(col.adults);
     this.els['s-brood']!.textContent = `${t('brood')} ${e + l + p}`;
     this.els['s-food']!.textContent = `${t('seeds')} ${col.stored}`;
-    this.els['s-day']!.textContent = `${t('day', { n: sim.day })} ${clock}`;
+    this.els['s-day']!.textContent = `${stampText(sim)}`;
     this.els.perf!.textContent = phase === 'choose' ? '' : t('perf', { n: num(game.tps / TICK_HZ) });
     // Who is doing what right now, beside each priority.
     const adults = Math.max(1, col.adults);
@@ -1134,6 +1201,7 @@ export class UI {
     const arrow = !back ? '' : brood > back.brood + 2 ? '▲' : brood < back.brood - 2 ? '▼' : '–';
     this.els.broodtrend!.textContent = col.adults > 0 ? t('broodTrend', { n: brood, arrow }) : '';
     this.syncBrain();
+    this.syncWinter();
     if (this.mode === 'watch') this.syncColony(counts, e, l, p, arrow);
     this.drawSpark();
     if (performance.now() > this.lifeCardUntil) this.inspector();
@@ -1154,6 +1222,8 @@ export class UI {
     this.els['cb-l']!.textContent = String(l);
     this.els['cb-p']!.textContent = String(p);
     this.els['cb-t']!.textContent = arrow;
+    const al = col.alates.length;
+    this.els['cb-a']!.innerHTML = al ? `${ICON.queen}<b>${al}</b> ${t('alatesN', { n: '' }).trim()}` : '';
     // Rooms, top to bottom; rebuilt only when something in the list changes.
     const sim = this.game.sim;
     const w = sim.world;
@@ -1171,6 +1241,17 @@ export class UI {
       this.roomSig = html;
       this.els.crooms!.innerHTML = html;
     }
+  }
+
+  private syncWinter(): void {
+    const sim = this.game.sim;
+    const show = sim.dormant && sim.phase !== 'choose' && sim.phase !== 'failed';
+    const el = this.els.winter!;
+    el.style.display = show ? 'flex' : 'none';
+    if (!show) return;
+    const label = t(this.game.winterSkip ? 'winterSkipStop' : 'winterSkipOn');
+    const btn = el.querySelector('#winter-btn') as HTMLElement;
+    if (btn.textContent !== label) btn.textContent = label;
   }
 
   /** A field scale bar: a round length in mm that fits the current zoom. */
@@ -1227,12 +1308,11 @@ export class UI {
     el.style.display = 'block';
     el.classList.remove('lifecard');
     const days = num(a.age / DAY_TICKS);
-    const caste = a.caste === 'queen' ? t('casteQueen') : a.caste === 'soldier' ? t('casteMajor') : t('casteMinor');
-    const ageText = a.caste === 'queen' ? `${days} · ${t('decades')}` : t('ageValue', { d: days, p: Math.round(a.ageFrac * 100) });
+    const caste = a.caste === 'queen' ? t('casteQueen') : a.caste === 'soldier' ? t('casteMajor') : a.caste === 'gyne' ? t('casteGyne') : a.caste === 'male' ? t('casteMale') : t('casteMinor');
+    const ageText = a.caste === 'queen' ? `${t('weeksN', { n: days })} · ${t('decades')}` : t('ageValue', { d: days, p: Math.round(a.ageFrac * 100) });
     const doing = a.caste === 'queen' ? (a.phase < 2 ? t('queenDigging') : t('queenLaying')) : t(`task${a.task}`);
     el.innerHTML = `<div class="eyebrow">${t('following')}</div><div class="name">${a.name}</div>
       <dl><dt>${t('caste')}</dt><dd>${caste}</dd><dt>${t('age')}</dt><dd>${ageText}</dd>
-      ${a.caste === 'queen' ? '' : `<dt>${t('hatched')}</dt><dd>${t('day', { n: Math.max(1, this.game.sim.day - Math.floor(a.age / DAY_TICKS)) })}</dd>`}
       <dt>${t('doing')}</dt><dd>${doing}</dd>
       <dt>${t('carrying')}</dt><dd>${a.carryBrood ? t('carry4') : t(`carry${a.carry}`)}</dd>
       ${a.delivered ? `<dt>${t('harvest')}</dt><dd>${t('seedsN', { n: a.delivered })}</dd>` : ''}</dl>`;
@@ -1294,7 +1374,7 @@ export class UI {
     else if (col.prio.nurse === 0) cause = 'end_nurseOff';
     const el = this.els.over!;
     el.style.display = 'block';
-    el.innerHTML = `<div class="eyebrow">${t('day', { n: sim.day })}</div><h2>${t('overTitle')}</h2>
+    el.innerHTML = `<div class="eyebrow">${t('dateYear', { date: dateText(sim), y: sim.cal.year(sim.simDays) })}</div><h2>${t('overTitle')}</h2>
       <p>${t(cause)} ${t('overPeak', { n: peak })}</p>
       <button class="btn" id="again" style="padding:8px 16px">${t('foundNew')}</button>`;
     (el.querySelector('#again') as HTMLElement).onclick = () => location.reload();

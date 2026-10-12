@@ -9,8 +9,6 @@ export class Camera {
   maxZoom = 14;
   screenW = 1;
   screenH = 1;
-  private worldW: number;
-  private worldH: number;
   /** Smoothed target for zoom/pan transitions. */
   tx: number;
   ty: number;
@@ -18,10 +16,15 @@ export class Camera {
   follow: { x: number; y: number } | null = null;
   /** How quickly the view catches up with its target (per second). Slow for the documentary camera. */
   ease = 12;
+  /** The part of the world that may be shown (the colony's known world). */
+  private bx0 = 0;
+  private by0 = 0;
+  private bx1: number;
+  private by1: number;
 
   constructor(worldW: number, worldH: number) {
-    this.worldW = worldW;
-    this.worldH = worldH;
+    this.bx1 = worldW;
+    this.by1 = worldH;
     this.x = this.tx = worldW / 2;
     this.y = this.ty = worldH / 2;
   }
@@ -32,15 +35,37 @@ export class Camera {
     this.minZoom = this.fitZoom();
   }
 
-  /** Zoom at which the slice just covers the screen (no empty margins; tall screens crop the sides). */
+  /**
+   * Limit the view to part of the world. A view showing all of it (at the
+   * fit zoom) keeps showing all of it as the part grows.
+   */
+  setBounds(x0: number, y0: number, x1: number, y1: number): void {
+    if (Math.abs(x0 - this.bx0) < 0.5 && Math.abs(x1 - this.bx1) < 0.5 && Math.abs(y1 - this.by1) < 0.5 && y0 === this.by0) return;
+    const wasFit = this.tzoom <= this.minZoom * 1.02;
+    this.bx0 = x0;
+    this.by0 = y0;
+    this.bx1 = x1;
+    this.by1 = y1;
+    this.minZoom = this.fitZoom();
+    if (wasFit) {
+      this.tzoom = this.minZoom;
+      if (!this.follow) {
+        this.tx = (x0 + x1) / 2;
+        this.ty = (y0 + y1) / 2;
+      }
+    }
+    this.tzoom = Math.max(this.tzoom, this.minZoom);
+  }
+
+  /** Zoom at which the known world just covers the screen (no empty margins; the longer side is cropped). */
   fitZoom(): number {
-    return Math.max(this.screenW / this.worldW, this.screenH / this.worldH);
+    return Math.max(this.screenW / (this.bx1 - this.bx0), this.screenH / (this.by1 - this.by0));
   }
 
   fit(): void {
     this.tzoom = this.fitZoom();
-    this.tx = this.worldW / 2;
-    this.ty = this.worldH / 2;
+    this.tx = (this.bx0 + this.bx1) / 2;
+    this.ty = (this.by0 + this.by1) / 2;
   }
 
   toWorld(sx: number, sy: number): { x: number; y: number } {
@@ -85,12 +110,12 @@ export class Camera {
   private clampView(): void {
     const hw = this.screenW / 2 / this.zoom;
     const hh = this.screenH / 2 / this.zoom;
-    const cx = (v: number, half: number, size: number): number => (half * 2 >= size ? size / 2 : clamp(v, half, size - half));
-    this.x = cx(this.x, hw, this.worldW);
-    this.y = cx(this.y, hh, this.worldH);
+    const cx = (v: number, half: number, lo: number, hi: number): number => (half * 2 >= hi - lo ? (lo + hi) / 2 : clamp(v, lo + half, hi - half));
+    this.x = cx(this.x, hw, this.bx0, this.bx1);
+    this.y = cx(this.y, hh, this.by0, this.by1);
     const thw = this.screenW / 2 / this.tzoom;
     const thh = this.screenH / 2 / this.tzoom;
-    this.tx = cx(this.tx, thw, this.worldW);
-    this.ty = cx(this.ty, thh, this.worldH);
+    this.tx = cx(this.tx, thw, this.bx0, this.bx1);
+    this.ty = cx(this.ty, thh, this.by0, this.by1);
   }
 }

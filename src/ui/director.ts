@@ -2,6 +2,7 @@ import type { Game } from '../main';
 import type { Ant } from '../sim/ant';
 import { Carry, Task } from '../sim/types';
 import { t, num } from './i18n';
+import { dateText } from './ui';
 
 type Shot = 'queen' | 'forager' | 'digger' | 'hauler' | 'nurse' | 'major' | 'granary' | 'wide';
 
@@ -136,7 +137,7 @@ export class Director {
           }
           point = { x, y };
           zoom = cam.fitZoom() * 1.7;
-          this.caption = t('dc_wide', { day: sim.day, n: col.adults, a: Math.round(sim.nest.openCells / 100) });
+          this.caption = t('dc_wide', { day: dateText(sim), n: col.adults, a: Math.round(sim.nest.openCells / 100) });
           break;
         }
       }
@@ -158,6 +159,7 @@ export class Director {
     const away = Math.abs(a.x - sim.nest.foundX) / 10;
     const where = depth > 0.3 ? t('dc_down', { d: num(depth) }) : t('dc_from', { d: num(away) });
     if (a.caste === 'queen') return a.phase < 2 ? t('dc_queenDig') : t('dc_queenLay', { where });
+    if (a.caste === 'gyne' || a.caste === 'male') return `${t(a.caste === 'gyne' ? 'dc_gyne' : 'dc_male')} ${a.name} · ${t(this.game.sim.flight ? 'dc_flying' : 'dc_waiting')} · ${where}`;
     const who = t(a.caste === 'soldier' ? 'dc_major' : a.task === Task.Forage ? 'dc_forager' : a.task === Task.Dig ? 'dc_digger' : a.task === Task.Nurse ? 'dc_nurse' : a.task === Task.Clean ? 'dc_cleaner' : 'dc_worker');
     const below = depth > 0.3;
     let doing: string;

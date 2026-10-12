@@ -1,7 +1,7 @@
 import { World } from '../world/world';
 import {
   EMPTY, HUMUS, LOAM, CLAY, SUBSOIL, GRAVEL, STONE, ROOT, SAND, WATER, STEM, LEAF, FLOWER,
-  SEED, REFUSE, LITTER, FRUIT, BEDROCK, SOLID,
+  SEED, REFUSE, LITTER, FRUIT, BEDROCK, SOLID, SANDY, LIME, ROCK, WOOD,
 } from '../world/mat';
 import { PAL, RGB, ZONE_TINT, hex, mixRGB, pack, sampleRamp, seedLook } from './palette';
 
@@ -28,6 +28,10 @@ function soilRamp(m: number): RGB[] {
     case SUBSOIL: return PAL.subsoil;
     case GRAVEL: return PAL.gravel;
     case ROOT: return PAL.root;
+    case SANDY: return PAL.sandy;
+    case LIME: return PAL.lime;
+    case ROCK: return PAL.rock;
+    case WOOD: return PAL.wood;
     default: return PAL.loam;
   }
 }
@@ -150,9 +154,13 @@ export class Renderer {
         break;
       }
       case BEDROCK: c = sampleRamp(PAL.bedrock, tone); break;
+      case SANDY: c = sampleRamp(PAL.sandy, tone); break;
+      case LIME: c = sampleRamp(PAL.lime, tone); break;
+      case ROCK: c = sampleRamp(PAL.rock, tone); break;
+      case WOOD: c = sampleRamp(PAL.wood, tone); break;
       case SAND: {
         // Excavated soil dries paler than the face it came from, and looks grainier.
-        const src = soilRamp(w.tint[i]! & 0x7f);
+        const src = soilRamp(w.tint[i]! & 0x3f);
         const grain = ((i * 2654435761) >>> 28) / 16;
         c = mixRGB(sampleRamp(src, tone * 0.7 + grain * 0.3), [230, 215, 190], 0.14);
         break;
@@ -214,7 +222,7 @@ export class Renderer {
    */
   private backwall(i: number, x: number, y: number): RGB {
     const w = this.world;
-    const src = w.tint[i]! & 0x7f || this.guessSoil(x, y);
+    const src = w.tint[i]! & 0x3f || this.guessSoil(x, y);
     const tone = w.tone[i]! / 255;
     let c = mixRGB(sampleRamp(soilRamp(src), 0.25 + tone * 0.5), BACKWALL_DARK, 0.5);
     const z = w.zone[i]!;
@@ -287,16 +295,29 @@ export class Renderer {
     }
   }
 
-  private applyLight(): void {
+  /** World cells on screen (a cell of margin), clamped to the world. */
+  private visibleRect(cam: Camera): { x0: number; y0: number; x1: number; y1: number } {
+    const w = this.world;
+    const hw = cam.screenW / 2 / cam.zoom;
+    const hh = cam.screenH / 2 / cam.zoom;
+    return {
+      x0: Math.max(0, Math.floor(cam.x - hw) - 2),
+      x1: Math.min(w.w - 1, Math.ceil(cam.x + hw) + 2),
+      y0: Math.max(0, Math.floor(cam.y - hh) - 2),
+      y1: Math.min(w.h - 1, Math.ceil(cam.y + hh) + 2),
+    };
+  }
+
+  private applyLight(r: { x0: number; y0: number; x1: number; y1: number }): void {
     const w = this.world;
     const buf = this.buf;
     const ground = w.ground;
     const lr = this.lutR;
     const lg = this.lutG;
     const lb = this.lutB;
-    let i = 0;
-    for (let y = 0; y < w.h; y++) {
-      for (let x = 0; x < w.w; x++, i++) {
+    for (let y = r.y0; y <= r.y1; y++) {
+      let i = y * w.w + r.x0;
+      for (let x = r.x0; x <= r.x1; x++, i++) {
         const c = buf[i]!;
         const a = c >>> 24;
         if (a === 0) continue;
@@ -327,6 +348,11 @@ export class Renderer {
     if (this.closeUp) return;
     for (const p of sim.particles.list) {
       this.px(Math.round(p.x), Math.round(p.y), p.color);
+    }
+    if (sim.weather.snowing) {
+      const flake = pack(238, 242, 248);
+      for (const d of sim.drops) this.px(Math.round(d.x), Math.round(d.y), flake);
+      return;
     }
     // Raindrops: slanted streaks, bright head fading up the tail.
     const dropCols = [pack(214, 228, 238), pack(176, 196, 212), pack(140, 160, 178), pack(116, 132, 150)];
@@ -509,6 +535,96 @@ export class Renderer {
     });
   }
 
+  /**
+   * Snow lying on the ground: a soft white blanket over whatever is on top of
+   * each column (mounds and litter included), a little uneven, lit like the
+   * surface (blue at night).
+   */
+  private drawSnow(depth: number, view: { x0: number; y0: number; x1: number; y1: number }): void {
+    const w = this.world;
+    const ctx = this.ctx;
+    const x0 = Math.max(0, Math.floor(view.x0) - 1);
+    const x1 = Math.min(w.w - 1, Math.ceil(view.x1) + 1);
+    const d = Math.min(30, depth);
+    // The surface under the snow (mounds and litter included), and the snow's soft top.
+    const base: number[] = [];
+    for (let x = x0; x <= x1; x++) {
+      let y = w.ground[x]!;
+      while (y > 1 && w.mat[(y - 1) * w.w + x] !== EMPTY) y--;
+      base.push(y);
+    }
+    // Snow drifts smooth out the bumps underneath.
+    const top: number[] = base.map((_, k) => {
+      let s = 0;
+      let n = 0;
+      for (let j = Math.max(0, k - 3); j <= Math.min(base.length - 1, k + 3); j++) {
+        s += base[j]!;
+        n++;
+      }
+      const x = x0 + k;
+      const wob = Math.sin(x * 0.21) * 0.5 + Math.sin(x * 0.067 + 2) * 0.8;
+      return Math.min(base[k]!, s / n) - d - wob * Math.min(1, d / 8);
+    });
+    const p = new Path2D();
+    p.moveTo(x0, base[0]!);
+    for (let k = 0; k < top.length; k++) p.lineTo(x0 + k + 0.5, top[k]!);
+    for (let k = base.length - 1; k >= 0; k--) p.lineTo(x0 + k + 0.5, base[k]! + 0.5);
+    p.closePath();
+    const mx = Math.round((x0 + x1) / 2);
+    const l = this.lightAt(mx, w.ground[mx]! - 3);
+    // Snow throws back what light there is: never as dark as the soil at night.
+    const lit = (c: number, k: number): number => Math.min(255, c * Math.max(l[k]!, 0.5));
+    ctx.fillStyle = `rgb(${lit(232, 0) | 0},${lit(238, 1) | 0},${lit(246, 2) | 0})`;
+    ctx.fill(p);
+    // A brighter crust along the top edge.
+    const edge = new Path2D();
+    edge.moveTo(x0 + 0.5, top[0]!);
+    for (let k = 1; k < top.length; k++) edge.lineTo(x0 + k + 0.5, top[k]!);
+    ctx.strokeStyle = `rgba(${lit(255, 0) | 0},${lit(255, 1) | 0},${lit(255, 2) | 0},0.8)`;
+    ctx.lineWidth = 0.6;
+    ctx.stroke(edge);
+  }
+
+  /**
+   * Beyond the colony's known world the slice fades into shadow, like the
+   * edge of a lamp's pool of light, so the eye stays on what the ants know.
+   */
+  private unknown(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }): void {
+    const v = sim.view;
+    const ctx = this.ctx;
+    const w = this.world;
+    const fade = 60;
+    const dark = 'rgba(10,7,5,0.9)';
+    const clear = 'rgba(10,7,5,0)';
+    if (v.x0 > 0.5 && view.x0 < v.x0 + fade) {
+      const g = ctx.createLinearGradient(v.x0 + fade, 0, v.x0, 0);
+      g.addColorStop(0, clear);
+      g.addColorStop(1, dark);
+      ctx.fillStyle = g;
+      ctx.fillRect(v.x0, 0, fade, w.h);
+      ctx.fillStyle = dark;
+      ctx.fillRect(0, 0, v.x0, w.h);
+    }
+    if (v.x1 < w.w - 0.5 && view.x1 > v.x1 - fade) {
+      const g = ctx.createLinearGradient(v.x1 - fade, 0, v.x1, 0);
+      g.addColorStop(0, clear);
+      g.addColorStop(1, dark);
+      ctx.fillStyle = g;
+      ctx.fillRect(v.x1 - fade, 0, fade, w.h);
+      ctx.fillStyle = dark;
+      ctx.fillRect(v.x1, 0, w.w - v.x1, w.h);
+    }
+    if (v.y1 < w.h - 0.5 && view.y1 > v.y1 - fade) {
+      const g = ctx.createLinearGradient(0, v.y1 - fade, 0, v.y1);
+      g.addColorStop(0, clear);
+      g.addColorStop(1, dark);
+      ctx.fillStyle = g;
+      ctx.fillRect(0, v.y1 - fade, w.w, fade);
+      ctx.fillStyle = dark;
+      ctx.fillRect(0, v.y1, w.w, w.h - v.y1);
+    }
+  }
+
   /** Dust, shed wings and rain at screen resolution, for close-ups. */
   private specks(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }, z: number): void {
     const ctx = this.ctx;
@@ -520,7 +636,16 @@ export class Renderer {
       const r = Math.max(0.3, 1.2 / z);
       ctx.fillRect(p.x - r, p.y - r, r * 2, r * 2);
     }
-    if (sim.drops.length) {
+    if (sim.drops.length && sim.weather.snowing) {
+      ctx.fillStyle = 'rgba(240,244,250,0.85)';
+      const r = Math.max(0.35, 1.4 / z);
+      for (const d of sim.drops) {
+        if (d.x < view.x0 - 2 || d.x > view.x1 + 2 || d.y < view.y0 - 4 || d.y > view.y1 + 4) continue;
+        ctx.beginPath();
+        ctx.arc(d.x + 0.5, d.y + 0.5, r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (sim.drops.length) {
       const slant = sim.weather.storm ? 0.35 : 0.12;
       ctx.strokeStyle = 'rgba(206,220,232,0.6)';
       ctx.lineWidth = Math.max(0.3, 1 / z);
@@ -588,13 +713,21 @@ export class Renderer {
       w.dirtyAll = true;
     }
     this.updateBase();
-    this.buf.set(this.base);
+    // Only the part of the slice on screen is copied, lit and uploaded each frame.
+    const vr = this.visibleRect(cam);
+    for (let y = vr.y0; y <= vr.y1; y++) {
+      const a = y * w.w + vr.x0;
+      this.buf.set(this.base.subarray(a, a + vr.x1 - vr.x0 + 1), a);
+    }
     this.drawEntities(sim);
-    this.buildLight(sim.dayT, sim.weather.rain);
-    this.applyLight();
-    this.wctx.putImageData(this.img, 0, 0);
+    // Sky and light follow the sun: sunrise and sunset move with the season.
+    const doy = sim.doy;
+    const solar = sim.cal.solar(sim.dayT, doy);
+    this.buildLight(solar, sim.weather.rain);
+    this.applyLight(vr);
+    this.wctx.putImageData(this.img, 0, 0, vr.x0, vr.y0, vr.x1 - vr.x0 + 1, vr.y1 - vr.y0 + 1);
 
-    this.backdrop.draw(sim.dayT, this.time, w.w, w.ground, sim.weather.rain);
+    this.backdrop.draw(solar, this.time, w.w, w.ground, sim.weather.rain, sim.cal.month(doy), sim.snow);
 
     const ctx = this.ctx;
     const W = this.canvas.width;
@@ -603,7 +736,7 @@ export class Renderer {
     const ox = W / 2 - cam.x * z;
     const oy = H / 2 - cam.y * z;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    const sky = skyAt(sim.dayT);
+    const sky = skyAt(solar);
     ctx.fillStyle = `rgb(${sky.top[0] | 0},${sky.top[1] | 0},${sky.top[2] | 0})`;
     ctx.fillRect(0, 0, W, H);
     // Background: smooth scaling keeps it soft (shallow depth of field).
@@ -617,19 +750,23 @@ export class Renderer {
     ctx.imageSmoothingEnabled = false;
     ctx.setTransform(z, 0, 0, z, ox, oy);
     ctx.drawImage(this.wc, 0, 0);
+    const view = { x0: cam.x - cam.screenW / 2 / cam.zoom, y0: cam.y - cam.screenH / 2 / cam.zoom, x1: cam.x + cam.screenW / 2 / cam.zoom, y1: cam.y + cam.screenH / 2 / cam.zoom };
+    if (sim.snow > 0.5) this.drawSnow(sim.snow, view);
     // Ants, brood and the dead, at full screen resolution over the slice.
     const col = sim.colony;
-    const ants = col.queen && col.queen.alive ? [...col.ants.filter((a) => a.caste !== 'queen'), col.queen] : col.ants;
+    const base = col.alates.length ? [...col.ants, ...col.alates] : col.ants;
+    const ants = col.queen && col.queen.alive ? [...base, col.queen] : base;
     this.painter.update(ants, dt, speed);
     if (sim.phase === 'choose') this.painter.drawFlight(ctx, z, this.lightAt, w.w, dt);
-    const view = { x0: cam.x - cam.screenW / 2 / cam.zoom, y0: cam.y - cam.screenH / 2 / cam.zoom, x1: cam.x + cam.screenW / 2 / cam.zoom, y1: cam.y + cam.screenH / 2 / cam.zoom };
     if (this.closeUp) this.grains(view);
     this.drawPlan(sim, view, z, dt);
     if (this.trails) this.drawTrails(sim, view);
     this.painter.drawCorpses(ctx, col.corpses, z, this.lightAt, view);
     this.painter.drawBrood(ctx, col.brood, z, this.lightAt, view, TUNING.pupaTicks);
     this.painter.draw(ctx, ants, z, this.lightAt, view, selected);
+    if (sim.flyers.length) this.painter.drawFlyers(ctx, sim.flyers, z, this.lightAt);
     if (this.closeUp) this.specks(sim, view, z);
+    this.unknown(sim, view);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
     // Lightning: the whole frame flashes white for a moment.

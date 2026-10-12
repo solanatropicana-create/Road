@@ -90,6 +90,25 @@ const QUEEN: Body = {
   headCol: hex('#1c130f'),
 };
 
+/** A winged male: small head with big eyes, a deep thorax for the flight muscles, a slim gaster. */
+const MALE: Body = {
+  scale: 0.95,
+  head: [2.55, -1.75, 0.62, 0.55],
+  thorax: [1.0, -1.65, 1.35, 0.78, -0.12],
+  gaster: [-2.3, -1.45, 1.55, 0.7, 0.1],
+  nodes: [[-0.45, -1.4, 0.26], [-0.95, -1.35, 0.28]],
+  hips: [1.6, 1.1, 0.6],
+  feet: [2.5, 1.0, -0.6],
+  hipY: -1.05,
+  mouth: [3.15, -1.45],
+  antenna: [2.85, -2.2],
+  stride: 1.15,
+  headCol: hex('#0f0b0a'),
+};
+
+/** The drawing body for a caste. */
+const bodyOf = (caste: string): Body => (caste === 'queen' || caste === 'gyne' ? QUEEN : caste === 'soldier' ? MAJOR : caste === 'male' ? MALE : WORKER);
+
 const BODY_COL = hex('#261a12');
 const SHEEN_COL = hex('#c09a78');
 const LEG_COL = hex('#30221a');
@@ -312,7 +331,7 @@ export class AntPainter {
       const v = this.vis.get(a);
       if (!v) continue;
       if (v.x < view.x0 - 8 || v.x > view.x1 + 8 || v.y < view.y0 - 8 || v.y > view.y1 + 8) continue;
-      const body = a.caste === 'queen' ? QUEEN : a.caste === 'soldier' ? MAJOR : WORKER;
+      const body = bodyOf(a.caste);
       const l = light(v.x, v.y);
       ctx.save();
       // Feet rest on the cell edge toward the surface.
@@ -483,6 +502,29 @@ export class AntPainter {
     this.antenna(ctx, QUEEN, 0, LEG_COL, l, 1 / z, 7, false);
     this.airborne = false;
     ctx.restore();
+  }
+
+  /** Alates that have taken off on the nuptial flight, climbing away. */
+  drawFlyers(ctx: CanvasRenderingContext2D, flyers: { x: number; y: number; vx: number; caste: string; t: number }[], z: number, light: Light): void {
+    for (const f of flyers) {
+      const b = bodyOf(f.caste);
+      const S = shapes(b);
+      const face = f.vx >= 0 ? 1 : -1;
+      ctx.save();
+      ctx.translate(f.x, f.y);
+      ctx.rotate(-0.35 * face);
+      ctx.scale(face * b.scale, b.scale);
+      this.airborne = true;
+      const l = light(f.x, Math.max(1, f.y));
+      this.beat(ctx, l, 1 / z);
+      ctx.fillStyle = css(BODY_COL, l);
+      ctx.fill(S.body);
+      ctx.fillStyle = css(b.headCol, l);
+      ctx.fill(S.head);
+      this.legs(ctx, b, 0, LEG_COL, l, 1 / z, false);
+      this.airborne = false;
+      ctx.restore();
+    }
   }
 
   /** One side's three legs as a single stroked path (tripod gait). */

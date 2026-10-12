@@ -77,8 +77,9 @@ export class Backdrop {
     this.canvas.height = Math.ceil(worldH * this.scale);
     this.ctx = this.canvas.getContext('2d')!;
     const rng = new Rng(seed ^ 0x5bd1e995);
+    const across = worldW / 640;
     for (let layer = 0; layer < 3; layer++) {
-      const n = [70, 55, 30][layer]!;
+      const n = Math.round([70, 55, 30][layer]! * across);
       for (let k = 0; k < n; k++) {
         this.blades.push({
           x: rng.range(-20, worldW + 20),
@@ -90,7 +91,7 @@ export class Backdrop {
         });
       }
     }
-    for (let k = 0; k < 26; k++) {
+    for (let k = 0; k < Math.round(26 * across); k++) {
       this.bokeh.push({
         x: rng.range(0, worldW),
         y: rng.range(4, GROUND_Y - 6),
@@ -101,7 +102,7 @@ export class Backdrop {
       });
     }
     const palette: RGB[] = [hex('#f2e6c8'), hex('#e8c45a'), hex('#d98cab'), hex('#b9a3d9'), hex('#f0f0ea')];
-    for (let k = 0; k < 22; k++) {
+    for (let k = 0; k < Math.round(22 * across); k++) {
       this.flowers.push({
         x: rng.range(0, worldW),
         h: rng.range(18, 65),
@@ -111,7 +112,7 @@ export class Backdrop {
         layer: rng.int(0, 1),
       });
     }
-    for (let k = 0; k < 14; k++) {
+    for (let k = 0; k < Math.round(14 * across); k++) {
       this.flies.push({
         x: rng.range(0, worldW),
         y: rng.range(10, GROUND_Y - 4),
@@ -123,8 +124,12 @@ export class Backdrop {
     }
   }
 
-  /** dayT: 0..1 time of day. time: seconds (for sway). */
-  draw(dayT: number, time: number, worldW: number, ground: Int16Array, rain = 0): void {
+  /**
+   * dayT: 0..1 solar time of day. time: seconds (for sway). month: 0..11
+   * (the meadow greens up in spring, dries to straw in high summer, browns in
+   * autumn and lies flat and pale under winter snow). snow: mm lying.
+   */
+  draw(dayT: number, time: number, worldW: number, ground: Int16Array, rain = 0, month = 4, snow = 0): void {
     const c = this.ctx;
     const s = this.scale;
     const W = this.canvas.width;
@@ -163,7 +168,7 @@ export class Backdrop {
 
     // Out-of-focus meadow, far to near. Haze lifts the far layers toward the sky colour.
     const night = 1 - Math.min(1, daylight * 2.2);
-    const grassDay = [hex('#9cb08a'), hex('#6f8f5a'), hex('#3f5f34')];
+    const grassDay = seasonGrass(month, snow);
     const grassNight = [hex('#1a2333'), hex('#131b28'), hex('#0c121c')];
     for (let layer = 0; layer < 3; layer++) {
       const base = mixRGB(grassDay[layer]!, grassNight[layer]!, night);
@@ -185,8 +190,12 @@ export class Backdrop {
       }
     }
 
-    // Wildflowers: blurred heads on their stalks, dimmed by night and haze.
-    for (const f of this.flowers) {
+    // Wildflowers: blurred heads on their stalks, dimmed by night and haze. They
+    // bloom from April into July; a few late ones linger into September.
+    const bloom = [0, 0, 0.05, 0.5, 1, 1, 0.75, 0.4, 0.25, 0.05, 0, 0][month]!;
+    for (let fi = 0; fi < this.flowers.length; fi++) {
+      const f = this.flowers[fi]!;
+      if (fi / this.flowers.length >= bloom) continue;
       const sway = Math.sin(time * 0.5 + f.phase) * 2;
       const x0 = f.x * s;
       const y0 = (ground[Math.max(0, Math.min(worldW - 1, f.x | 0))]! + 4) * s;
@@ -231,8 +240,8 @@ export class Backdrop {
       c.arc(x, y, r, 0, Math.PI * 2);
       c.fill();
     }
-    // Fireflies after dark.
-    if (night > 0.3) {
+    // Fireflies after dark, in early summer.
+    if (night > 0.3 && (month === 5 || month === 6)) {
       for (const f of this.flies) {
         f.x += f.vx + Math.sin(time * 0.7 + f.phase) * 0.05;
         f.y += Math.cos(time * 0.5 + f.phase) * 0.04;
@@ -255,3 +264,19 @@ export class Backdrop {
     c.globalCompositeOperation = 'source-over';
   }
 }
+
+/** Meadow colours (far, middle, near) through the year. */
+function seasonGrass(month: number, snow: number): RGB[] {
+  const spring = [hex('#a3b98a'), hex('#76995a'), hex('#426634')];
+  const summer = [hex('#b9b78a'), hex('#94935a'), hex('#5f6634')];
+  const autumn = [hex('#b3a37e'), hex('#8f7a52'), hex('#5c4a30')];
+  const winter = [hex('#a8a296'), hex('#857c6c'), hex('#544c40')];
+  const keys: RGB[][] = [winter, winter, autumn, spring, spring, spring, summer, summer, summer, autumn, autumn, winter];
+  let g = keys[month]!;
+  if (snow > 3) {
+    const k = Math.min(1, snow / 25);
+    g = g.map((c) => mixRGB(c, hex('#dfe3e6'), k * 0.75));
+  }
+  return g;
+}
+

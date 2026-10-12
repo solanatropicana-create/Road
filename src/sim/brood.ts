@@ -11,6 +11,8 @@ export class Brood {
   carried = false;
   /** Fed for a major (big-headed soldier) instead of a minor worker. */
   major = false;
+  /** 0 a worker, 1 a young queen (gyne), 2 a male. */
+  sex: 0 | 1 | 2 = 0;
   /** Ticks spent under water or buried. */
   wet = 0;
 
