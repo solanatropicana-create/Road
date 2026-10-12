@@ -894,7 +894,8 @@ export class Ant {
   private queenThink(sim: Sim): void {
     const w = sim.world;
     if (this.phase === 0) {
-      // Just landed: tear off the wings, then start digging.
+      // She comes down out of her mating flight, settles a moment, then tears off the wings.
+      if (this.age < TICK_HZ * 3) return;
       this.wings = false;
       sim.shedWings(this.x, this.y);
       this.phase = 1;

@@ -375,6 +375,7 @@ export class UI {
     });
     canvas.addEventListener('pointermove', (e) => {
       this.pointer = { x: e.clientX, y: e.clientY, inside: true };
+      if (game.sim.phase === 'choose') game.renderer.flightGoal(game.cam.toWorld(e.clientX, e.clientY).x);
       const p = pointers.get(e.pointerId);
       if (!p) return;
       const dx = e.clientX - p.x;
@@ -452,8 +453,9 @@ export class UI {
     if (sim.phase === 'choose') {
       if (sim.canFound(p.x)) {
         sim.found(p.x);
-        this.note('The queen lands and <b>tears off her wings</b>', true);
-        setTimeout(() => this.toast('Drag to look around · scroll to zoom · click an ant to follow it · <b>H</b> hides the panels', 9000), 2500);
+        // She lands now and sheds her wings a few seconds later; say so when she does.
+        setTimeout(() => this.note('The queen lands and <b>tears off her wings</b>', true), 3000);
+        setTimeout(() => this.toast('Drag to look around · scroll to zoom · click an ant to follow it · <b>H</b> hides the panels', 9000), 5500);
         game.cam.tzoom = Math.max(game.cam.tzoom, game.cam.fitZoom() * 2.4);
         game.cam.tx = p.x;
         game.cam.ty = sim.world.ground[Math.round(p.x)]! + 10;

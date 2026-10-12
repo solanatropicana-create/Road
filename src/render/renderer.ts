@@ -326,6 +326,11 @@ export class Renderer {
     }
   }
 
+  /** Steer the nuptial flight toward the spot the player is pointing at. */
+  flightGoal(x: number): void {
+    this.painter.flightGoal = x;
+  }
+
   /** Show the colony's dig plan: always (toggled with P), or for a few seconds after an order. */
   planAlways = false;
   planFlash = 0;
@@ -556,6 +561,7 @@ export class Renderer {
     const col = sim.colony;
     const ants = col.queen && col.queen.alive ? [...col.ants.filter((a) => a.caste !== 'queen'), col.queen] : col.ants;
     this.painter.update(ants, dt, speed);
+    if (sim.phase === 'choose') this.painter.drawFlight(ctx, z, this.lightAt, w.w, dt);
     const view = { x0: cam.x - cam.screenW / 2 / cam.zoom, y0: cam.y - cam.screenH / 2 / cam.zoom, x1: cam.x + cam.screenW / 2 / cam.zoom, y1: cam.y + cam.screenH / 2 / cam.zoom };
     if (this.closeUp) this.grains(view);
     this.drawPlan(sim, view, z, dt);

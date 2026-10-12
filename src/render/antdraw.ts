@@ -210,6 +210,10 @@ const wrap = (a: number): number => {
 
 export class AntPainter {
   private vis = new WeakMap<Ant, Vis>();
+  /** The winged queen on her nuptial flight, before she picks a spot (world coordinates). */
+  private flight = { x: 320, y: 40, face: 1 };
+  /** World x the pointer is over while the player is choosing a landing spot. */
+  flightGoal: number | null = null;
   private world: World;
   private time = 0;
 
@@ -241,7 +245,8 @@ export class AntPainter {
       const ty = a.y + 0.5;
       let v = this.vis.get(a);
       if (!v) {
-        v = { x: tx, y: ty, down: Math.atan2(a.ly, a.lx), face: a.hx * a.ly - a.hy * a.lx || 1, dx: a.hx, dy: a.hy, tx, ty, gait: Math.random() * 6, still: 0 };
+        const flying = a.caste === 'queen' && a.wings;
+        v = { x: flying ? this.flight.x : tx, y: flying ? this.flight.y : ty, down: Math.atan2(a.ly, a.lx), face: a.hx * a.ly - a.hy * a.lx || 1, dx: a.hx, dy: a.hy, tx, ty, gait: Math.random() * 6, still: 0 };
         this.vis.set(a, v);
       }
       if (tx !== v.tx || ty !== v.ty) {
@@ -259,7 +264,13 @@ export class AntPainter {
       const ex = tx - v.x;
       const ey = ty - v.y;
       const dist = Math.hypot(ex, ey);
-      if (dist > 6) {
+      // A queen still on the wing glides all the way down to where she lands.
+      const landing = a.caste === 'queen' && a.wings;
+      if (landing && dist > 0.05) {
+        const step = Math.min(dist, Math.max(45 * dt, dist * (1 - Math.exp(-dt * 2.5))));
+        v.x += (ex / dist) * step;
+        v.y += (ey / dist) * step;
+      } else if (dist > 6) {
         v.x = tx;
         v.y = ty;
       } else if (dist > 1e-3) {
@@ -316,7 +327,9 @@ export class AntPainter {
       // Standing about for a while: groom, drawing a foreleg over the antennae.
       this.groom = v.still > 1.5 && a.carry === Carry.None && a.meet === 0 ? Math.sin(this.time * 7 + a.id) : null;
       this.meeting = a.meet > 0;
+      this.airborne = a.caste === 'queen' && a.wings && Math.hypot(a.x + 0.5 - v.x, a.y + 0.5 - v.y) > 1.5;
       this.ant(ctx, a, body, v.gait, l, z, busy, false, wall);
+      this.airborne = false;
       this.groom = null;
       this.meeting = false;
       ctx.restore();
@@ -360,7 +373,9 @@ export class AntPainter {
     // Far-side legs first, darker and half a stride out of phase.
     if (full) this.legs(ctx, b, gait + Math.PI, mixRGB(legCol, [0, 0, 0], 0.45), l, px, dead);
     // Queen's wings lie over the back until she tears them off.
-    if (a && a.wings) {
+    if (a && a.wings && this.airborne) {
+      this.beat(ctx, l, px);
+    } else if (a && a.wings) {
       ctx.fillStyle = css([215, 222, 232], l, 0.32);
       ctx.fill(S.wings);
       if (full) {
@@ -417,7 +432,63 @@ export class AntPainter {
     if (a && a.carry !== Carry.None) this.load(ctx, a, b, busy, l);
   }
 
+  /** Beating wings: two blurred sweeps at the ends of the stroke, and the wing itself. */
+  private beat(ctx: CanvasRenderingContext2D, l: RGB, px: number): void {
+    const t = this.time;
+    const flap = Math.sin(t * 38);
+    const base = [1.4, -2.7] as const;
+    const wing = (ang: number, a: number): void => {
+      ctx.save();
+      ctx.translate(base[0], base[1]);
+      ctx.rotate(ang);
+      ctx.fillStyle = css([220, 226, 236], l, a);
+      ctx.beginPath();
+      ctx.ellipse(-4.2, 0, 4.4, 0.9, 0, 0, Math.PI * 2);
+      ctx.ellipse(-3.2, 0.9, 3.3, 0.65, 0.12, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    };
+    wing(-1.15, 0.1);
+    wing(0.25, 0.1);
+    wing(-0.45 + flap * 0.7, 0.42);
+    ctx.lineWidth = px;
+  }
+
+  /**
+   * Before the player chooses, the mated queen drifts over the meadow on her
+   * nuptial flight, high and slow, in and out of the lens's focus.
+   */
+  drawFlight(ctx: CanvasRenderingContext2D, z: number, light: Light, worldW: number, dt: number): void {
+    const f = this.flight;
+    const t = this.time;
+    // She drifts over the meadow, or hovers over the spot the pointer is considering.
+    const goal = this.flightGoal ?? worldW / 2 + Math.sin(t * 0.11) * worldW * 0.3;
+    const nx = f.x + (goal + Math.sin(t * 0.37) * 14 - f.x) * Math.min(1, dt * 0.8);
+    const ny = 38 + Math.sin(t * 0.29) * 10 + Math.sin(t * 1.3) * 1.5;
+    const dx = nx - f.x;
+    if (Math.abs(dx) > 0.01) f.face += ((dx > 0 ? 1 : -1) - f.face) * Math.min(1, dt * 3);
+    f.x = nx;
+    f.y = ny;
+    ctx.save();
+    ctx.translate(f.x, f.y);
+    ctx.rotate(-0.15 * Math.sign(f.face));
+    ctx.scale(f.face, 1);
+    this.airborne = true;
+    const S = shapes(QUEEN);
+    const l = light(f.x, f.y);
+    this.beat(ctx, l, 1 / z);
+    ctx.fillStyle = css(BODY_COL, l);
+    ctx.fill(S.body);
+    ctx.fill(S.head);
+    this.legs(ctx, QUEEN, 0, LEG_COL, l, 1 / z, false);
+    this.antenna(ctx, QUEEN, 0, LEG_COL, l, 1 / z, 7, false);
+    this.airborne = false;
+    ctx.restore();
+  }
+
   /** One side's three legs as a single stroked path (tripod gait). */
+  /** The ant being drawn is in the air (wings beating, legs hanging). */
+  private airborne = false;
   /** The ant being drawn is touching antennae with a nestmate. */
   private meeting = false;
   /** Grooming stroke (-1..1) for the ant being drawn, or null when it isn't grooming. */
@@ -438,6 +509,10 @@ export class AntPainter {
         // Curled in against the belly.
         footX = hipX + (1 - k) * 0.35;
         footY = hipY + 0.3;
+      } else if (this.airborne) {
+        // In flight the legs hang loose beneath the body.
+        footX = hipX - 0.6 + (k - 1) * 0.5;
+        footY = hipY + 1.6;
       } else if (k === 0 && this.groom !== null) {
         // The foreleg comes up past the mandibles and strokes the antenna.
         footX = b.head[0] + b.head[2] * 0.6 + this.groom * 0.35;
