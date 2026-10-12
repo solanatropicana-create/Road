@@ -4,9 +4,10 @@ import { Carry, CarryKind, Task, TaskKind, Caste } from './types';
 import type { Brood } from './brood';
 import { Nest } from './nest';
 import {
-  EMPTY, SOLID, HARDNESS, REFUSE, SEED, SEEDHEAD, FRUIT, SAND, WATER, LITTER,
+  EMPTY, SOLID, HARDNESS, REFUSE, SEED, SEEDHEAD, FRUIT, SAND, WATER, LITTER, PREY,
 } from '../world/mat';
 import { TUNING, TICK_HZ } from '../config';
+import { SPROUT } from '../world/moisture';
 
 const enum Step {
   Arrived,
@@ -20,6 +21,19 @@ const enum Act {
   Pick,
   Rest,
 }
+
+/** The load an ant takes from a food cell, and the cell it puts down again. */
+const carryOf = (m: number): CarryKind => (m === FRUIT ? Carry.Fruit : m === PREY ? Carry.Prey : Carry.Seed);
+const matOf = (c: CarryKind): number => (c === Carry.Fruit ? FRUIT : c === Carry.Prey ? PREY : SEED);
+const isFood = (c: CarryKind): boolean => c === Carry.Seed || c === Carry.Fruit || c === Carry.Prey;
+/** Seed is one ration; fruit pulp and a piece of insect are worth more. */
+const rations = (c: CarryKind): number => (c === Carry.Seed ? 1 : 2);
+
+/**
+ * How likely a forager that walked off the slice comes back with a seed, by
+ * month: the meadow beyond is the same steppe, seeding in the same season.
+ */
+const OFF_SLICE_YIELD = [0, 0, 0.05, 0.25, 0.5, 0.75, 0.8, 0.7, 0.55, 0.35, 0.1, 0];
 
 const DX = [1, -1, 0, 0, 1, 1, -1, -1];
 const DY = [0, 0, 1, -1, 1, -1, 1, -1];
@@ -59,6 +73,11 @@ export class Ant {
   private stuck = 0;
   /** Steps walked on the surface with the current load. */
   private trip = 0;
+  /** Ticks left foraging off the slice (out of view, in the meadow beyond). */
+  away = 0;
+  /** Carrying a damp seed up to dry in the sun (and how wet it is). */
+  private drying = false;
+  private carryWet = 0;
   /** Ticks left touching antennae with a nestmate met head-on, and when it may happen again. */
   meet = 0;
   private meetAgain = 0;
@@ -104,6 +123,10 @@ export class Ant {
     this.age += sim.agingRate;
     if (this.caste !== 'queen' && this.age >= this.life) {
       sim.colony.kill(this, 'old age');
+      return;
+    }
+    if (this.away > 0) {
+      if (--this.away === 0) this.comeBack(sim);
       return;
     }
     const w = sim.world;
@@ -401,17 +424,19 @@ export class Ant {
     if (a === Act.Dig) {
       const m = w.mat[n]!;
       if (!Nest.diggable(w, n)) return;
-      if (m === SEED || m === FRUIT || m === REFUSE) {
+      if (m === SEED || m === FRUIT || m === PREY || m === REFUSE) {
         // Clutter in a tunnel: seed goes to the granary, husks to the midden.
         // (A seed in undug soil was buried in the seed bank: a find.)
         if (m === SEED && w.bg[n] === 1 && !w.zone[n] && w.tint[n] === 0) sim.buriedSeed();
         this.carryTone = w.tone[n]!;
+        const sprout = m === REFUSE && w.tint[n] === SPROUT;
         w.set(n, EMPTY, w.tone[n], w.tint[n]);
         if (m === REFUSE) {
           this.carry = Carry.Refuse;
+          this.carryTint = sprout ? SPROUT : 0;
           this.dropDist = 0;
         } else {
-          this.carry = m === FRUIT ? Carry.Fruit : Carry.Seed;
+          this.carry = carryOf(m);
           this.task = Task.Forage;
         }
         return;
@@ -438,6 +463,7 @@ export class Ant {
       }
     } else if (a === Act.Pick) {
       const m = w.mat[n]!;
+      if (this.task === Task.Forage && w.bg[n] === 0) sim.colony.foundAt(sim.fields.dist[F.Entr]![n]!);
       if (w.plant[n] === SEEDHEAD) {
         this.carry = Carry.Seed;
         this.carryTone = w.ptone[n]!;
@@ -448,8 +474,9 @@ export class Ant {
         this.carryTone = w.tone[n]!;
         w.set(n, EMPTY, w.tone[n], w.tint[n]);
         this.search = 0;
-      } else if (m === FRUIT) {
-        this.carry = Carry.Fruit;
+      } else if (m === FRUIT || m === PREY) {
+        this.carry = carryOf(m);
+        if (m === PREY) sim.noteYearly('preyIn');
         this.carryTone = w.tone[n]!;
         w.set(n, EMPTY, w.tone[n], w.tint[n]);
         this.search = 0;
@@ -520,8 +547,10 @@ export class Ant {
       // Let go: the load becomes a grain on the ground here.
       if (refuse) {
         // Chaff, like spoil, mostly goes to the part of the ring off the slice.
-        if (this.carry !== Carry.Corpse && sim.rng.next() < TUNING.spoilOffSlice) sim.chaffPuff(i);
-        else w.set(i, REFUSE, this.carry === Carry.Corpse ? sim.rng.int(0, 25) : sim.rng.int(140, 255), 0);
+        // (Sprouted seeds are set down on the heap, where some take root: the ant garden.)
+        const sprout = this.carry === Carry.Refuse && this.carryTint === SPROUT;
+        if (this.carry !== Carry.Corpse && !sprout && sim.rng.next() < TUNING.spoilOffSlice) sim.chaffPuff(i);
+        else w.set(i, REFUSE, this.carry === Carry.Corpse ? sim.rng.int(0, 25) : sim.rng.int(140, 255), sprout ? SPROUT : 0);
       } else if (sim.rng.next() < TUNING.spoilOffSlice) {
         // Spread off the slice (out of view): only a puff of dust shows here.
         sim.dust(i, this.carryTint & 0x3f);
@@ -570,12 +599,13 @@ export class Ant {
   /** Give up on the current load: spoil gets tamped into the wall, food shared out. */
   private discard(sim: Sim): void {
     if (this.carry === Carry.Corpse) sim.colony.corpses.push({ x: this.x, y: this.y, carried: false });
-    else if (this.carry === Carry.Seed || this.carry === Carry.Fruit) sim.colony.reserve++;
+    else if (isFood(this.carry)) sim.colony.reserve += rations(this.carry);
     if (this.carryBrood) {
       sim.colony.placeBrood(this.carryBrood, this.x, this.y);
       this.carryBrood = null;
     }
     this.carry = Carry.None;
+    this.drying = false;
     this.lost = 0;
     this.dropDist = 0;
     this.trip = 0;
@@ -620,7 +650,7 @@ export class Ant {
     const w = sim.world;
     if (w.plant[n] === SEEDHEAD) return true;
     const m = w.mat[n]!;
-    if (m !== SEED && m !== FRUIT) return false;
+    if (m !== SEED && m !== FRUIT && m !== PREY) return false;
     // Seeds already in a store are not "found" food.
     const c = sim.nest.chamberAt(n);
     return !c || (c.kind !== 'granary' && c.kind !== 'queen');
@@ -629,8 +659,18 @@ export class Ant {
   private doForage(sim: Sim): void {
     const w = sim.world;
     const i = this.y * w.w + this.x;
-    if (this.carry === Carry.Seed || this.carry === Carry.Fruit) {
-      if (w.bg[i] === 0) sim.layTrail(i, this.carry === Carry.Fruit ? 2.5 : 1);
+    if (this.drying) {
+      this.carryOutToDry(sim);
+      return;
+    }
+    // Damp seed in the stores: take some up into the sun first.
+    if (this.carry === Carry.None && w.bg[i] === 1 && sim.colony.dryNeed > 0) {
+      this.fetchWetSeed(sim);
+      return;
+    }
+    if (isFood(this.carry)) {
+      // A rich find (fruit, an insect) is worth a stronger trail: recruit help.
+      if (w.bg[i] === 0) sim.layTrail(i, this.carry === Carry.Seed ? 1 : 2.5);
       this.fdist = 0;
       // Into a granary if one has room; otherwise straight into the shared crops
       // of the workers by the queen (trophallaxis), no pile.
@@ -639,10 +679,10 @@ export class Ant {
       const r = this.descend(sim, useGran ? F.Gran : F.Royal);
       if (r === Step.Arrived && (!useGran || SOLID[w.mat[i + w.w]!])) {
         if (useGran) {
-          w.set(i, this.carry === Carry.Fruit ? FRUIT : SEED, this.carryTone, 0);
+          w.set(i, matOf(this.carry), this.carryTone, 0);
           this.stepAside(sim);
         } else {
-          sim.colony.reserve += this.carry === Carry.Fruit ? 2 : 1;
+          sim.colony.reserve += rations(this.carry);
         }
         this.carry = Carry.None;
         this.delivered++;
@@ -665,7 +705,7 @@ export class Ant {
     if (this.fdist === 0) {
       // Just out of the nest: pick a heading and how far to walk before searching.
       this.fdir = sim.rng.chance(0.5) ? -1 : 1;
-      this.fdist = sim.rng.int(30, 220);
+      this.fdist = sim.rng.int(30, Math.round(sim.colony.reach));
     }
     const food = this.findAdjacent(sim, (n) => this.isForageFood(sim, n));
     if (food >= 0) {
@@ -673,13 +713,88 @@ export class Ant {
       this.sniffSteps = 0;
       return;
     }
-    if (++this.search > TUNING.forageGiveUpTicks * this.speed) {
+    // (The walk out to the search area doesn't count against the search.)
+    if (++this.search > TUNING.forageGiveUpTicks * this.speed + this.fdist / this.speed) {
       this.search = 0;
+      // Nothing out there: the colony's scouts range further next time.
+      sim.colony.reach = Math.min(sim.world.w * 0.9, sim.colony.reach * 1.15);
       this.task = Task.Idle;
       this.reevalAt = sim.tick + TICK_HZ * 20;
       return;
     }
     this.searchStep(sim, i);
+  }
+
+  /** Go to the granary and pick up a damp seed. */
+  private fetchWetSeed(sim: Sim): void {
+    const w = sim.world;
+    const r = this.descend(sim, F.Store);
+    if (r === Step.Moved) return;
+    const cell = r === Step.Arrived ? this.findAdjacent(sim, (n) => w.mat[n] === SEED && w.moist[n]! > 40 && !!sim.nest.chamberAt(n)) : -1;
+    if (cell < 0) {
+      // Someone got the last of them: back to foraging.
+      sim.colony.dryNeed = Math.max(0, sim.colony.dryNeed - 1);
+      this.wander(sim, true);
+      return;
+    }
+    this.carry = Carry.Seed;
+    this.carryTone = w.tone[cell]!;
+    this.carryWet = w.moist[cell]!;
+    w.set(cell, EMPTY, w.tone[cell], w.tint[cell]);
+    w.moist[cell] = 0;
+    this.drying = true;
+    this.dropDist = 0;
+    this.trip = 0;
+    sim.colony.dryNeed = Math.max(0, sim.colony.dryNeed - 1);
+    sim.noteYearly('dryingSeeds');
+  }
+
+  /** Carry a damp seed up and lay it out in the sun on the mound (foragers fetch it back once dry). */
+  private carryOutToDry(sim: Sim): void {
+    const w = sim.world;
+    const i = this.y * w.w + this.x;
+    if (this.carry !== Carry.Seed) {
+      this.drying = false;
+      return;
+    }
+    if (w.bg[i] === 1) {
+      this.descend(sim, F.Out);
+      if (this.lost > 150) this.discard(sim);
+      return;
+    }
+    const ex = sim.nest.foundX;
+    if (this.dropDist === 0) this.dropDist = sim.rng.int(14, 40);
+    if (Math.abs(this.x - ex) >= this.dropDist && !w.plan[i] && this.grounded(sim, i) && w.mat[i] === EMPTY) {
+      w.set(i, SEED, this.carryTone, 0);
+      sim.physics.moisture.add(i, this.carryWet);
+      this.carry = Carry.None;
+      this.drying = false;
+      this.dropDist = 0;
+      this.stepAside(sim);
+      return;
+    }
+    if (++this.trip > 600) {
+      this.discard(sim);
+      this.drying = false;
+      return;
+    }
+    // Walk away from the mouth along the ground.
+    const fields = sim.fields;
+    let bestK = -1;
+    let bestS = -Infinity;
+    const side = Math.sign(this.x - ex) || 1;
+    for (let k = 0; k < 8; k++) {
+      if (!fields.canStep(i, k)) continue;
+      const n = i + fields.off[k]!;
+      if (w.bg[n] === 1) continue;
+      const s = DX[k]! * side + (SOLID[w.mat[n + w.w]!] ? 0.5 : -0.5) + sim.rng.next() * 0.6;
+      if (s > bestS) {
+        bestS = s;
+        bestK = k;
+      }
+    }
+    if (bestK >= 0) this.moveTo(sim, bestK);
+    else this.wander(sim);
   }
 
   /** Seeds within reach of the antennae (and the scent of fruit) pull the forager in. */
@@ -721,8 +836,35 @@ export class Ant {
     return bk;
   }
 
+  /**
+   * Back from the meadow beyond the slice: with a seed if the season gave
+   * one. (Out there the forager risks lizards, birds and spiders.)
+   */
+  private comeBack(sim: Sim): void {
+    if (sim.rng.chance(0.012)) {
+      sim.colony.kill(this, 'lost foraging');
+      return;
+    }
+    const yieldP = OFF_SLICE_YIELD[sim.cal.month(sim.doy)]! * (sim.raining ? 0.3 : 1);
+    if (sim.rng.chance(yieldP)) {
+      this.carry = Carry.Seed;
+      this.carryTone = sim.seedToneFromMix();
+    } else {
+      this.task = Task.Idle;
+      this.reevalAt = 0;
+    }
+    this.search = 0;
+    this.fdist = 0;
+  }
+
   /** Random search biased by trail pheromone, outward from the nest, mostly on the ground. */
   private searchStep(sim: Sim, i: number): void {
+    const w0 = sim.world;
+    // The trail runs on past the edge of the slice: the forager goes on into the meadow beyond.
+    if ((this.x <= 2 || this.x >= w0.w - 3) && w0.bg[i] === 0 && this.carry === Carry.None && sim.forageWeather > 0.3) {
+      this.away = sim.rng.int(TICK_HZ * 30, TICK_HZ * 100);
+      return;
+    }
     // A scent that leads nowhere (seed on a stem cut off or buried under spoil)
     // is given up on for a while, or the whole forage force would crowd round it.
     const k0 = sim.tick >= this.noSniffUntil ? this.sniff(sim, i) : -1;
@@ -750,6 +892,7 @@ export class Ant {
       }
     }
     let total = 0;
+    const climbing = !SOLID[w.mat[i + w.w]!];
     const weights = [0, 0, 0, 0, 0, 0, 0, 0];
     for (let k = 0; k < 8; k++) {
       if (!fields.canStep(i, k)) continue;
@@ -769,8 +912,10 @@ export class Ant {
         s += p * (outward ? 1.5 : 0.4);
       }
       if (k === this.lastDir) s *= 2;
-      // Harvesters mostly glean fallen seed; climbing stems is the exception.
+      // Harvesters mostly glean fallen seed; climbing stems is the exception,
+      // and a forager up a stem with nothing in reach climbs back down.
       if (!SOLID[w.mat[n + w.w]!]) s *= DY[k]! < 0 ? 0.25 : 0.6;
+      if (climbing) s *= DY[k]! > 0 ? 3 : DY[k]! < 0 ? 0.3 : 1;
       weights[k] = s;
       total += s;
     }
@@ -808,10 +953,11 @@ export class Ant {
       }
       return;
     }
-    if (this.carry === Carry.Seed || this.carry === Carry.Fruit) {
+    if (isFood(this.carry)) {
       const r = this.descend(sim, F.Larva);
       if (r === Step.Arrived) {
-        if (col.feedLarvaNear(this.x, this.y)) this.carry = Carry.None;
+        // Insect is what larvae grow on: a piece counts as a double meal.
+        if (col.feedLarvaNear(this.x, this.y, this.carry === Carry.Prey ? 2 : 1)) this.carry = Carry.None;
       } else if (r === Step.Failed && sim.fields.sourceCount[F.Larva] === 0) {
         // No one hungry any more: share it out mouth to mouth (it was already
         // harvested once, so it doesn't count as a new delivery).
@@ -847,12 +993,12 @@ export class Ant {
       if (this.descend(sim, F.Store) === Step.Arrived) {
         const cell = this.findAdjacent(sim, (n) => {
           const m = w.mat[n]!;
-          if (m !== SEED && m !== FRUIT) return false;
+          if (m !== SEED && m !== FRUIT && m !== PREY) return false;
           const c = sim.nest.chamberAt(n);
           return !!c && (c.kind === 'granary' || c.kind === 'queen');
         });
         if (cell >= 0) {
-          this.carry = w.mat[cell] === FRUIT ? Carry.Fruit : Carry.Seed;
+          this.carry = carryOf(w.mat[cell]!);
           this.carryTone = w.tone[cell]!;
           w.set(cell, EMPTY, w.tone[cell], w.tint[cell]);
         } else this.wander(sim, true);
@@ -887,6 +1033,7 @@ export class Ant {
       if (cell >= 0) {
         this.carry = Carry.Refuse;
         this.carryTone = w.tone[cell]!;
+        this.carryTint = w.tint[cell] === SPROUT ? SPROUT : 0;
         w.set(cell, EMPTY, w.tone[cell], w.tint[cell]);
         this.dropDist = 0;
       } else if (col.husks > 0 && room && (room.kind === 'granary' || room.kind === 'queen')) {
@@ -894,6 +1041,7 @@ export class Ant {
         col.husks -= Math.min(3, col.husks);
         this.carry = Carry.Refuse;
         this.carryTone = sim.rng.int(150, 255);
+        this.carryTint = 0;
         this.dropDist = 0;
       } else {
         // Someone got here first: look for other work rather than loiter.

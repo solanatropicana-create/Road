@@ -12,6 +12,8 @@ import { Plants, Plant } from '../world/plants';
 import { Rng } from '../util/rng';
 import { Noise } from '../util/noise';
 import { Calendar } from './calendar';
+import { Ecology } from './ecology';
+import { Critters } from './critters';
 
 /**
  * Saving a colony: the whole simulation object graph, written generically.
@@ -22,7 +24,7 @@ import { Calendar } from './calendar';
  */
 
 const CLASSES: Record<string, { prototype: object }> = {
-  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar,
+  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar, Ecology, Critters,
 };
 
 const TYPED: Record<string, new (b: ArrayBuffer) => ArrayBufferView> = {
@@ -147,9 +149,9 @@ async function gunzip(bytes: Uint8Array): Promise<Uint8Array> {
   return new Uint8Array(await new Response(stream).arrayBuffer());
 }
 
-// v2: the colony calendar (weeks, seasons). Older saves are not compatible and are ignored.
-export const SAVE_KEY = 'underfoot.save2';
-export const META_KEY = 'underfoot.meta2';
+// v3: sites, seasons and the year's ecology. Older saves are not compatible and are ignored.
+export const SAVE_KEY = 'underfoot.save3';
+export const META_KEY = 'underfoot.meta3';
 
 /** The saved colony's summary, if there is one (storage may be unavailable). */
 export function savedMeta(): SaveMeta | null {
@@ -173,7 +175,7 @@ export async function saveSim(sim: Sim, extra: unknown = null): Promise<{ meta: 
   // Layout: [4-byte JSON length][JSON][byte length + bytes of each typed array], gzipped.
   const bins: Uint8Array[] = [];
   const graph = encodeGraph(sim, bins);
-  const json = new TextEncoder().encode(JSON.stringify({ v: 2, graph, statics: { ant: Ant.nextId, brood: Brood.nextId }, extra }));
+  const json = new TextEncoder().encode(JSON.stringify({ v: 3, graph, statics: { ant: Ant.nextId, brood: Brood.nextId }, extra }));
   const parts: BlobPart[] = [new Uint32Array([json.length]), json];
   for (const b of bins) parts.push(new Uint32Array([b.length]), b as BlobPart);
   const blob = bytesToB64(await gzip(parts));
@@ -185,7 +187,7 @@ export async function loadSim(blob: string): Promise<{ sim: Sim; extra: unknown 
   const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
   const jlen = view.getUint32(0, true);
   const json = JSON.parse(new TextDecoder().decode(raw.subarray(4, 4 + jlen)));
-  if (json.v !== 2) throw new Error(`unknown save version ${json.v}`);
+  if (json.v !== 3) throw new Error(`unknown save version ${json.v}`);
   const bins: Uint8Array[] = [];
   for (let off = 4 + jlen; off < raw.length; ) {
     const n = view.getUint32(off, true);

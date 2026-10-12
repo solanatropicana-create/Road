@@ -5,7 +5,7 @@ import { Carry, Task, TaskKind, Work, WORK, ChamberKind } from './types';
 import { F } from './fields';
 import { TUNING, TICK_HZ, DAY_TICKS } from '../config';
 import { devRate, metabolism } from './calendar';
-import { EMPTY, SEED, FRUIT, SOLID, WATER, POWDER } from '../world/mat';
+import { EMPTY, SEED, FRUIT, SOLID, WATER, POWDER, PREY } from '../world/mat';
 import { clamp } from '../util/math';
 
 /** Multipliers for the colony brain's priority levels: off, low, normal, high. */
@@ -70,6 +70,17 @@ export class Colony {
   readonly share: Record<number, number> = {};
   readonly count: Record<number, number> = {};
   hungryLarvae = 0;
+  /**
+   * How far foragers walk out before searching (mm of path). It follows where
+   * food was last found, and grows when searches come back empty: as the
+   * seeds near the nest run out, the colony ranges further.
+   */
+  reach = 220;
+  /** Larvae fed on insect since the start (protein meals). */
+  proteinMeals = 0;
+  /** Damp seeds in the stores, and how many the colony wants carried up to dry now. */
+  wetSeeds = 0;
+  dryNeed = 0;
   /** Cause of the most recent worker death (the game-over card explains the end with it). */
   lastDeath = '';
   /** Nurses currently carrying food to the brood. */
@@ -165,12 +176,13 @@ export class Colony {
     return b.fed < req && b.age >= (b.fed / req) * TUNING.larvaTicks * 0.7;
   }
 
-  feedLarvaNear(x: number, y: number): boolean {
+  feedLarvaNear(x: number, y: number, meals = 1): boolean {
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
         const b = this.broodAt((y + dy) * this.w + x + dx);
         if (b && this.isHungry(b)) {
-          b.fed++;
+          b.fed = Math.min(this.feedings(b), b.fed + meals);
+          if (meals > 1) this.proteinMeals++;
           return true;
         }
       }
@@ -349,20 +361,29 @@ export class Colony {
 
   // ---------------------------------------------------------------- food
 
+  /** A forager found food this far (path mm) from the mouth. */
+  foundAt(d: number): void {
+    if (!(d < 5000)) return;
+    this.reach = clamp(this.reach * 0.85 + d * 1.4 * 0.15, 160, 1150);
+  }
+
   refreshStore(sim: Sim): void {
     const w = sim.world;
     this.storeCells.length = 0;
     let n = 0;
+    let wet = 0;
     for (const c of sim.nest.chambers) {
       if (c.kind !== 'granary' && c.kind !== 'queen') continue;
       for (const i of c.cells) {
         const m = w.mat[i]!;
-        if (m !== SEED && m !== FRUIT) continue;
+        if (m !== SEED && m !== FRUIT && m !== PREY) continue;
         n++;
+        if (m === SEED && w.moist[i]! > 40) wet++;
         if (w.mat[i - w.w] === EMPTY) this.storeCells.push(i);
       }
     }
     this.stored = n;
+    this.wetSeeds = wet;
   }
 
   private eatOne(sim: Sim): boolean {
@@ -377,8 +398,10 @@ export class Colony {
         // Messor eat the kernel; the husk is set aside for the cleaners to carry out.
         w.set(i, EMPTY, w.tone[i], w.tint[i]);
         this.husks++;
-      } else if (m === FRUIT) {
+      } else if (m === FRUIT || m === PREY) {
+        // Worth two rations.
         w.set(i, EMPTY, w.tone[i], w.tint[i]);
+        this.need = Math.max(0, this.need - 1);
       } else continue;
       this.stored = Math.max(0, this.stored - 1);
       this.eaten++;
@@ -423,8 +446,17 @@ export class Colony {
     need[Task.Dig] = nest.frontier.length > 0 ? 0.3 + Math.min(1, nest.pendingCells / (adults * 5 + 40)) : 0;
     // Hunger reorganises the colony: empty stores pull workers out to forage
     // and leave digging for later.
+    // After rain, on a warm dry day, damp seed is carried up into the sun to
+    // dry before it can sprout (Moggridge saw harvester ants do this in 1873).
+    const sunny = !sim.raining && sim.cal.daylight(sim.dayT, sim.doy) > 0.3 && sim.surfaceT > 16 && sim.surfaceT < 40;
+    this.dryNeed = sunny && !sim.dormant && this.adults > 3 ? Math.min(this.wetSeeds, Math.ceil(this.adults * 0.25)) : 0;
     const food = this.stored + this.reserve;
-    const shortage = clamp(1 - food / (adults * 2 + 12), 0, 1);
+    // Stores are judged in weeks of eating (larvae included); from late summer
+    // the colony lays in its winter granary, so it wants much more in hand.
+    const larvae = this.brood.reduce((n, b) => n + (b.stage === 1 ? 1 : 0), 0);
+    const weekly = (adults * DAY_TICKS) / TUNING.adultSeedTicks + larvae * 1.1 + 2;
+    const stock = sim.doy > 200 && sim.doy < 300 ? 9 : 4;
+    const shortage = clamp(1 - food / (weekly * stock), 0, 1);
     need[Task.Forage] = 0.3 + 0.9 * shortage + (this.starving ? 0.8 : 0);
     // Nobody goes out in the rain, the cold, or the midday heat of summer.
     need[Task.Forage] = need[Task.Forage]! * (0.08 + 0.92 * sim.forageWeather);
@@ -534,8 +566,8 @@ export class Colony {
     let bestRate = -1;
     let deep = 0;
     let n = 0;
-    const consider = (depth: number): void => {
-      const t = sim.soilT(depth);
+    const consider = (depth: number, bonus = 0): void => {
+      const t = sim.soilT(depth) + bonus;
       const r = devRate(t);
       // Prefer the faster room; between equals, the one nearer 26 °C.
       if (r > bestRate + 1e-3 || (Math.abs(r - bestRate) <= 1e-3 && Math.abs(t - 26) < Math.abs(best - 26))) {
@@ -546,7 +578,8 @@ export class Colony {
     for (const c of sim.nest.chambers) {
       if (!c.ready) continue;
       const depth = c.floorY - w.ground[Math.round(c.cx)]!;
-      consider(depth);
+      // A flat stone over the room soaks up the sun and warms it (Messor nest under stones for this).
+      consider(depth, sim.stoneWarmth(Math.round(c.cx), Math.round(c.cy)));
       deep += depth;
       n++;
     }
@@ -585,7 +618,7 @@ export class Colony {
       const i = a.y * sim.world.w + a.x;
       occ[i] = k + 1;
       this.occCells.push(i);
-      if (a.task === Task.Nurse && (a.carry === Carry.Seed || a.carry === Carry.Fruit)) meals++;
+      if (a.task === Task.Nurse && (a.carry === Carry.Seed || a.carry === Carry.Fruit || a.carry === Carry.Prey)) meals++;
     }
     this.mealsCarried = meals;
     for (let k = 0; k < this.ants.length; k++) {

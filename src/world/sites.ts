@@ -14,7 +14,9 @@ import { Rng } from '../util/rng';
 export type SiteId = 'pannonian' | 'sand' | 'limestone' | 'vineyard' | 'anatolia' | 'pontic';
 export const SITE_IDS: SiteId[] = ['pannonian', 'anatolia', 'sand', 'limestone', 'vineyard', 'pontic'];
 
-export type PlantMix = { grass: number; purse: number; clover: number };
+import type { PlantKind } from './plants';
+
+export type PlantMix = Partial<Record<PlantKind, number>>;
 
 export interface Layer {
   mat: number;
@@ -58,7 +60,7 @@ const PANNONIAN_SITE: SiteDef = {
     { mat: SUBSOIL, top: 620 },
   ],
   relief: 7,
-  plants: { grass: 4, purse: 2, clover: 2 },
+  plants: { grass: 4, purse: 2, clover: 2, erodium: 1, stipa: 0.5 },
   plantDensity: 38,
   stones: 25,
   krotovinas: 8,
@@ -84,7 +86,8 @@ const SAND_STEPPE: SiteDef = {
     { mat: SANDY, top: 55 },
   ],
   relief: 14,
-  plants: { grass: 5, purse: 1, clover: 1 },
+  // Sand fescue and sand feather grass, with stork's bill on the bare patches.
+  plants: { grass: 3, stipa: 2.5, erodium: 2, purse: 1, clover: 0.5 },
   plantDensity: 26,
   stones: 3,
   krotovinas: 2,
@@ -110,7 +113,7 @@ const LIMESTONE_HILL: SiteDef = {
     { mat: ROCK, top: 260 },
   ],
   relief: 20,
-  plants: { grass: 3, purse: 2, clover: 2 },
+  plants: { grass: 3, stipa: 1.5, clover: 2, purse: 1, erodium: 1 },
   plantDensity: 30,
   stones: 90,
   krotovinas: 1,
@@ -137,7 +140,8 @@ const VINEYARD_EDGE: SiteDef = {
     { mat: SUBSOIL, top: 430 },
   ],
   relief: 5,
-  plants: { grass: 3, purse: 3, clover: 2 },
+  // Weedy: shepherd's purse and stork's bill thrive on the tilled margin.
+  plants: { grass: 2, purse: 3, clover: 2, erodium: 2 },
   plantDensity: 34,
   stones: 18,
   krotovinas: 6,
@@ -165,7 +169,7 @@ const ANATOLIA: SiteDef = {
     { mat: SUBSOIL, top: 580 },
   ],
   relief: 10,
-  plants: { grass: 3, purse: 2, clover: 1 },
+  plants: { grass: 3, stipa: 2, erodium: 2, purse: 2, clover: 1 },
   plantDensity: 24,
   stones: 40,
   krotovinas: 4,
@@ -192,7 +196,8 @@ const PONTIC: SiteDef = {
     { mat: LIME, top: 520 },
   ],
   relief: 6,
-  plants: { grass: 5, purse: 1, clover: 1 },
+  // Feather-grass steppe.
+  plants: { stipa: 4, grass: 3, purse: 1, clover: 1, erodium: 1 },
   plantDensity: 30,
   stones: 10,
   krotovinas: 10,

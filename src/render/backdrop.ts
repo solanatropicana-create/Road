@@ -68,18 +68,25 @@ export class Backdrop {
   private blades: Blade[] = [];
   private bokeh: Bokeh[] = [];
   private flies: Bokeh[] = [];
+  /** Which kind of place is behind the slice (sparse sand steppe, vines, limestone...). */
+  private site: string;
+  /** Background features of the site: rocks, vine posts, distant hills, feather-grass plumes. */
+  private props: { kind: string; x: number; y: number; w: number; h: number; phase: number }[] = [];
   /** Wildflowers in the meadow behind, far out of focus: soft discs of colour on stalks. */
   private flowers: { x: number; h: number; r: number; col: RGB; phase: number; layer: number }[] = [];
 
-  constructor(worldW: number, worldH: number, seed: number) {
+  constructor(worldW: number, worldH: number, seed: number, site = 'pannonian') {
+    this.site = site;
     this.canvas = document.createElement('canvas');
     this.canvas.width = Math.ceil(worldW * this.scale);
     this.canvas.height = Math.ceil(worldH * this.scale);
     this.ctx = this.canvas.getContext('2d')!;
     const rng = new Rng(seed ^ 0x5bd1e995);
     const across = worldW / 640;
+    // Sand and the dry Anatolian steppe are sparse; the feather-grass steppe is thick.
+    const density = site === 'sand' ? 0.45 : site === 'anatolia' ? 0.55 : site === 'limestone' ? 0.7 : site === 'pontic' ? 1.15 : 1;
     for (let layer = 0; layer < 3; layer++) {
-      const n = Math.round([70, 55, 30][layer]! * across);
+      const n = Math.round([70, 55, 30][layer]! * across * density);
       for (let k = 0; k < n; k++) {
         this.blades.push({
           x: rng.range(-20, worldW + 20),
@@ -111,6 +118,16 @@ export class Backdrop {
         phase: rng.range(0, 6.28),
         layer: rng.int(0, 1),
       });
+    }
+    // Site props, behind the meadow.
+    if (site === 'anatolia') {
+      for (let k = 0; k < 3; k++) this.props.push({ kind: 'hill', x: rng.range(-200, worldW), y: 0, w: rng.range(500, 900), h: rng.range(25, 55), phase: k });
+    } else if (site === 'limestone') {
+      for (let k = 0; k < Math.round(5 * across); k++) this.props.push({ kind: 'rock', x: rng.range(0, worldW), y: 0, w: rng.range(30, 90), h: rng.range(14, 38), phase: rng.range(0, 6) });
+    } else if (site === 'vineyard') {
+      for (let k = 0; k < Math.round(4 * across); k++) this.props.push({ kind: 'vine', x: (k + rng.range(0.2, 0.8)) * (worldW / Math.round(4 * across)), y: 0, w: rng.range(60, 110), h: rng.range(110, 140), phase: rng.range(0, 6) });
+    } else if (site === 'pontic' || site === 'sand') {
+      for (let k = 0; k < Math.round((site === 'pontic' ? 26 : 8) * across); k++) this.props.push({ kind: 'plume', x: rng.range(0, worldW), y: 0, w: rng.range(30, 60), h: rng.range(60, 120), phase: rng.range(0, 6) });
     }
     for (let k = 0; k < Math.round(14 * across); k++) {
       this.flies.push({
@@ -168,7 +185,8 @@ export class Backdrop {
 
     // Out-of-focus meadow, far to near. Haze lifts the far layers toward the sky colour.
     const night = 1 - Math.min(1, daylight * 2.2);
-    const grassDay = seasonGrass(month, snow);
+    const grassDay = siteTint(seasonGrass(month, snow), this.site, month);
+    this.drawProps(c, s, time, worldW, ground, sky, night, grassDay);
     const grassNight = [hex('#1a2333'), hex('#131b28'), hex('#0c121c')];
     for (let layer = 0; layer < 3; layer++) {
       const base = mixRGB(grassDay[layer]!, grassNight[layer]!, night);
@@ -263,6 +281,61 @@ export class Backdrop {
     }
     c.globalCompositeOperation = 'source-over';
   }
+
+  /** Hills, rocks, vine rows and feather-grass plumes behind the meadow, soft and hazy. */
+  private drawProps(c: CanvasRenderingContext2D, s: number, time: number, worldW: number, ground: Int16Array, sky: { low: RGB; mid: RGB }, night: number, grass: RGB[]): void {
+    const g = (x: number): number => ground[Math.max(0, Math.min(worldW - 1, x | 0))]! * s;
+    for (const p of this.props) {
+      if (p.kind === 'hill') {
+        const col = mixRGB(mixRGB(grass[0]!, sky.low, 0.55), hex('#141b28'), night * 0.8);
+        c.fillStyle = css(col, 0.9);
+        c.beginPath();
+        const y0 = g(p.x + p.w / 2) - 4 * s;
+        c.moveTo(p.x * s, y0);
+        c.quadraticCurveTo((p.x + p.w / 2) * s, y0 - p.h * 2 * s, (p.x + p.w) * s, y0);
+        c.closePath();
+        c.fill();
+      } else if (p.kind === 'rock') {
+        const col = mixRGB(mixRGB(hex('#a39d92'), sky.low, 0.35), hex('#1a2030'), night * 0.8);
+        c.fillStyle = css(col, 0.85);
+        c.beginPath();
+        c.ellipse(p.x * s, g(p.x) - p.h * 0.35 * s, p.w * 0.5 * s, p.h * 0.6 * s, 0, Math.PI, Math.PI * 2);
+        c.fill();
+      } else if (p.kind === 'vine') {
+        // A post and a row of vines on their wires, far behind.
+        const base = g(p.x) + 2 * s;
+        const post = mixRGB(mixRGB(hex('#5a4634'), sky.low, 0.45), hex('#151b26'), night * 0.8);
+        c.strokeStyle = css(post, 0.85);
+        c.lineWidth = 3 * s;
+        c.beginPath();
+        c.moveTo(p.x * s, base);
+        c.lineTo(p.x * s, base - p.h * s);
+        c.stroke();
+        const leaf = mixRGB(mixRGB(grass[1]!, sky.low, 0.3), hex('#121a24'), night * 0.8);
+        c.fillStyle = css(leaf, 0.75);
+        for (let k = 0; k < 7; k++) {
+          const lx = (p.x + (k - 3) * p.w * 0.16 + Math.sin(time * 0.3 + p.phase + k) * 1.5) * s;
+          const ly = base - (p.h * (0.55 + 0.35 * Math.sin(k * 1.7 + p.phase))) * s;
+          c.beginPath();
+          c.arc(lx, ly, p.w * 0.14 * s, 0, Math.PI * 2);
+          c.fill();
+        }
+      } else if (p.kind === 'plume') {
+        // Feather grass: long silky awns curving in the wind, catching the light.
+        const base = g(p.x) + 3 * s;
+        const col = mixRGB(mixRGB(hex('#e8e0c8'), sky.low, 0.3), hex('#202838'), night * 0.85);
+        c.strokeStyle = css(col, 0.5);
+        c.lineWidth = 1.2 * s;
+        for (let k = 0; k < 4; k++) {
+          const sway = Math.sin(time * 0.6 + p.phase + k) * 10 + 18;
+          c.beginPath();
+          c.moveTo((p.x + k * 3) * s, base);
+          c.quadraticCurveTo((p.x + k * 3 + sway * 0.4) * s, base - p.h * 0.7 * s, (p.x + k * 3 + sway + p.w * 0.4) * s, base - p.h * s + k * 4 * s);
+          c.stroke();
+        }
+      }
+    }
+  }
 }
 
 /** Meadow colours (far, middle, near) through the year. */
@@ -280,3 +353,16 @@ function seasonGrass(month: number, snow: number): RGB[] {
   return g;
 }
 
+
+/** Each site's meadow has its own cast: paler sand steppe, golden dry Anatolian grass, silvery feather grass. */
+function siteTint(g: RGB[], site: string, month: number): RGB[] {
+  const dry = month >= 6 && month <= 9;
+  const tint: Record<string, [string, number]> = {
+    sand: ['#cbbf8e', 0.35],
+    anatolia: ['#c2a868', dry ? 0.55 : 0.25],
+    pontic: ['#c9c09a', dry ? 0.4 : 0.15],
+    limestone: ['#9aa38a', 0.15],
+  };
+  const t = tint[site];
+  return t ? g.map((c) => mixRGB(c, hex(t[0]), t[1])) : g;
+}

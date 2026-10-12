@@ -8,6 +8,8 @@ export const Carry = {
   Pupa: 6,
   Corpse: 7,
   Refuse: 8,
+  /** A dead insect, cut to a load. */
+  Prey: 9,
 } as const;
 export type CarryKind = (typeof Carry)[keyof typeof Carry];
 

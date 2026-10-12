@@ -2,9 +2,9 @@ import { Noise } from '../util/noise';
 import { Rng } from '../util/rng';
 import { clamp } from '../util/math';
 import { World } from './world';
-import { Plants, PlantKind } from './plants';
+import { Plants, SPECIES } from './plants';
 import {
-  EMPTY, HUMUS, LOAM, CLAY, SUBSOIL, GRAVEL, STONE, LITTER, BEDROCK, SOIL, SANDY, LIME, ROCK, WOOD, ROOT, SEED, SAND,
+  EMPTY, HUMUS, LOAM, CLAY, SUBSOIL, GRAVEL, STONE, LITTER, BEDROCK, SOIL, SANDY, LIME, ROCK, WOOD, ROOT, SEED, SAND, TWIG,
 } from './mat';
 import { W, H, GROUND_Y } from '../config';
 import { SITES, SiteDef, SiteId, Variant, makeVariant } from './sites';
@@ -25,6 +25,21 @@ export interface Generated {
   wet: number[];
   /** Where a tree stands (trunk centre x, may be off the slice), or null. */
   tree: { x: number; r: number } | null;
+  shrub: ShrubInfo | null;
+}
+
+/**
+ * A shrub at the slice: blackthorn (white blossom before the leaves, sloes)
+ * or dog rose (pink flowers, hips). Seen from an ant's height: only the base
+ * of the bush is in view, its stems rising out of the frame.
+ */
+export interface ShrubInfo {
+  x: number;
+  kind: 'blackthorn' | 'rose';
+  /** Each leaf: the cells it covers, by the low twigs. */
+  leaves: number[][];
+  /** Each flower (later a fruit): the cells it covers. */
+  buds: number[][];
 }
 
 /**
@@ -151,15 +166,16 @@ export function generate(seed: number, siteId: SiteId): Generated {
     }
   }
 
-  // The soil seed bank: seeds buried in the top 10 cm. Diggers turn them up.
-  const kinds: (keyof typeof SEED_TONE)[] = ['grass', 'clover', 'purse'];
+  // The soil seed bank: seeds buried in the top 10 cm, in this site's mix. Diggers turn them up.
+  const plants = new Plants(world, rng);
+  plants.mix = site.plants;
   const nSeeds = Math.round(site.seedBank * variant.seedBankScale * perM);
   for (let k = 0; k < nSeeds; k++) {
     const x = rng.int(3, w - 4);
     const y = world.ground[x]! + Math.round(Math.pow(rng.next(), 1.6) * 100) + 3;
     const i = y * w + x;
     if (!SOIL[world.mat[i]!]) continue;
-    const [t0, t1] = SEED_TONE[kinds[rng.int(0, 2)]!]!;
+    const [t0, t1] = SEED_TONE[plants.pickKind()]!;
     world.mat[i] = SEED;
     world.tone[i] = rng.int(t0, t1);
   }
@@ -187,7 +203,7 @@ export function generate(seed: number, siteId: SiteId): Generated {
 
   let tree: Generated['tree'] = null;
   if (variant.tree) tree = makeTree(world, rng, noise);
-  if (variant.shrub) makeShrub(world, rng, noise, tree);
+  const shrub = variant.shrub ? makeShrub(world, rng, noise, tree, siteId) : null;
 
   // Ground water near the bottom of the slice.
   const wet: number[] = [];
@@ -195,25 +211,24 @@ export function generate(seed: number, siteId: SiteId): Generated {
     for (let y = h - 70; y < h - 3; y++) for (let x = 0; x < w; x++) if (SOIL[world.mat[y * w + x]!] && rng.chance(0.7)) wet.push(y * w + x);
   }
 
-  const plants = new Plants(world, rng);
   world.recomputeAllWalk();
 
   // Meadow plants, spaced out but clumped like a real sward, in this site's mix.
-  const mix: PlantKind[] = [];
-  for (const [k, n] of Object.entries(site.plants) as [PlantKind, number][]) for (let q = 0; q < n; q++) mix.push(k);
+  // (The map starts in April: only the spring seeders carry ripe seed yet.)
   const want = Math.round(site.plantDensity * perM);
   let placed = 0;
   for (let tries = 0; tries < want * 20 && placed < want; tries++) {
     const x = rng.int(10, w - 11);
     if (plants.list.some((p) => Math.abs(p.x - x) < 9)) continue;
     if (tree && Math.abs(x - tree.x) < tree.r + 6) continue;
-    if (plants.spawn(rng.pick(mix), x, true)) placed++;
+    const kind = plants.pickKind();
+    if (plants.spawn(kind, x, true, SPECIES[kind].ripen[0] <= 110)) placed++;
   }
   plants.maxPlants = Math.round(want * 1.35);
 
   world.recomputeAllWalk();
   world.dirtyAll = true;
-  return { world, plants, horizons: { tops }, variant, wet, tree };
+  return { world, plants, horizons: { tops }, variant, wet, tree, shrub };
 }
 
 function surfaceTop(world: World, x: number): number {
@@ -448,34 +463,71 @@ function makeTree(world: World, rng: Rng, noise: Noise): { x: number; r: number 
   return { x: cx, r };
 }
 
-/** A blackthorn or wild rose: a woody stem and a few branches, roots below. */
-function makeShrub(world: World, rng: Rng, noise: Noise, tree: { x: number; r: number } | null): void {
+/**
+ * A blackthorn or dog rose seen from the ground: a few stems a finger thick
+ * rising out of the frame, low thorny twigs with leaves on them (a leaf is
+ * two or three centimetres long: big at this scale), woody roots below.
+ * Stems and twigs are in the plant layer, so ants walk past them or climb them.
+ */
+function makeShrub(world: World, rng: Rng, noise: Noise, tree: { x: number; r: number } | null, site: SiteId): ShrubInfo {
   const { w } = world;
-  let cx = rng.int(120, w - 120);
-  if (tree && Math.abs(cx - tree.x) < tree.r + 160) cx = tree.x < w / 2 ? rng.int(Math.round(w * 0.6), w - 120) : rng.int(120, Math.round(w * 0.4));
+  let cx = rng.int(140, w - 140);
+  if (tree && Math.abs(cx - tree.x) < tree.r + 200) cx = tree.x < w / 2 ? rng.int(Math.round(w * 0.6), w - 140) : rng.int(140, Math.round(w * 0.4));
   const g = world.ground[cx]!;
-  const hgt = rng.int(110, 170);
-  // Stems, splitting into branches.
-  const stem = (x0: number, y0: number, a0: number, len: number, rad: number, depth: number): void => {
+  const kind: ShrubInfo['kind'] = site === 'vineyard' || site === 'sand' ? 'rose' : rng.chance(0.65) ? 'blackthorn' : 'rose';
+  const taken = new Set<number>();
+  const twigCells: { x: number; y: number; a: number }[] = [];
+  const paint = (x: number, y: number, rad: number, tone: number): void => {
+    for (let oy = -Math.ceil(rad); oy <= Math.ceil(rad); oy++)
+      for (let ox = -Math.ceil(rad); ox <= Math.ceil(rad); ox++) {
+        if (ox * ox + oy * oy > rad * rad + 0.3) continue;
+        const xx = Math.round(x + ox);
+        const yy = Math.round(y + oy);
+        if (!world.inside(xx, yy) || yy >= world.ground[xx]! || yy < 1) continue;
+        const i = yy * w + xx;
+        world.plant[i] = TWIG;
+        // Bark: lit on one side, furrowed.
+        world.ptone[i] = clamp(Math.round(tone + (ox / Math.max(1, rad)) * -40 + noise.n2(xx / 2, yy / 6) * 40), 0, 255);
+        taken.add(i);
+      }
+  };
+  // A twig: thin, wandering, with thorns (blackthorn) or prickles (rose); remembers where leaves can sit.
+  const twig = (x0: number, y0: number, a0: number, len: number): void => {
     let x = x0;
     let y = y0;
     let a = a0;
     for (let t = 0; t < len; t++) {
-      a += rng.range(-0.05, 0.05);
+      a += rng.range(-0.07, 0.07);
       x += Math.cos(a);
       y += Math.sin(a);
-      for (let ox = -Math.ceil(rad); ox <= Math.ceil(rad); ox++) {
-        const xx = Math.round(x + ox);
-        const yy = Math.round(y);
-        if (!world.inside(xx, yy) || yy >= world.ground[xx]!) continue;
-        world.mat[yy * w + xx] = WOOD;
-        world.tone[yy * w + xx] = clamp(Math.round(150 + noise.n2(xx / 2, yy / 5) * 60), 0, 255);
+      if (y < 2 || y > world.ground[clamp(Math.round(x), 0, w - 1)]! - 2) break;
+      paint(x, y, t < len * 0.6 ? 1.1 : 0.6, 150);
+      if (t > 4 && t % 3 === 0) twigCells.push({ x, y, a });
+      // Thorns.
+      if (rng.chance(kind === 'blackthorn' ? 0.08 : 0.12)) {
+        const ta = a + (rng.chance(0.5) ? 1 : -1) * rng.range(0.7, 1.2);
+        for (let q = 1; q <= (kind === 'blackthorn' ? 4 : 2); q++) paint(x + Math.cos(ta) * q, y + Math.sin(ta) * q, 0.3, 120);
       }
-      if (depth < 2 && t > len * 0.35 && rng.chance(0.04)) stem(x, y, a + rng.range(-0.9, 0.9), len * 0.55, Math.max(0.6, rad * 0.6), depth + 1);
     }
   };
-  stem(cx, g, -Math.PI / 2 + rng.range(-0.15, 0.15), hgt, 2.5, 0);
-  stem(cx + 3, g, -Math.PI / 2 + rng.range(0.15, 0.45), hgt * 0.8, 1.8, 0);
+  // Main stems: up and out of the frame.
+  const stems = rng.int(2, 4);
+  for (let k = 0; k < stems; k++) {
+    // The stems spring from one rootstock and spread apart as they rise.
+    const spread = (k - (stems - 1) / 2) * rng.range(0.18, 0.32);
+    let x = cx + (k - (stems - 1) / 2) * 9 + rng.int(-2, 2);
+    let y = g;
+    let a = -Math.PI / 2 + spread + rng.range(-0.06, 0.06);
+    const rad = rng.range(2.8, 4.6);
+    for (let t = 0; y > -2 && t < 400; t++) {
+      a += rng.range(-0.03, 0.03) + (-Math.PI / 2 + spread * 0.6 - a) * 0.02;
+      x += Math.cos(a);
+      y += Math.sin(a);
+      paint(x, y, rad * (1 - t / 900), 165);
+      // Low side twigs.
+      if (y < g - 18 && rng.chance(0.022)) twig(x, y, a + (rng.chance(0.5) ? 1 : -1) * rng.range(0.6, 1.3), rng.int(25, 70));
+    }
+  }
   // Roots.
   for (let k = 0; k < 3; k++) {
     let x = cx;
@@ -498,6 +550,45 @@ function makeShrub(world: World, rng: Rng, noise: Noise, tree: { x: number; r: n
         }
     }
   }
+  // Leaves: ovals two or three centimetres long along the twigs (blackthorn's
+  // smaller and narrower than the rose's leaflets).
+  const leaves: number[][] = [];
+  const buds: number[][] = [];
+  const shape = (cxl: number, cyl: number, a: number, len: number, wid: number): number[] => {
+    const cells: number[] = [];
+    const ca = Math.cos(a);
+    const sa = Math.sin(a);
+    for (let v = -len / 2; v <= len / 2; v += 0.5)
+      for (let u = -wid / 2; u <= wid / 2; u += 0.5) {
+        const f = (2 * v) / len;
+        if ((2 * u) / wid > Math.sqrt(Math.max(0, 1 - f * f)) * (f > 0 ? 1 - f * 0.25 : 1) || (2 * u) / wid < -Math.sqrt(Math.max(0, 1 - f * f))) continue;
+        const xx = Math.round(cxl + v * ca - u * sa);
+        const yy = Math.round(cyl + v * sa + u * ca);
+        if (!world.inside(xx, yy) || yy >= world.ground[xx]! - 1) continue;
+        const i = yy * w + xx;
+        if (taken.has(i) || world.mat[i] !== EMPTY) continue;
+        taken.add(i);
+        cells.push(i);
+      }
+    return cells;
+  };
+  for (const tc of twigCells) {
+    if (rng.chance(0.55)) {
+      const side = rng.chance(0.5) ? 1 : -1;
+      const a = tc.a + side * rng.range(0.5, 1.1);
+      const len = kind === 'blackthorn' ? rng.range(14, 22) : rng.range(12, 18);
+      const wid = kind === 'blackthorn' ? len * 0.38 : len * 0.55;
+      const cells = shape(tc.x + Math.cos(a) * (len / 2 + 1), tc.y + Math.sin(a) * (len / 2 + 1), a, len, wid);
+      if (cells.length > 8) leaves.push(cells);
+    }
+    if (rng.chance(0.12)) {
+      // A flower (later a fruit) hangs just below the twig.
+      const r = kind === 'blackthorn' ? 5 : 7;
+      const cells = shape(tc.x, tc.y + r + 1, Math.PI / 2, r * 2, r * 2);
+      if (cells.length > 12) buds.push(cells);
+    }
+  }
+  return { x: cx, kind, leaves, buds };
 }
 
 function fineRoot(world: World, rng: Rng, x: number, y: number, a: number): void {

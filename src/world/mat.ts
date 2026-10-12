@@ -39,7 +39,17 @@ export const ROCK = 21;
 /** A woody root of a tree, shrub or vine: too tough to bite through. */
 export const WOOD = 22;
 
-export const MAT_COUNT = 23;
+/** Woody stem of a shrub or vine. Plant layer: ants walk past it, or climb it. */
+export const TWIG = 23;
+/** A berry or grape hanging on a shrub or vine (plant layer); it drops when ripe. */
+export const BERRY = 24;
+/**
+ * A dead insect (beetle, grasshopper, moth) or worm: the protein the larvae
+ * need to grow. Harvester ants take one now and then and cut it up.
+ */
+export const PREY = 25;
+
+export const MAT_COUNT = 26;
 
 const table = (entries: [number, number][]): Uint8Array => {
   const t = new Uint8Array(32);
@@ -51,7 +61,7 @@ const table = (entries: [number, number][]): Uint8Array => {
 export const SOLID = table([
   [HUMUS, 1], [LOAM, 1], [CLAY, 1], [SUBSOIL, 1], [GRAVEL, 1], [STONE, 1], [ROOT, 1],
   [SAND, 1], [SEED, 1], [REFUSE, 1], [LITTER, 1], [FRUIT, 1], [BEDROCK, 1],
-  [SANDY, 1], [LIME, 1], [ROCK, 1], [WOOD, 1],
+  [SANDY, 1], [LIME, 1], [ROCK, 1], [WOOD, 1], [PREY, 1],
 ]);
 
 /** Hardness 1..4 for diggable materials; 0 means ants cannot dig it. */
@@ -66,12 +76,12 @@ export const HARDNESS = table([
 export const HARD = table([[STONE, 1], [BEDROCK, 1], [ROCK, 1], [WOOD, 1]]);
 
 /** Powders: fall straight down and slide off slopes. */
-export const POWDER = table([[SAND, 1], [SEED, 1], [REFUSE, 1], [FRUIT, 1]]);
+export const POWDER = table([[SAND, 1], [SEED, 1], [REFUSE, 1], [FRUIT, 1], [PREY, 1]]);
 
 /** Things a forager can pick up as food. */
-export const FOOD = table([[SEEDHEAD, 1], [SEED, 1], [FRUIT, 1]]);
+export const FOOD = table([[SEEDHEAD, 1], [SEED, 1], [FRUIT, 1], [PREY, 1]]);
 
 /** Undisturbed soil that keeps a colour per horizon. */
 export const SOIL = table([[HUMUS, 1], [LOAM, 1], [CLAY, 1], [SUBSOIL, 1], [GRAVEL, 1], [SANDY, 1], [LIME, 1]]);
 
-export const PLANT = table([[STEM, 1], [LEAF, 1], [FLOWER, 1], [SEEDHEAD, 1]]);
+export const PLANT = table([[STEM, 1], [LEAF, 1], [FLOWER, 1], [SEEDHEAD, 1], [TWIG, 1], [BERRY, 1]]);

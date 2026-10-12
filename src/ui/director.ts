@@ -162,6 +162,7 @@ export class Director {
     if (a.caste === 'gyne' || a.caste === 'male') return `${t(a.caste === 'gyne' ? 'dc_gyne' : 'dc_male')} ${a.name} · ${t(this.game.sim.flight ? 'dc_flying' : 'dc_waiting')} · ${where}`;
     const who = t(a.caste === 'soldier' ? 'dc_major' : a.task === Task.Forage ? 'dc_forager' : a.task === Task.Dig ? 'dc_digger' : a.task === Task.Nurse ? 'dc_nurse' : a.task === Task.Clean ? 'dc_cleaner' : 'dc_worker');
     const below = depth > 0.3;
+    if (a.away > 0) return `${who} ${a.name} · ${t('dc_away')}`;
     let doing: string;
     switch (a.carry) {
       case Carry.Seed: doing = below ? 'dc_seedGranary' : 'dc_seedHome'; break;
@@ -172,6 +173,7 @@ export class Director {
       case Carry.Pupa: doing = 'dc_pupa'; break;
       case Carry.Corpse: doing = 'dc_corpse'; break;
       case Carry.Fruit: doing = 'dc_fruit'; break;
+      case Carry.Prey: doing = 'dc_prey'; break;
       default:
         if (a.task === Task.Dig) doing = a.timer > 0 ? 'dc_digging' : 'dc_toDig';
         else if (a.task === Task.Forage) doing = below ? 'dc_out' : 'dc_search';
