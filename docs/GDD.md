@@ -176,6 +176,7 @@ Ayrıca:
 - Gevşek malzeme (kazı toprağı, tohum, çöp) düşen kum fiziğiyle akıyor.
 - Yerleşen toprak sıkışıp şev tutuyor.
 - Su akıyor, toprağa emiliyor ve nem aşağı sızıyor.
+- Su kök kanallarından ve eski solucan yollarından daha hızlı iniyor, kile ise zor giriyor (tercihli akış). Bu yüzden krotovina yakınına kazılan oda daha çabuk ıslanıyor.
 - Doymuş tavan ve duvarlar çöküyor.
 
 **Kraliçe ve kuruluş**
@@ -195,6 +196,7 @@ Ayrıca:
 - Görev, açık ilkesiyle dağıtılıyor: oyuncu önceliği ile koloni ihtiyacının çarpımı istenen payı verir, gerçekleşen payla karşılaştırılır.
 - Yaşa bağlı iş bölümü var: genç işçi bakıcı, yaşlı işçi toplayıcı olur. Bu gerçek karıncalarda da böyle.
 - Karıncalar yeni görevi sadece yuvadayken alır. Kaybolan karınca yükünü bırakır ve yeniden düşünür.
+- Kafa kafaya karşılaşan iki karınca bir an durup antenleriyle dokunuşuyor. Ara sık değil, yoksa şaft tıkanırdı.
 
 **Yuva planlayıcı**
 
@@ -209,11 +211,15 @@ Ayrıca:
 
 - Toplayıcı bir yön seçip uzaklaşıyor, sonra arıyor.
 - Yakındaki tohumu kokluyor, iz feromonu bırakıyor ve izi yönüyle takip ediyor.
+- Ulaşılamayan bir kokuyu (sapı kesilmiş ya da toprak altında kalmış bir bitkinin tohumu) bir süre sonra bırakıyor. Yoksa bütün toplayıcılar oraya yığılırdı.
+- Üç bitki türü var (çimen, yonca, çoban çantası) ve her birinin tohumu farklı görünüyor. Ambara bakınca hangi bitkilerin hasat edildiği anlaşılıyor.
 - Tohumu ambara taşıyor. Ambar yoksa tohum ortak kursağa (trofalaksi) gidiyor.
 
 **Yiyecek döngüsü**
 
-- Tohum yeniyor, kabuğu kalıyor. Temizlikçiler kabuğu dışarıdaki çöp yığınına (midden) taşıyor.
+- Tohum yeniyor, kabuğu kalıyor. Temizlikçiler kabukları üçer üçer dışarıdaki çöp yığınına (midden) taşıyor.
+- Ölüleri yuvadan çıkarıyorlar. Dışarıda kalan ölüleri leşçiler zamanla götürüyor.
+- Islanan tohum ambarda çimleniyor ve artık yiyecek sayılmıyor. İşçiler filizleri dışarı atıyor. Bu gerçek bir *Messor* davranışı ve saha defterine düşüyor.
 - Açlık başlarsa kraliçe yumurtayı kısıyor ve işçiler toplamaya kayıyor.
 
 **Hava**
@@ -230,7 +236,8 @@ Ayrıca:
 
 **Performans**
 
-- 150 karıncada simülasyon adımı yaklaşık 0,15 ms. 16x hızda bile tarayıcıda rahat çalışıyor.
+- 150 karıncada simülasyon adımı yaklaşık 0,3 ms. 16x hızda bile tarayıcıda rahat çalışıyor.
+- 60 dakikalık (10 oyun günü) testte 8 haritanın hepsinde koloni hayatta kaldı ve çayırın taşıma kapasitesinde (120–230 işçi) dengelendi. Ölümlerin hepsi yaşlılıktan; açlık yok.
 - Görüntüsüz test aracı var: `npm run headless` ve `scripts/batch.sh`.
 
 ## 6. Formicarium'dan aldıklarımız ve geçtiğimiz yerler
