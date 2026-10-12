@@ -1,7 +1,7 @@
 node_modules
 dist
+dist-artifact
 .DS_Store
 *.log
 .vite
-.env
-.env.local
+shots/
