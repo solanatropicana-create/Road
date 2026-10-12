@@ -594,7 +594,8 @@ export class Renderer {
     ctx.fillRect(0, 0, W, H);
     // Background: smooth scaling keeps it soft (shallow depth of field).
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
+    // Bilinear is plenty for a layer that is out of focus anyway, and far cheaper than 'high'.
+    ctx.imageSmoothingQuality = 'low';
     const bs = 1 / this.backdrop.scale;
     ctx.setTransform(z * bs, 0, 0, z * bs, ox, oy);
     ctx.drawImage(this.backdrop.canvas, 0, 0);
