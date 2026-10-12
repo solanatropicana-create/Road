@@ -344,3 +344,7 @@ Aşağıdakiler benim önerilerim. Senin "benle konuşmadan tasarımı komple ya
 6. **Oyuncu müdahalesi.** Koloni beyni dışında doğrudan dünya müdahalesi (tohum bırakma, su dökme, taş koyma) olsun mu? Şu an yalnızca sandbox'ta yağmur var.
 7. **Ses.** Ambiyans tasarımı ne yönde olsun? Mikrofonla kaydedilmiş gerçek toprak sesleri, ya da minimal synth?
 8. **İkinci giriş.** Büyük kolonilerde ikinci bir giriş açılsın mı (8. bölüm)? Oyuncu bunu kendisi mi işaretlesin, yoksa koloni kendisi mi karar versin?
+9. **Majörlerin görevi.** Şu an Majör kaydırıcısının somut bir faydası yok; majörler sadece iri ve yavaş işçiler. İki yol var:
+   - (a) Değirmenci olsunlar: tohumu kırıp "karınca ekmeği" yapsınlar, böylece aynı tohumdan daha çok besin çıksın.
+   - (b) Asker olsunlar: rakip koloni (7.1) gelince savaşsınlar.
+   - Ya da ikisi birden. Hangisi?
