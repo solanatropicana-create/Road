@@ -1209,7 +1209,7 @@ export class UI {
         this.note(`ev_${e.key}`, vars, { toast: true, merge: !e.kind, loc });
         if (loc) dir.notice(loc.x, loc.y, t(`ev_${e.key}`, vars), e.key);
         // Big news gets a ring on the spot, so the eye finds it.
-        if (loc && ['neighbourMetL', 'neighbourMetR', 'youngColony', 'youngColonyGone', 'war', 'raid'].includes(e.key)) game.renderer.mark(loc.x, loc.y);
+        if (loc && ['neighbourMetL', 'neighbourMetR', 'youngColony', 'youngColonyGone', 'war', 'raid', 'secondGate', 'raidYoung', 'warYoung'].includes(e.key)) game.renderer.mark(loc.x, loc.y);
       }
     }
     // The ant being followed died: show its life card for a moment.
@@ -1541,7 +1541,8 @@ export class UI {
     const [head, ...rest] = this.game.director.describe(a).split(' · ');
     const name = a.caste === 'queen' ? t('queenTitle', { name: sim.names.queen }) : head;
     const body = rest;
-    const age = a.caste === 'queen' ? '' : t('tipAge', { n: num(a.age / DAY_TICKS) });
+    const temper = a.caste === 'queen' ? '' : (a.zeal ?? 0.75) < 0.4 ? ` · ${t('tipQuiet')}` : (a.zeal ?? 0.75) > 0.92 ? ` · ${t('tipTireless')}` : '';
+    const age = a.caste === 'queen' ? '' : t('tipAge', { n: num(a.age / DAY_TICKS) }) + temper;
     return `<b>${name}</b>${body.length ? `<br>${body.join(' · ')}` : ''}${age ? `<br><span class="dim">${age}</span>` : ''}<div class="fact">${t('tipFollow')}</div>`;
   }
 

@@ -2,6 +2,7 @@ import type { Game } from '../main';
 import type { Ant } from '../sim/ant';
 import { Carry, Task } from '../sim/types';
 import { t, num } from './i18n';
+import { TICK_HZ } from '../config';
 import { dateText } from './ui';
 
 type Shot = 'queen' | 'forager' | 'digger' | 'hauler' | 'nurse' | 'major' | 'granary' | 'wide';
@@ -57,7 +58,7 @@ export class Director {
   notice(x: number, y: number, caption: string, key: string): void {
     if (!this.active) return;
     const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds', 'neighbourMetL', 'neighbourMetR', 'youngColony'];
-    const wide = ['war', 'raid', 'flight', 'lark', 'leafFall', 'otherQueens', 'wormsUp', 'youngColonyGone'];
+    const wide = ['war', 'raid', 'flight', 'lark', 'leafFall', 'otherQueens', 'wormsUp', 'youngColonyGone', 'secondGate', 'raidYoung', 'warYoung'];
     const zoom = close.includes(key) ? 11 : wide.includes(key) ? 3.4 : 6;
     this.story = { x, y, caption, zoom };
     // Don't cut away from a shot that has barely started, unless it's big news.
@@ -199,6 +200,7 @@ export class Director {
     if (a.cpose > 0) return `${who} ${a.name} · ${t('dc_cpose')}`;
     if (a.fight > 0) return `${who} ${a.name} · ${t('dc_boxing')}`;
     if (a.sick > 0.6) return `${who} ${a.name} · ${t('dc_sick')}`;
+    if (a.alarm > TICK_HZ * 4 && a.carry === Carry.None) return `${who} ${a.name} · ${t(sim.trouble() ? 'dc_alarm' : 'dc_agitated')}`;
     let doing: string;
     switch (a.carry) {
       case Carry.Seed: doing = below ? 'dc_seedGranary' : 'dc_seedHome'; break;
@@ -212,7 +214,7 @@ export class Director {
       case Carry.Prey: doing = 'dc_prey'; break;
       default:
         if (a.task === Task.Dig) doing = a.timer > 0 ? 'dc_digging' : 'dc_toDig';
-        else if (a.task === Task.Forage) doing = below ? 'dc_out' : 'dc_search';
+        else if (a.task === Task.Forage) doing = a.waiting ? 'dc_waitGate' : below ? 'dc_out' : 'dc_search';
         else if (a.task === Task.Nurse) doing = 'dc_tending';
         else if (a.task === Task.Clean) doing = 'dc_tidy';
         else doing = a.timer > 0 ? 'dc_rest' : 'dc_move';

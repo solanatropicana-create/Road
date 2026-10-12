@@ -52,6 +52,8 @@ export class Neighbour {
   /** Week of the last battle or raid (they don't come every week), and of the last growth step. */
   private lastTrouble = -99;
   private lastWeek = -1;
+  /** Seed they carried home this week (a young colony grows on it). */
+  private weekHarvest = 0;
   /**
    * Seed they may still carry off our slice this week. A colony forages in
    * proportion to its workforce, and an old neighbour's foragers mostly work
@@ -117,6 +119,8 @@ export class Neighbour {
             o.fight = t;
             r.foe = o;
             o.foe = r;
+            // The one attacked raises the alarm: hard in a battle or a raid, hardly at all over a ritual bout.
+            o.alarm = Math.max(o.alarm, this.war > 0 || this.raid > 0 || inside ? TICK_HZ * 50 : TICK_HZ * 8);
             break;
           }
         }
@@ -155,10 +159,11 @@ export class Neighbour {
   /** How many of their foragers should be on our slice now. */
   private want(sim: Sim): number {
     if (sim.dormant || sim.raining || !this.arrived(sim)) return 0;
-    if (this.war > 0) return clamp(Math.round(this.workers / 25), 8, 34);
+    // A young colony throws in most of what it has; an old one sends a detachment.
+    if (this.war > 0) return this.young ? clamp(Math.round(this.workers / 3), 6, 30) : clamp(Math.round(this.workers / 25), 8, 34);
     // A young colony sends out most of its few workers; an old one only a trickle reaches us.
     const base = (this.young ? clamp(this.workers / 5, 1, 10) : clamp(this.workers / 180, 1, 7)) * sim.forageWeather;
-    return Math.round(this.raid > 0 ? base + 8 : base);
+    return Math.round(this.raid > 0 ? base + (this.young ? clamp(this.workers / 4, 4, 12) : 8) : base);
   }
 
   private spawn(sim: Sim): void {
@@ -171,7 +176,8 @@ export class Neighbour {
     const x = this.young ? clamp(this.homeX + (dir < 0 ? -2 : 3), 2, w.w - 3) : this.home(sim);
     const y = this.top(sim, x);
     if (w.mat[(y + 1) * w.w + x] === WOOD) return;
-    const major = !this.young && sim.rng.chance(this.war > 0 ? 0.3 : 0.08);
+    // (A young colony raises its first majors once it has a few dozen workers.)
+    const major = (!this.young || this.workers > 60) && sim.rng.chance(this.war > 0 ? 0.3 : 0.08);
     const a = new Ant(major ? 'soldier' : 'worker', x, y, Number.MAX_SAFE_INTEGER, major ? TUNING.soldierSpeed : TUNING.workerSpeed);
     a.rival = true;
     a.rivalOf = this;
@@ -184,6 +190,7 @@ export class Neighbour {
   arrive(a: Ant): void {
     if (a.carry) {
       this.harvested++;
+      this.weekHarvest++;
       this.budget--;
     }
     a.alive = false;
@@ -246,9 +253,12 @@ export class Neighbour {
     if (week !== this.lastWeek) {
       this.lastWeek = week;
       if (!sim.dormant) {
-        // An old colony is near its meadow's limit; a young one grows like ours did.
-        this.workers = this.young ? Math.min(3000, this.workers * rng.range(1.04, 1.09) + 0.3) : Math.min(3000, this.workers * 1.012);
+        // An old colony is near its meadow's limit. A young one grows on what
+        // it brings in: well fed (or fat on our seed) it grows fast, hungry it barely does.
+        const fed = clamp(this.weekHarvest / Math.max(1, this.workers * 0.8), 0, 1.5);
+        this.workers = this.young ? Math.min(3000, this.workers * (1.02 + 0.05 * fed) + 0.3) : Math.min(3000, this.workers * 1.012);
       }
+      this.weekHarvest = 0;
       this.budget = this.young ? Math.min(90, this.workers * 1.2) : clamp(this.workers * 0.015, 5, 25);
       // Week by week their foragers range further onto our ground.
       const since = Math.max(0, sim.simDays - this.arriveWeek);
@@ -267,16 +277,20 @@ export class Neighbour {
       this.warDead = { ours: 0, theirs: 0 };
       this.lastTrouble = week;
       sim.yearCount.wars++;
+      // Our foragers out near the front see them pour in.
+      for (const a of col.ants) if (Math.abs(a.x - this.front) < 90 && sim.world.bg[a.y * sim.world.w + a.x] === 0) a.alarm = TICK_HZ * 50;
       sim.events.push({ key: 'war', x: this.front, y: sim.world.ground[this.front]! - 10 });
       return;
     }
     // A much stronger colony may raid a weaker one's granary.
     if (col.stored > 25 && this.workers > Math.max(220, col.adults * 3) && doy > 150 && doy < 270 && sim.forageWeather > 0.5 && rng.chance(0.02)) {
-      this.raid = Math.round(DAY_TICKS / 9);
+      // Long enough for them to walk over from their nest and back.
+      this.raid = Math.round(DAY_TICKS / 3);
       this.stolen = 0;
       this.lastTrouble = week;
       sim.yearCount.raids++;
-      sim.events.push({ key: 'raid', x: sim.nest.foundX, y: sim.world.ground[sim.nest.foundX]! + 20 });
+      const gate = sim.nest.gateNear(this.home(sim));
+      sim.events.push({ key: 'raid', x: gate, y: sim.world.ground[gate]! + 20 });
     }
   }
 
@@ -298,14 +312,45 @@ export class Neighbour {
       if (w.mat[i] === EMPTY && w.bg[i] === 0 && !w.plan[i] && !w.plant[i]) w.set(i, SAND, rng.int(90, 200), LOAM);
     }
     const col = sim.colony;
-    if (!this.found || col.adults < 30 || col.adults < this.workers * 3) return;
-    const near = col.ants.some((a) => !a.away && a.task === Task.Forage && Math.abs(a.x - this.homeX) < 10 && w.bg[a.y * w.w + a.x] === 0);
-    if (near && rng.chance(0.006)) {
-      this.dead = true;
-      if (this.queen) this.queen.alive = false;
-      for (const a of this.ants) a.alive = false;
-      this.ants.length = 0;
-      sim.events.push({ key: 'youngColonyGone', x: this.homeX, y: w.ground[this.homeX]! - 1 });
+    if (!this.found || this.war > 0 || this.raid > 0) return;
+    const week = Math.floor(sim.simDays);
+    const doy = sim.doy;
+    // Much the stronger: once our foragers find the door, they overrun it.
+    if (col.adults >= 30 && col.adults >= this.workers * 3) {
+      const near = col.ants.some((a) => !a.away && a.task === Task.Forage && Math.abs(a.x - this.homeX) < 10 && w.bg[a.y * w.w + a.x] === 0);
+      if (near && rng.chance(0.006)) {
+        this.dead = true;
+        if (this.queen) this.queen.alive = false;
+        for (const a of this.ants) a.alive = false;
+        this.ants.length = 0;
+        // Their stores and brood come home with our foragers.
+        const loot = Math.round(this.workers * 0.8);
+        col.reserve += loot;
+        sim.events.push({ key: 'youngColonyGone', n: loot, x: this.homeX, y: w.ground[this.homeX]! - 1 });
+      }
+      return;
+    }
+    if (week - this.lastTrouble < 4 || doy < 140 || doy > 270) return;
+    const gate = sim.nest.gateNear(this.homeX);
+    // Grown bold and near enough our size: a raid on our granary.
+    if (this.workers >= 30 && this.workers >= col.adults * 0.6 && col.stored > 20 && sim.forageWeather > 0.5 && rng.chance(0.006)) {
+      this.raid = Math.round(DAY_TICKS / 4);
+      this.stolen = 0;
+      this.lastTrouble = week;
+      sim.yearCount.raids++;
+      sim.events.push({ key: 'raidYoung', x: gate, y: w.ground[gate]! - 6 });
+      return;
+    }
+    // Where both colonies' grounds overlap, a meeting on a humid day after rain turns into a battle.
+    const air = sim.cal.airMean(doy);
+    if (this.workers >= 40 && col.adults >= 40 && air > 15 && sim.recentRain(DAY_TICKS / 4) && !sim.raining && rng.chance(0.02)) {
+      this.war = Math.round(DAY_TICKS / 10);
+      this.front = clamp(Math.round((this.homeX + gate) / 2), 40, w.w - 41);
+      this.warDead = { ours: 0, theirs: 0 };
+      this.lastTrouble = week;
+      sim.yearCount.wars++;
+      for (const a of col.ants) if (Math.abs(a.x - this.front) < 90 && w.bg[a.y * w.w + a.x] === 0) a.alarm = TICK_HZ * 50;
+      sim.events.push({ key: 'warYoung', x: this.front, y: w.ground[this.front]! - 10 });
     }
   }
 
@@ -322,7 +367,7 @@ export class Neighbour {
   /** Where our defenders should gather (NaN if all is quiet). */
   alarmX(sim: Sim): number {
     if (this.war > 0) return this.front;
-    if (this.raid > 0) return sim.nest.foundX;
+    if (this.raid > 0) return sim.nest.gateNear(this.home(sim));
     return NaN;
   }
 

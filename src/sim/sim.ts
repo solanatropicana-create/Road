@@ -473,10 +473,10 @@ export class Sim {
     }
   }
 
-  /** The founding queen heaves spoil out of her burrow mouth. */
-  spoil(tint: number, tone: number): void {
+  /** Spoil heaved out of a mouth (the founding queen's, or a plug pushed out of a gate). */
+  spoil(tint: number, tone: number, near = this.nest.foundX): void {
     const w = this.world;
-    const x0 = this.nest.foundX;
+    const x0 = this.nest.gateNear(near);
     for (let t = 0; t < 8; t++) {
       // Thrown clear of the crater's open air.
       const x = x0 + (this.rng.chance(0.5) ? -1 : 1) * this.rng.int(10, 22);
@@ -945,7 +945,14 @@ export class Sim {
   private growNest(): void {
     const col = this.colony;
     const wanted = Nest.wanted(col.adults, col.brood.length, TUNING.nestCellsPerAnt, TUNING.nestCellsBase);
-    this.nest.grow({ adults: col.adults, brood: col.brood.length, seeds: col.stored, orders: col.orders }, wanted);
+    this.nest.grow({ adults: col.adults, brood: col.brood.length, seeds: col.stored, orders: col.orders, harvestSide: col.harvestRight >= col.harvestLeft ? 1 : -1 }, wanted);
+    // The second gate is dug through: the colony starts using it at once.
+    if (this.nest.gateOpened()) {
+      const e = this.nest.entrances[this.nest.entrances.length - 1]!;
+      this.fields.hurry(F.Entr, this.tick);
+      this.fields.hurry(F.Out, this.tick);
+      this.events.push({ key: 'secondGate', n: Math.round(Math.abs((e % this.world.w) - this.nest.foundX) / 10), x: e % this.world.w, y: ((e / this.world.w) | 0) - 4 });
+    }
     if (this.nest.droppedOrder) {
       this.events.push({ key: 'orderDropped', kind: this.nest.droppedOrder });
       this.nest.droppedOrder = null;
@@ -977,14 +984,15 @@ export class Sim {
   private settleSpoil(): void {
     if (!this.nest.founded) return;
     const w = this.world;
-    const x0 = this.nest.foundX;
+    const gates = this.nest.entrances;
     const top = (x: number): number => {
       let y = 1;
       while (y < w.h - 1 && w.mat[y * w.w + x] === EMPTY) y++;
       return y;
     };
     for (let k = 0; k < 12; k++) {
-      const x = x0 + this.rng.int(-220, 220);
+      // Around whichever gate (each has its ring of spoil).
+      const x = (gates.length ? gates[this.rng.int(0, gates.length - 1)]! % w.w : this.nest.foundX) + this.rng.int(-220, 220);
       if (x < 3 || x >= w.w - 3) continue;
       const y = top(x);
       const i = y * w.w + x;
@@ -1218,15 +1226,16 @@ export class Sim {
     this.sealAt = 0;
     const w = this.world;
     if (!w.sealed) return;
-    const [x0, x1, y0, y1] = w.sealBox;
-    for (let y = Math.max(1, y0); y <= Math.min(w.h - 2, y1); y++) {
-      for (let x = Math.max(1, x0); x <= Math.min(w.w - 2, x1); x++) {
-        const i = y * w.w + x;
-        if (w.mat[i] !== SAND || !(w.tint[i]! & PLUG)) continue;
-        const src = w.tint[i]! & 0x3f;
-        const tone = w.tone[i]!;
-        w.set(i, EMPTY, tone, w.bg[i] ? src : 0);
-        this.spoil(src, tone);
+    for (const [x0, x1, y0, y1] of w.sealBoxes?.length ? w.sealBoxes : [w.sealBox]) {
+      for (let y = Math.max(1, y0); y <= Math.min(w.h - 2, y1); y++) {
+        for (let x = Math.max(1, x0); x <= Math.min(w.w - 2, x1); x++) {
+          const i = y * w.w + x;
+          if (w.mat[i] !== SAND || !(w.tint[i]! & PLUG)) continue;
+          const src = w.tint[i]! & 0x3f;
+          const tone = w.tone[i]!;
+          w.set(i, EMPTY, tone, w.bg[i] ? src : 0);
+          this.spoil(src, tone, x);
+        }
       }
     }
     this.nest.unseal();

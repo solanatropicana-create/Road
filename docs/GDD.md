@@ -299,6 +299,17 @@ Ayrıca:
 - Çok güçlü bir komşu zayıf koloninin ambarını yağmalayabiliyor; majörler depoya iniyor.
 - Aynı uçuştan 2–4 genç kraliçe daha kesite iniyor. Kuşlar, komşunun işçileri ve (ilk işçilerden sonra) bizim toplayıcılar onları bulup öldürüyor; ilk kışta saha defteri kaçının hayatta kaldığını söylüyor.
 
+**Akış: koloninin anlık davranışı**
+
+Amaç, sayıların "2+2=4" gibi doğrudan yürümemesi; o anki koşullardan doğan, farklı ama mantıklı bir akış.
+
+- **Kapıda bekleyen toplayıcılar (Gordon'un hasatçı karınca çalışmaları).** Toplayıcı görevi alan işçi hemen çıkmıyor; kapının hemen içinde bekliyor. Tohumla dönen bir toplayıcı içeri girerken yanındaki bekleyenlerden birkaçına dokunuyor ve onlar çıkıyor. Birkaç kâşif de kendiliğinden çıkıyor (koloni açsa daha çok). Sonuç: zengin bir tohum alanı bulununca dönüşler hızlanıyor ve akış hattı oluşuyor; tohum azalınca ya da kuş, sıcak, yağmur dönüşleri kesince kapı sessizleşiyor ve bekleyenler birikiyor. Eli boş dönen bir dahaki sefere yine haber bekliyor.
+- **Alarm dalgası.** Komşu işçisiyle karşılaşan ya da yuvasında yağmacıya çarpan karınca alarm veriyor. Alarm, karıncadan karıncaya her adımda biraz zayıflayarak yayılıyor. Yalnızca alarmın ulaştığı işçiler savunmaya koşuyor; alarmdaki karınca daha hızlı yürüyor. Çayırdaki ritüel boks neredeyse kimseyi alarma geçirmiyor; yağma ya da savaşta dalga yuvanın içine doğru ilerliyor (testte 80 saniyede 51 işçinin 49'u).
+- **Mizaç.** İşçilerin yaklaşık dörtte biri "sakin": boşta kalma payını hep onlar dolduruyor. Gerçek kolonilerdeki gibi bir yedek iş gücü bu; koloni işçi kaybedince ya da acıkınca devreye giriyor. Yorulmak bilmeyenler de var; ikisi de karıncanın üzerine gelince görünüyor.
+- **İkinci kapı.** Koloni 120 işçiyi geçince, hasadının çoğunu topladığı tarafa doğru 7–13 cm ötede yeni bir ağız açıyor: yuvadan yukarı bir kuyu kazılıyor, delinince kapı oluyor. Her karınca işine en yakın kapıyı kullanıyor; kazı toprağı çıktığı kapının etrafına atılıyor, yağmurda iki ağız da tıkanıyor.
+- **Genç koloninin cüreti.** Genç koloni kendi hasadıyla büyüyor: iyi beslenirse hızlı, aç kalırsa yavaş. Bizim boyumuzun yarısını aşınca ambarımızı yağmalamaya geliyor; iki koloninin de 40 işçiyi geçtiği yerde, yağmur sonrası nemli bir günde sınırda savaş çıkabiliyor. Biz üç kat güçlüysek yuvasını basıyor, depolarını eve taşıyoruz.
+- Yağma artık komşunun yuvasından yürüyüp dönmeye yetecek kadar sürüyor (önce yağmacılar daha varmadan süre doluyordu).
+
 **Anlatıcı katmanı**
 
 - Kraliçe sahanın bölgesinden bir isim alıyor (Elif, Ilka, Oksana…); koloni yuvanın yanındaki belirgin şeyle anılıyor (Karaçalı kolonisi, Yassı taş kolonisi, Sorguç otu kolonisi…).
@@ -308,7 +319,7 @@ Ayrıca:
 **Performans**
 
 - 300 karıncalık kolonide simülasyon adımı yaklaşık 0,45 ms (16× hızda bir çekirdeğin ~%20'si). Zamanın çoğu mesafe alanlarına ve kum fiziğine gidiyor.
-- Altı sahada 8 haritalık bir yıllık testte (60 hafta) bütün koloniler kışı açlık ölümü olmadan geçti: ilk yıl sonunda 24–84 işçi, ikinci yılın Haziranında 52–196 işçi ve çıkmak üzere 68–206 yavru, depoda 110–480 tohum (önceki dengede 33–85 işçi). Komşu kayıpları yılda 0–27 işçi.
+- Altı sahada 8 haritalık bir yıllık testte (60 hafta) bütün koloniler kışı açlık ölümü olmadan geçti: ilk yıl sonunda 23–75 işçi, ikinci yılın Haziranında 44–139 işçi ve çıkmak üzere 80–184 yavru, depoda 150–390 tohum (eski dengede 33–85 işçi). Kapıda bekleme ve alarm dalgasıyla birlikte ölçüldü; komşu kayıpları yılda 0–27 işçi.
 - Görüntüsüz test aracı var: `npm run headless` ve `scripts/batch.sh`.
 
 ## 6. Formicarium'dan aldıklarımız ve geçtiğimiz yerler

@@ -28,7 +28,12 @@ export interface NestNeeds {
   seeds: number;
   /** The player's queued build orders (mode B), first is next. */
   orders: ChamberKind[];
+  /** Which side of the mouth most of the harvest comes from (-1 left, +1 right). */
+  harvestSide?: number;
 }
+
+/** Workers a colony needs before it opens a second gate. */
+export const SECOND_GATE_WORKERS = 120;
 
 const SIZE: Record<ChamberKind, { w: [number, number]; h: [number, number]; depth: number; band: [number, number] }> = {
   queen: { w: [20, 26], h: [9, 11], depth: 999, band: [30, 250] },
@@ -96,6 +101,83 @@ export class Nest {
 
   // ------------------------------------------------------------ founding
 
+  /** A second gate being dug up from the nest (its mouth column), or -1, and its shaft. */
+  gateX = -1;
+  private gateShaft: number[] = [];
+
+  /** The column of the mouth nearest x (spoil and the dying go out from whichever gate they used). */
+  gateNear(x: number): number {
+    const W = this.world.w;
+    let best = this.foundX;
+    let bd = Infinity;
+    for (const e of this.entrances) {
+      const d = Math.abs((e % W) - x);
+      if (d < bd) {
+        bd = d;
+        best = e % W;
+      }
+    }
+    return best;
+  }
+
+  /**
+   * A big colony opens a second gate: real Messor nests of a few hundred
+   * workers have several. It goes in toward the side most of the harvest
+   * comes from, a shaft dug up from the nearest tunnel to a new mouth a
+   * hand's width away, and counts as an entrance once it is dug through.
+   */
+  planGate(side: number): boolean {
+    if (this.gateX >= 0 || this.entrances.length >= 2) return false;
+    const w = this.world;
+    for (let t = 0; t < 16; t++) {
+      const dir = t < 10 ? side : -side;
+      const x = Math.max(40, Math.min(w.w - 41, this.foundX + dir * this.rng.int(70, 130)));
+      const g = w.ground[x]!;
+      // A mouth needs soft ground: no rock or woody root right under it.
+      let soft = true;
+      for (let y = g; y <= g + 8 && soft; y++) for (let xx = x - 2; xx <= x + 2; xx++) if (HARD[w.mat[y * w.w + xx]!]) soft = false;
+      if (!soft) continue;
+      // Up from the open nest cell nearest a point a few centimetres under the new mouth.
+      let best = -1;
+      let bd = Infinity;
+      for (const i of this.planCells) {
+        if (w.mat[i] !== EMPTY || w.bg[i] !== 1 || w.zone[i]) continue;
+        const ix = i % w.w;
+        const iy = (i / w.w) | 0;
+        if (iy < w.ground[ix]! + 12) continue;
+        const d = Math.abs(ix - x) + Math.abs(iy - (g + 22)) * 0.6;
+        if (d < bd) {
+          bd = d;
+          best = i;
+        }
+      }
+      if (best < 0 || bd > 160) continue;
+      const path = this.astar(x, g, best % w.w, (best / w.w) | 0);
+      if (!path) continue;
+      const shaft: number[] = [];
+      for (const i of path) this.stampDisc(i % w.w, (i / w.w) | 0, 1.8, shaft);
+      this.stampDisc(x, g - 1, 1.6, shaft, 3);
+      this.gateX = x;
+      this.gateShaft = shaft;
+      this.chimney(x);
+      return true;
+    }
+    return false;
+  }
+
+  /** The second gate is dug through: it becomes an entrance. True once, when it opens. */
+  gateOpened(): boolean {
+    if (this.gateX < 0) return false;
+    const w = this.world;
+    let left = 0;
+    for (const i of this.gateShaft) if (SOLID[w.mat[i]!]) left++;
+    if (left > Math.max(2, this.gateShaft.length * 0.04)) return false;
+    this.entrances.push(w.idx(this.gateX, w.ground[this.gateX]!));
+    this.gateX = -1;
+    this.gateShaft = [];
+    return true;
+  }
+
   /** The queen's claustral burrow: a narrow shaft and a small sealed chamber. */
   found(x: number): { shaft: number[]; chamber: Chamber } {
     const w = this.world;
@@ -148,9 +230,11 @@ export class Nest {
   seal(): void {
     const w = this.world;
     w.sealed = true;
-    const e0 = this.entrances[0]!;
-    const cx = e0 % w.w;
-    w.sealBox = [cx - 9, cx + 9, w.ground[cx]! - 30, w.ground[cx]! + 12];
+    w.sealBoxes = this.entrances.map((e) => {
+      const cx = e % w.w;
+      return [cx - 9, cx + 9, w.ground[cx]! - 30, w.ground[cx]! + 12] as [number, number, number, number];
+    });
+    w.sealBox = w.sealBoxes[0]!;
     for (const e of this.entrances) {
       const ex = e % w.w;
       const g = w.ground[ex]!;
@@ -421,6 +505,9 @@ export class Nest {
       this.droppedOrder = order;
       return null;
     }
+
+    // One gate is a bottleneck for a big colony: open a second.
+    if (needs.adults >= SECOND_GATE_WORKERS && this.entrances.length < 2 && this.gateX < 0 && this.planGate(needs.harvestSide ?? 1)) return 'gate';
 
     const nursery = this.capacityOf('nursery');
     const granary = this.capacityOf('granary');

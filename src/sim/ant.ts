@@ -71,6 +71,27 @@ export class Ant {
   private actCell = -1;
   private dropDist = 0;
   private dumpDir = 1;
+  /**
+   * Temperament, 0..1. In real colonies a good share of the workers are
+   * mostly inactive: a reserve that steps in when the colony is short-handed.
+   * The same quiet ones fill the idle share here, day after day.
+   */
+  zeal = 0.75;
+  /**
+   * Ticks left of alarm (the scent of a fight, passed on from ant to ant).
+   * Alarmed ants run, and if neighbours are attacking they turn out to defend.
+   */
+  alarm = 0;
+  /**
+   * Forager: cleared to go out (by a returning forager's touch, or to scout),
+   * waiting at the gate for that now, and whether it has already passed on
+   * the news of its own load.
+   */
+  sent = false;
+  waiting = false;
+  private tapped = false;
+  /** The gate a load of spoil (or a damp seed) was carried out of. */
+  private fromGate = 0;
   /** Times a nurse got to a larva with food and found it already fed. */
   private feedMiss = 0;
   /** This load of spoil goes off the slice (out of view), so only to just past the rim. */
@@ -166,6 +187,7 @@ export class Ant {
       if (--this.fight === 0 && this.rival) this.rivalOf?.resolve(sim, this);
       return;
     }
+    if (this.alarm > 0) this.alarm--;
     if (this.parasite > 0) {
       // The fly's larva feeds inside it; when it pupates, the ant dies.
       this.parasite -= sim.agingRate;
@@ -208,7 +230,8 @@ export class Ant {
     }
     if (this.caste !== 'queen' && sim.tick >= this.meetAgain && this.sick < 0.6 && this.greet(sim)) return;
     const slow = this.carry !== Carry.None ? TUNING.carryingSlowdown : 1;
-    this.mv += this.speed * slow;
+    // Alarmed ants run.
+    this.mv += this.speed * slow * (this.alarm > 0 ? 1.35 : 1);
     while (this.mv >= 1 && this.alive) {
       this.mv -= 1;
       this.think(sim);
@@ -244,10 +267,13 @@ export class Ant {
       return;
     }
     // Neighbours attacking: foragers, idlers and majors turn out to defend.
-    const trouble = sim.trouble();
-    if (trouble && this.carry === Carry.None && (this.caste === 'soldier' || this.task === Task.Forage || this.task === Task.Idle) && this.age > DAY_TICKS * 2) {
-      this.defend(sim, trouble);
-      return;
+    // Only those the alarm has reached turn out; it spreads from ant to ant.
+    if (this.alarm > 0 && this.carry === Carry.None && this.task !== Task.Nurse && this.age > DAY_TICKS * 2) {
+      const trouble = sim.trouble();
+      if (trouble) {
+        this.defend(sim, trouble);
+        return;
+      }
     }
     // Rain, cold or midday heat: anyone outside empty-handed heads for shelter.
     if (sim.forageWeather < 0.05 && this.carry === Carry.None && sim.world.bg[this.y * sim.world.w + this.x] === 0) {
@@ -358,13 +384,14 @@ export class Ant {
       return;
     }
     sim.noteOnce('dyingAlone', this);
-    const away = Math.abs(this.x - sim.nest.foundX);
+    const gate = sim.nest.gateNear(this.x);
+    const away = Math.abs(this.x - gate);
     if (away > 160 || this.x < 4 || this.x > w.w - 5) {
       // Far enough: she stops and waits for the end.
       this.startAct(Act.Rest, -1, TICK_HZ * 20);
       return;
     }
-    const side = Math.sign(this.x - sim.nest.foundX) || 1;
+    const side = Math.sign(this.x - gate) || 1;
     const fields = sim.fields;
     let bestK = -1;
     let bestS = -Infinity;
@@ -621,7 +648,12 @@ export class Ant {
       }
     } else if (a === Act.Pick) {
       const m = w.mat[n]!;
-      if (this.task === Task.Forage && w.bg[n] === 0) sim.colony.foundAt(sim.fields.dist[F.Entr]![n]!);
+      if (this.task === Task.Forage && w.bg[n] === 0) {
+        sim.colony.foundAt(sim.fields.dist[F.Entr]![n]!);
+        // Which side of the mouth the harvest comes from (a second gate goes in that way).
+        if (this.x < sim.nest.foundX) sim.colony.harvestLeft++;
+        else sim.colony.harvestRight++;
+      }
       if (w.plant[n] === SEEDHEAD) {
         this.carry = Carry.Seed;
         this.carryTone = w.ptone[n]!;
@@ -668,7 +700,9 @@ export class Ant {
       if (this.lost > 90) this.discard(sim);
       return;
     }
-    const ex = sim.nest.foundX;
+    // Spoil goes round the gate it came out of.
+    if (this.dropDist === 0) this.fromGate = sim.nest.gateNear(this.x);
+    const ex = this.fromGate || sim.nest.foundX;
     if (this.dropDist === 0) {
       // Spoil lands past the crater rim, thinning out over a hand's width: a low, wide ring.
       // Most of that ring lies in front of or behind the slice: those loads are
@@ -832,6 +866,13 @@ export class Ant {
     if (isFood(this.carry)) {
       // A rich find (fruit, an insect) is worth a stronger trail: recruit help.
       if (w.bg[i] === 0) sim.layTrail(i, this.carry === Carry.Seed ? 1 : 2.5);
+      // Back in through the gate with a load: the foragers waiting there take
+      // the cue and go out (harvester ants regulate foraging this way: the
+      // quicker loads come in, the more foragers leave).
+      else if (!this.tapped && sim.fields.dist[F.Entr]![i]! <= 12) {
+        this.tapped = true;
+        sim.colony.forageReturn(sim, this, this.carry === Carry.Seed ? 3 : 4);
+      }
       this.fdist = 0;
       // Into a granary if one has room; otherwise straight into the shared crops
       // of the workers by the queen (trophallaxis), no pile.
@@ -846,6 +887,7 @@ export class Ant {
           sim.colony.reserve += rations(this.carry);
         }
         this.carry = Carry.None;
+        this.tapped = false;
         this.delivered++;
         sim.colony.delivered++;
         this.reevalAt = Math.min(this.reevalAt, sim.tick + TICK_HZ * 4);
@@ -859,13 +901,31 @@ export class Ant {
       return;
     }
     if (w.bg[i] === 1) {
-      this.descend(sim, F.Out);
       this.fdist = 0;
+      // (In the rain, the cold or the midday heat everyone waits.)
+      if (!this.sent || sim.forageWeather < 0.05) {
+        // Wait just inside the gate until a forager comes back with a load,
+        // or (now and then) go out to scout on one's own.
+        const d = sim.fields.dist[F.Entr]![i]!;
+        if (d <= 14) {
+          if (sim.rng.next() < sim.colony.scoutChance) this.sent = true;
+          else {
+            this.waiting = true;
+            if (d < 4) this.descend(sim, F.Royal);
+            else if (sim.rng.next() < 0.04) this.wander(sim, true);
+            return;
+          }
+        }
+      }
+      this.waiting = false;
+      this.descend(sim, F.Out);
       return;
     }
+    this.waiting = false;
     // A bird on the ground nearby: the ground shakes with its hops, and foragers run for home.
     const bird = sim.critters.birdX;
     if (bird === bird && Math.abs(this.x - bird) < 110) {
+      this.sent = false;
       this.task = Task.Idle;
       this.reevalAt = sim.tick + TICK_HZ * 10;
       this.fdist = 0;
@@ -887,6 +947,8 @@ export class Ant {
       this.search = 0;
       // Nothing out there: the colony's scouts range further next time.
       sim.colony.reach = Math.min(sim.world.w * 0.9, sim.colony.reach * 1.15);
+      // Came back empty-handed: next time, wait for word at the gate.
+      this.sent = false;
       this.task = Task.Idle;
       this.reevalAt = sim.tick + TICK_HZ * 20;
       return;
@@ -931,8 +993,11 @@ export class Ant {
       if (this.lost > 150) this.discard(sim);
       return;
     }
-    const ex = sim.nest.foundX;
-    if (this.dropDist === 0) this.dropDist = sim.rng.int(14, 40);
+    if (this.dropDist === 0) {
+      this.dropDist = sim.rng.int(14, 40);
+      this.fromGate = sim.nest.gateNear(this.x);
+    }
+    const ex = this.fromGate || sim.nest.foundX;
     if (Math.abs(this.x - ex) >= this.dropDist && !w.plan[i] && this.grounded(sim, i) && w.mat[i] === EMPTY) {
       w.set(i, SEED, this.carryTone, 0);
       sim.physics.moisture.add(i, this.carryWet);

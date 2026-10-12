@@ -202,6 +202,25 @@ function upgrade(sim: Sim): void {
     Object.assign(fog.box, { x0: v.x0, x1: v.x1, y1: v.y1 });
     o.fog = fog;
   }
+  // Saves from before alarm, temperament, the gate queue and the second gate.
+  const ants = [...sim.colony.ants, ...sim.colony.alates, ...(o.neighbours ?? (o.neighbour ? [o.neighbour] : [])).flatMap((nb) => nb.ants)];
+  for (const a of ants) {
+    const x = a as unknown as { alarm?: number; zeal?: number; sent?: boolean; waiting?: boolean };
+    if (x.alarm === undefined) x.alarm = 0;
+    if (x.sent === undefined) x.sent = false;
+    if (x.waiting === undefined) x.waiting = false;
+    if (x.zeal === undefined) x.zeal = a.id % 4 === 0 ? 0.25 : 0.75;
+  }
+  const col = sim.colony as unknown as { scoutChance?: number; returns?: number; harvestLeft?: number; harvestRight?: number };
+  col.scoutChance ??= 0.002;
+  col.returns ??= 0;
+  col.harvestLeft ??= 0;
+  col.harvestRight ??= 0;
+  const nest = sim.nest as unknown as { gateX?: number; gateShaft?: number[] };
+  if (nest.gateX === undefined) {
+    nest.gateX = -1;
+    nest.gateShaft = [];
+  }
   if (!o.neighbours) {
     const list = o.neighbour ? [o.neighbour] : [];
     for (const nb of list) {

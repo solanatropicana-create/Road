@@ -37,14 +37,18 @@ export class World {
   sealed = false;
   /** Around the shut mouth (x0, x1, y0, y1): rain soaks into the plug there instead of pooling and leaking in. */
   sealBox: [number, number, number, number] = [0, -1, 0, -1];
+  /** One box per entrance (a big colony has two gates). */
+  sealBoxes: [number, number, number, number][] = [];
 
-  /** Is this cell over or in the shut mouth of the nest? */
+  /** Is this cell over or in a shut mouth of the nest? */
   inSealBox(i: number): boolean {
     if (!this.sealed) return false;
     const x = i % this.w;
     const y = (i - x) / this.w;
-    const b = this.sealBox;
-    return x >= b[0] && x <= b[1] && y >= b[2] && y <= b[3];
+    // (Saves from before the second gate have only the one box.)
+    const boxes = this.sealBoxes?.length ? this.sealBoxes : [this.sealBox];
+    for (const b of boxes) if (x >= b[0] && x <= b[1] && y >= b[2] && y <= b[3]) return true;
+    return false;
   }
   /** Bumped whenever walkability changes anywhere. */
   walkVersion = 0;

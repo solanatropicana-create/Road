@@ -88,6 +88,65 @@ export class Colony {
   lastDeath = '';
   /** Nurses currently carrying food to the brood. */
   mealsCarried = 0;
+  /**
+   * Chance per tick that a forager waiting at the gate goes out on its own,
+   * to scout: higher when the colony is short of food, so a hungry colony
+   * keeps looking even when nobody brings anything in.
+   */
+  scoutChance = 0.002;
+  /** Loads brought in through the gates lately (decays over a minute or so). */
+  returns = 0;
+
+  /**
+   * A forager comes in through the gate with a load and taps the foragers
+   * waiting there: up to n of them go out.
+   */
+  forageReturn(sim: Sim, a: Ant, n: number): void {
+    this.returns += 1;
+    const occ = this.occ;
+    if (!occ) return;
+    const W = sim.world.w;
+    let sent = 0;
+    for (let dy = -4; dy <= 4 && sent < n; dy++) {
+      for (let dx = -4; dx <= 4 && sent < n; dx++) {
+        const k = occ[(a.y + dy) * W + a.x + dx];
+        if (!k) continue;
+        const o = this.ants[k - 1];
+        if (!o || o === a || !o.waiting || o.sent) continue;
+        o.sent = true;
+        sent++;
+      }
+    }
+  }
+
+  /**
+   * Alarm pheromone: an ant that has met the enemy alarms the nestmates it
+   * runs into, and they the next ones, weaker at each step. A raid sends a
+   * wave through the nest from the gate inward; a scuffle out on the meadow
+   * alarms hardly anyone.
+   */
+  private spreadAlarm(sim: Sim): void {
+    const occ = this.occ;
+    if (!occ) return;
+    const W = sim.world.w;
+    const strong = TICK_HZ * 12;
+    for (const a of this.ants) {
+      if (a.alarm < strong || !a.alive) continue;
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          const k = occ[(a.y + dy) * W + a.x + dx];
+          if (!k) continue;
+          const o = this.ants[k - 1];
+          if (!o || o === a || o.alarm >= a.alarm - TICK_HZ * 4 || sim.rng.next() > 0.5) continue;
+          o.alarm = a.alarm - TICK_HZ * 4;
+        }
+      }
+    }
+  }
+
+  /** Loads picked up on each side of the mouth (a second gate goes in toward the richer side). */
+  harvestLeft = 0;
+  harvestRight = 0;
   looseEggs = 0;
   starving = false;
 
@@ -311,6 +370,8 @@ export class Colony {
     if (!this.firstWorkerId) this.firstWorkerId = ant.id;
     ant.orient(sim, 0, 0);
     ant.reevalAt = 0;
+    // About one in four is one of the quiet ones.
+    ant.zeal = sim.rng.chance(0.25) ? sim.rng.range(0.1, 0.35) : sim.rng.range(0.55, 1);
     this.ants.push(ant);
     this.born++;
     if (!this.hadWorkers) {
@@ -485,6 +546,9 @@ export class Colony {
     const stock = sim.doy > 200 && sim.doy < 300 ? 9 : 4;
     const shortage = clamp(1 - food / (weekly * stock), 0, 1);
     need[Task.Forage] = 0.3 + 0.9 * shortage + (this.starving ? 0.8 : 0);
+    // Scouts: a hungry colony sends more out on their own; loads coming in do the rest.
+    this.scoutChance = 0.0018 + 0.008 * shortage + (this.starving ? 0.012 : 0);
+    this.returns *= 0.97;
     // Nobody goes out in the rain, the cold, or the midday heat of summer.
     need[Task.Forage] = need[Task.Forage]! * (0.08 + 0.92 * sim.forageWeather);
     if (sim.dormant) {
@@ -548,11 +612,18 @@ export class Colony {
     let bestS = -Infinity;
     for (const t of TASKS) {
       if (t !== Task.Idle && this.share[t] === 0) continue;
-      const s = this.share[t]! - this.count[t]! / adults + this.affinity(a, t) * 0.16 + sim.rng.next() * 0.1;
+      // The quiet ones take the idle places first; the keen ones the work.
+      const lazy = 1 - (a.zeal ?? 0.75);
+      const temper = t === Task.Idle ? lazy * 0.25 : -lazy * 0.04;
+      const s = this.share[t]! - this.count[t]! / adults + this.affinity(a, t) * 0.16 + temper + sim.rng.next() * 0.1;
       if (s > bestS) {
         bestS = s;
         best = t;
       }
+    }
+    if (best !== a.task) {
+      a.sent = false;
+      a.waiting = false;
     }
     a.task = best;
     this.count[best] = (this.count[best] ?? 0) + 1;
@@ -672,6 +743,7 @@ export class Colony {
       if (a.task === Task.Nurse && (a.carry === Carry.Seed || a.carry === Carry.Fruit || a.carry === Carry.Prey)) meals++;
     }
     this.mealsCarried = meals;
+    if (sim.tick % 5 === 0) this.spreadAlarm(sim);
     for (let k = 0; k < this.ants.length; k++) {
       const a = this.ants[k]!;
       if (a.alive) a.tick(sim);
