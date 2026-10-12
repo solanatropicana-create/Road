@@ -326,6 +326,31 @@ export class Renderer {
     }
   }
 
+  /** Show scent trails (toggled with T). */
+  trails = false;
+
+  /** Trail pheromone as a faint teal haze, strongest where the most ants have passed. */
+  private drawTrails(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }): void {
+    const w = this.world;
+    const B = 4;
+    const paths: Path2D[] = [];
+    for (let k = 0; k < B; k++) paths.push(new Path2D());
+    for (const i of sim.pherCells) {
+      const v = sim.pher[i]!;
+      if (v < 0.05) continue;
+      const x = i % w.w;
+      const y = (i - x) / w.w;
+      if (x < view.x0 - 1 || x > view.x1 + 1 || y < view.y0 - 1 || y > view.y1 + 1) continue;
+      const b = Math.min(B - 1, Math.floor(Math.sqrt(v / 4) * B));
+      paths[b]!.rect(x - 0.6, y - 0.6, 2.2, 2.2);
+    }
+    const ctx = this.ctx;
+    for (let k = 0; k < B; k++) {
+      ctx.fillStyle = `rgba(110,225,205,${0.22 + k * 0.16})`;
+      ctx.fill(paths[k]!);
+    }
+  }
+
   /** Steer the nuptial flight toward the spot the player is pointing at. */
   flightGoal(x: number): void {
     this.painter.flightGoal = x;
@@ -565,6 +590,7 @@ export class Renderer {
     const view = { x0: cam.x - cam.screenW / 2 / cam.zoom, y0: cam.y - cam.screenH / 2 / cam.zoom, x1: cam.x + cam.screenW / 2 / cam.zoom, y1: cam.y + cam.screenH / 2 / cam.zoom };
     if (this.closeUp) this.grains(view);
     this.drawPlan(sim, view, z, dt);
+    if (this.trails) this.drawTrails(sim, view);
     this.painter.drawCorpses(ctx, col.corpses, z, this.lightAt, view);
     this.painter.drawBrood(ctx, col.brood, z, this.lightAt, view, TUNING.pupaTicks);
     this.painter.draw(ctx, ants, z, this.lightAt, view, selected);

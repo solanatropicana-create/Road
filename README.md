@@ -26,6 +26,7 @@ npm run dev            # http://localhost:5173
 | F | Tüm kesiti göster |
 | C | Belgesel kamera: kendi başına özneler seçer, alt yazıyla anlatır |
 | P | Kazı planını göster/gizle (kehribar noktalar) |
+| T | Koku izlerini (feromon) göster/gizle |
 | H | Panelleri gizle (temiz ekran görüntüsü için) |
 | Esc | Takibi bırak |
 

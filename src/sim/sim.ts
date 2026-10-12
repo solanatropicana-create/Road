@@ -44,7 +44,7 @@ export class Sim {
   readonly particles = new Particles();
   readonly pher: Float32Array;
   /** Cells that currently hold any trail pheromone. */
-  private pherCells: number[] = [];
+  readonly pherCells: number[] = [];
   tick = 0;
   readonly weather: Weather = { rain: 0, target: 0, until: 0, next: DAY_TICKS * 2, storm: false };
   readonly drops: Drop[] = [];

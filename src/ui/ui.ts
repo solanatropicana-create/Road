@@ -426,6 +426,9 @@ export class UI {
         if (game.director.active) game.director.stop();
         game.selected = null;
         game.cam.fit();
+      } else if (e.key === 't' || e.key === 'T') {
+        game.renderer.trails = !game.renderer.trails;
+        this.toast(game.renderer.trails ? 'Showing <b>scent trails</b> (T to hide)' : 'Scent trails hidden');
       } else if (e.key === 'p' || e.key === 'P') {
         game.renderer.planAlways = !game.renderer.planAlways;
         this.toast(game.renderer.planAlways ? 'Showing the <b>dig plan</b> (P to hide)' : 'Dig plan hidden');
