@@ -18,8 +18,23 @@ interface Vis {
   y: number;
   /** Direction the legs point (radians), eased. */
   down: number;
-  /** +1 / -1 facing along the surface, eased through 0 when turning around. */
+  /** +1 / -1 facing along the surface: cos(yaw), so it passes through 0 when turning around. */
   face: number;
+  /**
+   * Turning around is a yaw about the axis through the legs, eased: 0 faces
+   * +x, π faces -x, and halfway the ant looks into the glass or away from it.
+   */
+  yaw: number;
+  /** Which way the current turn swings the head: +1 toward the viewer, -1 away. */
+  turn: number;
+  /** The facing (+1 / -1) the ant has settled on along the surface it grips. */
+  heads: number;
+  /** The other facing its latest steps point to (0: none), how far it has gone that way, and for how long (sim seconds). */
+  want: number;
+  wantGo: number;
+  wantT: number;
+  /** On the bare glass last frame (facing taken from the path, not the surface). */
+  glass: boolean;
   /** Recent travel direction (for ants on the glass with nothing to grip). */
   dx: number;
   dy: number;
@@ -43,6 +58,10 @@ interface Body {
   antenna: [number, number];
   stride: number;
   headCol: RGB;
+  /** Half-widths side to side (head, thorax, gaster), seen only while the ant turns. */
+  width: [number, number, number];
+  /** How far the legs reach out to the sides. */
+  span: number;
 }
 
 const WORKER: Body = {
@@ -58,6 +77,8 @@ const WORKER: Body = {
   antenna: [2.6, -1.95],
   stride: 1.1,
   headCol: hex('#1a120e'),
+  width: [0.8, 0.5, 0.95],
+  span: 1,
 };
 
 const MAJOR: Body = {
@@ -73,6 +94,9 @@ const MAJOR: Body = {
   antenna: [2.9, -2.2],
   stride: 1.05,
   headCol: hex('#4a1f13'),
+  // A major's head is as broad as it is long.
+  width: [1.1, 0.5, 0.92],
+  span: 1.05,
 };
 
 const QUEEN: Body = {
@@ -88,6 +112,8 @@ const QUEEN: Body = {
   antenna: [4.05, -2.6],
   stride: 1.4,
   headCol: hex('#1c130f'),
+  width: [0.95, 0.85, 1.45],
+  span: 1.35,
 };
 
 /** A winged male: small head with big eyes, a deep thorax for the flight muscles, a slim gaster. */
@@ -104,6 +130,8 @@ const MALE: Body = {
   antenna: [2.85, -2.2],
   stride: 1.15,
   headCol: hex('#0f0b0a'),
+  width: [0.65, 0.7, 0.7],
+  span: 1.1,
 };
 
 /** The drawing body for a caste. */
@@ -155,6 +183,14 @@ function addSmooth(path: Path2D, pts: readonly (readonly [number, number])[], cx
     path.quadraticCurveTo(p[0], p[1], (p[0] + q[0]) / 2, (p[1] + q[1]) / 2);
   }
   path.closePath();
+}
+
+/** A profile pulled toward the circle through the same angles (an ellipse once scaled), by m from 0 to 1. */
+function rounded(pts: readonly (readonly [number, number])[], m: number): [number, number][] {
+  return pts.map(([x, y]) => {
+    const r = Math.hypot(x, y) || 1;
+    return [x + (x / r - x) * m, y + (y / r - y) * m];
+  });
 }
 
 function addEllipse(path: Path2D, cx: number, cy: number, rx: number, ry: number, rot: number): void {
@@ -273,14 +309,17 @@ export class AntPainter {
     this.time += dt;
     const nominal = 15 * Math.max(speed, 0.25);
     const kA = 1 - Math.exp(-dt * 16);
-    const kF = 1 - Math.exp(-dt * 12);
+    // A turn takes about a fifth of a second at 1x, and keeps up (less than in proportion) when the sim runs faster.
+    const fast = Math.sqrt(Math.max(1, speed));
+    const kY = 1 - Math.exp(-dt * 11 * fast);
     for (const a of ants) {
       const tx = a.x + 0.5;
       const ty = a.y + 0.5;
       let v = this.vis.get(a);
       if (!v) {
         const flying = a.caste === 'queen' && a.wings;
-        v = { x: flying ? this.flight.x : tx, y: flying ? this.flight.y : ty, down: Math.atan2(a.ly, a.lx), face: a.hx * a.ly - a.hy * a.lx || 1, dx: a.hx, dy: a.hy, tx, ty, gait: Math.random() * 6, still: 0 };
+        const face = a.hx * a.ly - a.hy * a.lx || 1;
+        v = { x: flying ? this.flight.x : tx, y: flying ? this.flight.y : ty, down: Math.atan2(a.ly, a.lx), face, yaw: face > 0 ? 0 : Math.PI, turn: a.id & 1 ? 1 : -1, heads: face, want: 0, wantGo: 0, wantT: 0, glass: false, dx: a.hx, dy: a.hy, tx, ty, gait: Math.random() * 6, still: 0 };
         this.vis.set(a, v);
       }
       if (tx !== v.tx || ty !== v.ty) {
@@ -291,8 +330,37 @@ export class AntPainter {
           v.dx += (ddx / d - v.dx) * 0.45;
           v.dy += (ddy / d - v.dy) * 0.45;
         }
+        // (At high speed one frame covers several steps; only a long jump is a move out of the blue.)
+        if (d < 20) {
+          // How far the steps went along the surface the ant grips, in the sense of its facing
+          // (nothing for a step straight onto or off it, which says nothing about which way it faces).
+          const go = ddx * a.ly - ddy * a.lx;
+          if (go * v.heads > 0) v.want = 0;
+          else if (go !== 0) {
+            if (v.want !== Math.sign(go)) {
+              v.want = Math.sign(go);
+              v.wantGo = 0;
+              v.wantT = 0;
+            }
+            v.wantGo += Math.abs(go);
+          }
+        } else {
+          v.heads = a.hx * a.ly - a.hy * a.lx || v.heads;
+          v.want = 0;
+        }
         v.tx = tx;
         v.ty = ty;
+      }
+      // A step or two back and forth (digging, jostling, picking a way over
+      // crumbs) is not a turn; she turns around once she keeps going the other
+      // way. Run faster, it takes more of that before she does, or the whole
+      // colony spins on the spot.
+      if (v.want !== 0) {
+        v.wantT += dt * speed;
+        if (v.wantGo >= 2 * fast || v.wantT > 0.3 * fast) {
+          v.heads = v.want;
+          v.want = 0;
+        }
       }
       // Glide at walking pace, catching up faster if left behind.
       const ex = tx - v.x;
@@ -319,9 +387,16 @@ export class AntPainter {
       let down: number;
       let face: number;
       if (this.gripped(a.x, a.y)) {
+        if (v.glass) {
+          // Back on a surface: take up the sim's heading on it.
+          v.heads = a.hx * a.ly - a.hy * a.lx || v.heads;
+          v.want = 0;
+          v.glass = false;
+        }
         down = Math.atan2(a.ly, a.lx);
-        face = a.hx * a.ly - a.hy * a.lx || (v.face >= 0 ? 1 : -1);
+        face = v.heads;
       } else {
+        v.glass = true;
         const m = Math.hypot(v.dx, v.dy);
         if (m > 0.2) {
           const fx = v.dx / m;
@@ -338,7 +413,11 @@ export class AntPainter {
         }
       }
       v.down += wrap(down - v.down) * kA;
-      v.face += (face - v.face) * kF;
+      const yaw = face > 0 ? 0 : Math.PI;
+      // A fresh turn from rest swings the other way from the last one: toward the glass, then away.
+      if (Math.abs(yaw - v.yaw) > Math.PI - 0.02) v.turn = -v.turn;
+      v.yaw += (yaw - v.yaw) * kY;
+      v.face = Math.cos(v.yaw);
     }
   }
 
@@ -353,16 +432,31 @@ export class AntPainter {
       // Feet rest on the cell edge toward the surface.
       ctx.translate(v.x + Math.cos(v.down) * 0.5, v.y + Math.sin(v.down) * 0.5);
       ctx.rotate(v.down - Math.PI / 2);
-      const f = Math.abs(v.face) < 0.18 ? (v.face < 0 ? -0.18 : 0.18) : v.face;
+      const c = Math.cos(v.yaw);
+      const s = Math.sin(v.yaw) * v.turn;
+      const flip = c < 0 ? -1 : 1;
+      // Partway through a turn, close enough to see it, the ant yaws as a solid.
+      // Far off or curled up it stays a side profile, narrowed but never to a sliver.
+      const turning = Math.abs(s) > 0.03 && z * body.scale >= 1.6 && a.cpose === 0;
+      const f = turning ? 1 : Math.abs(s) <= 0.03 ? flip : flip * Math.max(Math.abs(c), 0.4);
       ctx.scale(f * body.scale, body.scale);
       const busy = a.timer > 0 ? Math.sin(this.time * 18 + a.id) * 0.12 : 0;
-      if (a === selected) this.marker(ctx, body, z);
+      if (a === selected) {
+        if (turning) {
+          ctx.save();
+          ctx.scale(flip * Math.max(Math.abs(c), 0.55), 1);
+          this.marker(ctx, body, z);
+          ctx.restore();
+        } else this.marker(ctx, body, z);
+      }
       const wall = this.world.bg[a.y * this.world.w + a.x] === 1;
       // Standing about for a while: groom, drawing a foreleg over the antennae.
       this.groom = v.still > 1.5 && a.carry === Carry.None && a.meet === 0 ? Math.sin(this.time * 7 + a.id) : null;
       this.meeting = a.meet > 0 || a.fight > 0;
       this.airborne = a.caste === 'queen' && a.wings && Math.hypot(a.x + 0.5 - v.x, a.y + 0.5 - v.y) > 1.5;
-      this.ant(ctx, a, body, v.gait, l, z, busy, false, wall);
+      if (turning) this.turning(ctx, a, body, v.gait, l, z, busy, wall, c, s);
+      // Facing -x the near side is the other one, whose legs are half a stride out of phase.
+      else this.ant(ctx, a, body, v.gait + (c < 0 ? Math.PI : 0), l, z, busy, false, wall);
       this.airborne = false;
       this.groom = null;
       this.meeting = false;
@@ -473,6 +567,175 @@ export class AntPainter {
     if (a && a.carry !== Carry.None) this.load(ctx, a, b, busy, l);
   }
 
+  /**
+   * An ant partway through turning around. Seen through the glass a turn is a
+   * yaw about the axis through the legs, so rather than squash the profile
+   * flat like a paper cut-out, each segment is a solid with a length, height
+   * and width: the body shortens toward an end-on view, the outlines round
+   * off, and the legs and antennae of the two sides fan out left and right.
+   * c and s are the yaw's cosine and sine (s signed by the way the turn goes):
+   * a point x along the body and w out to the +1 side lands at x * c - w * s.
+   */
+  private turning(ctx: CanvasRenderingContext2D, a: Ant, b: Body, gait: number, l: RGB, z: number, busy: number, wall: boolean, c: number, s: number): void {
+    const px = 1 / (z * b.scale);
+    const full = z * b.scale >= 4;
+    const ac = Math.abs(c);
+    const flip = c < 0 ? -1 : 1;
+    const big = b === QUEEN;
+    const [gx, gy, grx, gry, grot] = b.gaster;
+    const [tx, ty, trx, tr_y, trot] = b.thorax;
+    const [hx, hy, hrx, hry] = b.head;
+    const [hw, tw, gw] = b.width;
+    if (wall && full) {
+      ctx.fillStyle = 'rgba(8,4,2,0.3)';
+      ctx.beginPath();
+      ctx.ellipse((tx - 0.4) * c, ty + 0.55, Math.hypot(3.2 * (big ? 1.6 : 1) * c, 1.6 * b.span * s), 1.0, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = 'rgba(0,0,0,0.22)';
+    ctx.beginPath();
+    ctx.ellipse(0, 0.05, Math.hypot(2.8 * (big ? 1.5 : 1) * c, 1.6 * b.span * s), 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    // Each segment sits at its centre's projection, as long as its length and width project, rounding off toward end-on.
+    const round = 1 - ac;
+    const part = (path: Path2D, shine: Path2D, pts: readonly (readonly [number, number])[], cx: number, cy: number, rx: number, ry: number, rot: number, w: number): void => {
+      const sx = flip * Math.hypot(rx * c, w * s);
+      addSmooth(path, round > 0.01 ? rounded(pts, round) : pts, cx * c, cy, sx, ry, rot * c);
+      addEllipse(shine, (cx + rx * 0.05) * c, cy - ry * 0.58, Math.abs(sx) * 0.55, ry * 0.14, rot * c);
+    };
+    // Thorax, waist and gaster one by one, the furthest first, so a nearer segment hides the one behind and its gloss.
+    const segs: { path: Path2D; shine: Path2D; depth: number }[] = [];
+    const seg = (pts: readonly (readonly [number, number])[], cx: number, cy: number, rx: number, ry: number, rot: number, w: number): void => {
+      const path = new Path2D();
+      const shine = new Path2D();
+      part(path, shine, pts, cx, cy, rx, ry, rot, w);
+      segs.push({ path, shine, depth: cx * s });
+    };
+    seg(GASTER_PTS, gx, gy, grx, gry, grot, gw);
+    for (const [nx, ny, nr] of b.nodes) seg(NODE_PTS, nx, ny, nr, nr * 1.15, 0, nr);
+    seg(THORAX_PTS, tx, ty, trx, tr_y, trot, tw);
+    segs.sort((p, q) => p.depth - q.depth);
+    const body = new Path2D();
+    for (const g of segs) body.addPath(g.path);
+    const head = new Path2D();
+    const headSheen = new Path2D();
+    part(head, headSheen, HEAD_PTS, hx, hy, hrx, hry, 0.12, hw);
+    const strong = wall;
+    const rim = full ? css(SHEEN_COL, l, strong ? 0.5 : 0.3) : '';
+    // The side toward the viewer (+1 while facing +x); the other darkens as it goes behind, and neither is behind end-on.
+    const near = flip;
+    const farCol = mixRGB(LEG_COL, [0, 0, 0], 0.45 * ac);
+    const phase = (side: number): number => gait + (side === 1 ? 0 : Math.PI);
+    // Looking away the head is behind the body; mostly side-on the near legs still cross in front of the head.
+    const headFirst = s < -0.35;
+    const nearLate = ac > 0.7;
+    const feelers = (): void => {
+      this.antenna(ctx, b, busy, farCol, l, px, a.id, false, c, s, -near);
+      this.antenna(ctx, b, busy, LEG_COL, l, px, a.id, false, c, s, near);
+    };
+    const carried = (): void => {
+      if (a.carry === Carry.None) return;
+      ctx.save();
+      ctx.translate(b.mouth[0] * c, 0);
+      ctx.scale(flip * Math.max(ac, 0.55), 1);
+      ctx.translate(-b.mouth[0], 0);
+      this.load(ctx, a, b, busy, l);
+      ctx.restore();
+    };
+    const face = (): void => {
+      if (busy) ctx.translate(busy * c, 0);
+      const jaws = (): void => {
+        ctx.fillStyle = css(hex('#3d2516'), l);
+        ctx.beginPath();
+        for (const side of [-1, 1]) {
+          ctx.moveTo((hx + hrx * 0.7) * c - side * 0.35 * s, hy + hry * 0.25);
+          ctx.lineTo((b.mouth[0] + 0.15) * c - side * 0.1 * s, b.mouth[1] + 0.05);
+          ctx.lineTo((hx + hrx * 0.55) * c - side * 0.3 * s, hy + hry * 0.7);
+          ctx.closePath();
+        }
+        ctx.fill();
+      };
+      if (full && headFirst) jaws();
+      ctx.fillStyle = css(b.headCol, l);
+      ctx.fill(head);
+      if (rim) {
+        ctx.strokeStyle = rim;
+        ctx.lineWidth = strong ? px * 1.5 : px;
+        ctx.stroke(head);
+      }
+      if (full) {
+        // An eye shows while its side of the head is toward the viewer: one side-on, both head-on.
+        ctx.fillStyle = css([90, 78, 66], l, 0.9);
+        for (const side of [-1, 1]) {
+          const e = 0.3 * s + side * 0.9 * c;
+          if (e <= 0.05) continue;
+          ctx.beginPath();
+          ctx.ellipse((hx + hrx * 0.25) * c - side * hw * 0.8 * s, hy - hry * 0.2, 0.17 * Math.min(1, 0.3 + 0.8 * e), 0.14, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (!headFirst) jaws();
+        ctx.fillStyle = css(SHEEN_COL, l, strong ? 0.62 : 0.45);
+        ctx.fill(headSheen);
+      }
+      if (busy) ctx.translate(-busy * c, 0);
+    };
+    if (headFirst) {
+      feelers();
+      carried();
+      face();
+    }
+    this.legs(ctx, b, phase(-near), farCol, l, px, false, c, s, -near);
+    if (!nearLate) this.legs(ctx, b, phase(near), LEG_COL, l, px, false, c, s, near);
+    if (a.wings && this.airborne) {
+      this.beat(ctx, l, px);
+    } else if (a.wings) {
+      // Folded flat over the back: as wide as the body end-on.
+      const wings = new Path2D();
+      addEllipse(wings, -2.0 * c, -3.2, Math.hypot(4.6 * c, 1.1 * s), 0.95, 0.1 * c);
+      addEllipse(wings, -1.4 * c, -2.75, Math.hypot(3.6 * c, 0.9 * s), 0.7, 0.16 * c);
+      ctx.fillStyle = css([215, 222, 232], l, 0.32);
+      ctx.fill(wings);
+      if (full) {
+        ctx.strokeStyle = css([120, 110, 100], l, 0.55);
+        ctx.lineWidth = Math.max(px, 0.08);
+        ctx.stroke(wings);
+      }
+    }
+    // The rim: side-on each segment keeps its edge, as in the profile; end-on the
+    // segments stack up behind one another and only the outline of the whole
+    // keeps one (stroked under the fill, so just its outer half shows).
+    const rimA = strong ? 0.5 : 0.3;
+    const lw = strong ? px * 1.5 : px;
+    if (full) {
+      ctx.strokeStyle = css(SHEEN_COL, l, rimA * (1 - ac * ac));
+      ctx.lineWidth = lw * 2;
+      ctx.stroke(body);
+    }
+    const bodyCol = css(a.rival ? RIVAL_COL : BODY_COL, l);
+    const gloss = css(SHEEN_COL, l, strong ? 0.62 : 0.45);
+    for (const g of segs) {
+      ctx.fillStyle = bodyCol;
+      ctx.fill(g.path);
+      if (full) {
+        ctx.fillStyle = gloss;
+        ctx.fill(g.shine);
+      }
+    }
+    if (full) {
+      ctx.strokeStyle = css(SHEEN_COL, l, rimA * ac * ac);
+      ctx.lineWidth = lw;
+      ctx.stroke(body);
+    }
+    if (!headFirst) face();
+    if (nearLate) this.legs(ctx, b, phase(near), LEG_COL, l, px, false, c, s, near);
+    if (!headFirst) {
+      feelers();
+      carried();
+    }
+  }
+
   /** Beating wings: two blurred sweeps at the ends of the stroke, and the wing itself. */
   private beat(ctx: CanvasRenderingContext2D, l: RGB, px: number): void {
     const t = this.time;
@@ -571,10 +834,16 @@ export class AntPainter {
   /** Grooming stroke (-1..1) for the ant being drawn, or null when it isn't grooming. */
   private groom: number | null = null;
 
-  private legs(ctx: CanvasRenderingContext2D, b: Body, gait: number, col: RGB, l: RGB, px: number, dead: boolean): void {
+  /**
+   * c, s and side are for an ant partway through a turn (see turning()): the
+   * legs of one side (+1 near when facing +x, -1 the other) reach out sideways,
+   * so hips, knees and feet spread apart as the ant comes round.
+   */
+  private legs(ctx: CanvasRenderingContext2D, b: Body, gait: number, col: RGB, l: RGB, px: number, dead: boolean, c = 1, s = 0, side = 0): void {
     ctx.strokeStyle = css(col, l);
     ctx.lineWidth = Math.max(px, 0.22);
     ctx.beginPath();
+    const w = side * b.span * s;
     for (let k = 0; k < 3; k++) {
       // Front and hind legs of one side swing with the middle leg of the other.
       const q = gait + (k === 1 ? Math.PI : 0);
@@ -597,14 +866,16 @@ export class AntPainter {
       }
       const kneeX = (hipX + footX) / 2 + (k === 2 ? -0.25 : 0.25);
       const kneeY = dead ? hipY + 0.85 : Math.min(hipY, footY) - 0.45;
-      ctx.moveTo(hipX, hipY);
-      ctx.lineTo(kneeX, kneeY);
-      ctx.lineTo(footX, footY);
+      // Out to the side: the hip a little, the knee well out, the foot furthest (a groomed foreleg comes back in).
+      const out = k === 0 && this.groom !== null ? 0.35 : this.airborne ? 0.7 : 1.5;
+      ctx.moveTo(hipX * c - w * 0.3, hipY);
+      ctx.lineTo(kneeX * c - w * 1.05, kneeY);
+      ctx.lineTo(footX * c - w * out, footY);
     }
     ctx.stroke();
   }
 
-  private antenna(ctx: CanvasRenderingContext2D, b: Body, hb: number, col: RGB, l: RGB, px: number, id: number, dead: boolean): void {
+  private antenna(ctx: CanvasRenderingContext2D, b: Body, hb: number, col: RGB, l: RGB, px: number, id: number, dead: boolean, c = 1, s = 0, side = 0): void {
     const [ax, ay] = b.antenna;
     const t = this.time;
     // Antennae never stop: they sweep and tap in a slow, irregular rhythm.
@@ -612,12 +883,14 @@ export class AntPainter {
     const sway = dead ? 0.6 : this.meeting ? -0.3 + Math.sin(t * 26 + id) * 0.18 : Math.sin(t * 3.1 + id * 1.7) * 0.35 + Math.sin(t * 7.3 + id) * 0.12;
     const ex = ax + hb + 0.55;
     const ey = ay - 0.75;
+    // Turning (see legs()): the pair splays apart, base to elbow to tip.
+    const w = side * s;
     ctx.strokeStyle = css(col, l);
     ctx.lineWidth = Math.max(px, 0.16);
     ctx.beginPath();
-    ctx.moveTo(ax + hb, ay);
-    ctx.lineTo(ex, ey);
-    ctx.lineTo(ex + Math.cos(0.35 + sway) * 1.35, ey + Math.sin(0.35 + sway) * 1.35);
+    ctx.moveTo((ax + hb) * c - w * 0.3, ay);
+    ctx.lineTo(ex * c - w * 0.6, ey);
+    ctx.lineTo((ex + Math.cos(0.35 + sway) * 1.35) * c - w * 1.0, ey + Math.sin(0.35 + sway) * 1.35);
     ctx.stroke();
   }
 
