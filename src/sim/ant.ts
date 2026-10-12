@@ -475,12 +475,9 @@ export class Ant {
     if (this.dropDist === 0) {
       // Most spoil lands close, some is carried far: a low, wide crater mound.
       this.dropDist = refuse ? sim.rng.int(34, 70) : Math.round(7 + Math.pow(sim.rng.next(), 2.2) * 60);
-      // Spoil goes down whichever side of the crater the ant came up on, unless
-      // that side already carries much more of the heap than the other.
-      const [left, right] = sim.colony.spoilSides;
-      let side = Math.sign(this.x - ex) || (sim.rng.chance(0.5) ? -1 : 1);
-      if (side > 0 && right > left * 1.3 + 20) side = -1;
-      else if (side < 0 && left > right * 1.3 + 20) side = 1;
+      // Spoil goes down whichever side of the crater the ant came up on
+      // (crossing the pit with a load is not worth it).
+      const side = Math.sign(this.x - ex) || (sim.rng.chance(0.5) ? -1 : 1);
       this.dumpDir = refuse ? sim.colony.middenSide : side;
       this.stuck = 0;
       this.trip = 0;
@@ -510,7 +507,6 @@ export class Ant {
         w.set(i, REFUSE, tone, 0);
       } else {
         w.set(i, SAND, this.carryTone, this.carryTint);
-        sim.colony.spoilSides[this.x < ex ? 0 : 1]++;
       }
       this.carry = Carry.None;
       this.dropDist = 0;

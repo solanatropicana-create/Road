@@ -30,8 +30,6 @@ export class Colony {
   /** Ant index + 1 at each cell, rebuilt each tick (0 = none). */
   occ: Int32Array | null = null;
   private occCells: number[] = [];
-  /** Loads of spoil dropped left and right of the entrance (keeps the mound even). */
-  readonly spoilSides: [number, number] = [0, 0];
   readonly broodCell: Int32Array;
   private broodById = new Map<number, Brood>();
 
