@@ -57,7 +57,7 @@ export class Director {
    */
   notice(x: number, y: number, caption: string, key: string): void {
     if (!this.active) return;
-    const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds', 'neighbourMetL', 'neighbourMetR', 'youngColony'];
+    const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds', 'neighbourMetL', 'neighbourMetR', 'youngColony', 'teamCarry', 'cutUp', 'recruitHeavy', 'tugOfWar'];
     const wide = ['war', 'raid', 'flight', 'lark', 'leafFall', 'otherQueens', 'wormsUp', 'youngColonyGone', 'secondGate', 'raidYoung', 'warYoung'];
     const zoom = close.includes(key) ? 11 : wide.includes(key) ? 3.4 : 6;
     this.story = { x, y, caption, zoom };
@@ -200,6 +200,9 @@ export class Director {
     if (a.cpose > 0) return `${who} ${a.name} · ${t('dc_cpose')}`;
     if (a.fight > 0) return `${who} ${a.name} · ${t('dc_boxing')}`;
     if (a.sick > 0.6) return `${who} ${a.name} · ${t('dc_sick')}`;
+    if (a.haul) return `${who} ${a.name} · ${t('dc_hauling', { n: a.haul.carriers.length - 1 })}`;
+    if (a.recruiting) return `${who} ${a.name} · ${t('dc_recruiting')}`;
+    if (a.bound && a.carry === Carry.None) return `${who} ${a.name} · ${t('dc_bound')}`;
     if (a.alarm > TICK_HZ * 4 && a.carry === Carry.None) return `${who} ${a.name} · ${t(sim.trouble() ? 'dc_alarm' : 'dc_agitated')}`;
     let doing: string;
     switch (a.carry) {

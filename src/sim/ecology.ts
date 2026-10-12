@@ -1,6 +1,6 @@
 import type { Sim } from './sim';
 import type { ShrubInfo } from '../world/gen';
-import { EMPTY, LEAF, FLOWER, BERRY, FRUIT, LITTER, PREY, TWIG, WOOD } from '../world/mat';
+import { EMPTY, LEAF, FLOWER, BERRY, FRUIT, LITTER, TWIG, WOOD } from '../world/mat';
 import { DRY_SHIFT } from '../world/plants';
 import { TICK_HZ } from '../config';
 import { clamp } from '../util/math';
@@ -190,43 +190,10 @@ export class Ecology {
 
   /** Lay a small dead animal on the ground, shaped roughly like itself. */
   dropPrey(sim: Sim, kind: 'beetle' | 'hopper' | 'worm', at?: number): number {
-    const w = sim.world;
-    const rng = sim.rng;
-    const shape: [number, number][] = [];
-    let t0 = 0;
-    let t1 = 149;
-    if (kind === 'beetle') {
-      // A ground beetle on its back: an oval of wing case.
-      for (const [dx, dy] of [[0, 0], [1, 0], [2, 0], [3, 0], [1, 1], [2, 1], [0, 1], [3, 1], [1, 2], [2, 2]] as const) shape.push([dx, dy]);
-    } else if (kind === 'hopper') {
-      // A grasshopper: long body, a folded hind leg.
-      t0 = 150;
-      t1 = 219;
-      const len = rng.int(7, 11);
-      for (let dx = 0; dx < len; dx++) shape.push([dx, 0]);
-      for (let dx = 1; dx < len - 2; dx++) shape.push([dx, 1]);
-      shape.push([len - 3, 2], [len - 2, 2]);
-    } else {
-      t0 = 220;
-      t1 = 255;
-      const len = rng.int(14, 24);
-      for (let dx = 0; dx < len; dx++) shape.push([dx, 0]);
-      for (let dx = 2; dx < len - 2; dx += 3) shape.push([dx, 1]);
-    }
-    const width = Math.max(...shape.map((s) => s[0])) + 1;
-    const x0 = at ?? rng.int(12, w.w - 13 - width);
-    // Rest it on the surface, column by column.
-    let placed = 0;
-    for (const [dx, dy] of shape) {
-      const x = x0 + dx;
-      if (x < 2 || x >= w.w - 2 || this.trunk(sim, x)) continue;
-      const i = (this.topAt(sim, x) - dy) * w.w + x;
-      if (w.mat[i] !== EMPTY || w.bg[i] !== 0 || w.plan[i]) continue;
-      w.set(i, PREY, rng.int(t0, t1), 0);
-      placed++;
-    }
-    if (placed) this.preyFound++;
-    return placed ? 1 : 0;
+    // It lies whole, a carcass too heavy for one worker (see Carcasses).
+    const c = sim.carcasses.drop(sim, kind, at === undefined ? undefined : at + (kind === 'beetle' ? 2 : 5));
+    if (c) this.preyFound++;
+    return c ? 1 : 0;
   }
 
   /**

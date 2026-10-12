@@ -186,6 +186,12 @@ export class Neighbour {
     this.ants.push(a);
   }
 
+  /** A whole carcass dragged home by their workers. */
+  takeHome(pieces: number): void {
+    this.harvested += pieces;
+    this.weekHarvest += pieces * 2;
+  }
+
   /** A rival made it back off the slice. */
   arrive(a: Ant): void {
     if (a.carry) {

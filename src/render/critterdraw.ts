@@ -1,4 +1,5 @@
 import type { Critter } from '../sim/critters';
+import type { Carcass } from '../sim/carcass';
 import type { World } from '../world/world';
 import { RGB, hex } from './palette';
 
@@ -509,4 +510,95 @@ function antlion(ctx: CanvasRenderingContext2D, c: Critter, light: Light): void 
     }
   }
   ctx.restore();
+}
+
+const DEAD = {
+  hopper: hex('#7a6a3c'),
+  hopperDark: hex('#4f4426'),
+  beetle: hex('#16130f'),
+  beetleSheen: hex('#3a424a'),
+  worm: hex('#9a6560'),
+  wormDark: hex('#74484a'),
+};
+
+/**
+ * Dead insects and worms lying whole on the ground (see Carcasses): a
+ * grasshopper on its side, legs stiff; a beetle on its back, legs curled up;
+ * a stranded worm. They shrink as pieces are cut off, and lean the way the
+ * workers drag them.
+ */
+export function drawCarcasses(ctx: CanvasRenderingContext2D, list: Carcass[], light: Light, view: { x0: number; y0: number; x1: number; y1: number }): void {
+  for (const c of list) {
+    if (c.x < view.x0 - 30 || c.x > view.x1 + 30 || c.y < view.y0 - 20 || c.y > view.y1 + 20) continue;
+    const l = light(c.x, c.y - 2);
+    const k = 0.45 + 0.55 * (c.pieces / c.whole);
+    ctx.save();
+    ctx.translate(c.x + 0.5, c.y + 1);
+    ctx.rotate(c.pull * 0.06);
+    ctx.scale(c.dir * k, k);
+    ctx.lineCap = 'round';
+    if (c.kind === 'hopper') {
+      // Hind legs stiff in the air, body on its side.
+      ctx.strokeStyle = css(DEAD.hopperDark, l);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(-2, -2.6);
+      ctx.lineTo(-8, -9);
+      ctx.stroke();
+      ctx.lineWidth = 0.55;
+      ctx.beginPath();
+      ctx.moveTo(-8, -9);
+      ctx.lineTo(-13, -4.5);
+      ctx.moveTo(5, -2.2);
+      ctx.lineTo(7, -6);
+      ctx.moveTo(2, -2.2);
+      ctx.lineTo(3, -5.5);
+      ctx.moveTo(9.5, -2.6);
+      ctx.quadraticCurveTo(13, -4, 15, -3);
+      ctx.stroke();
+      ctx.fillStyle = css(DEAD.hopper, l);
+      ctx.beginPath();
+      ctx.ellipse(0, -1.8, 10.5, 1.9, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = css(DEAD.hopperDark, l, 0.85);
+      ctx.beginPath();
+      ctx.ellipse(-3, -2.9, 8, 0.9, 0.04, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (c.kind === 'beetle') {
+      // On its back, legs curled up.
+      ctx.strokeStyle = css(DEAD.beetle, l);
+      ctx.lineWidth = 0.45;
+      ctx.beginPath();
+      for (let j = 0; j < 3; j++) {
+        const x = 2.6 - j * 2.4;
+        ctx.moveTo(x, -3.6);
+        ctx.quadraticCurveTo(x + 1.2, -6.2, x + 0.2, -6.8);
+      }
+      ctx.stroke();
+      ctx.fillStyle = css(DEAD.beetle, l);
+      ctx.beginPath();
+      ctx.ellipse(-0.6, -2.0, 4.6, 2.0, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.ellipse(4.4, -1.8, 1.6, 1.3, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = css(DEAD.beetleSheen, l, 0.5);
+      ctx.beginPath();
+      ctx.ellipse(-0.8, -0.8, 3.4, 0.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+    } else {
+      // A stranded worm, gone dull and limp.
+      ctx.strokeStyle = css(DEAD.wormDark, l);
+      ctx.lineWidth = 2.6;
+      ctx.beginPath();
+      ctx.moveTo(-11, -1.3);
+      ctx.bezierCurveTo(-5, -0.4, -2, -2.4, 4, -1.2);
+      ctx.quadraticCurveTo(8, -0.6, 11, -1.1);
+      ctx.stroke();
+      ctx.strokeStyle = css(DEAD.worm, l);
+      ctx.lineWidth = 1.9;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
 }

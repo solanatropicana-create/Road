@@ -308,6 +308,12 @@ Amaç, sayıların "2+2=4" gibi doğrudan yürümemesi; o anki koşullardan doğ
 - **Mizaç.** İşçilerin yaklaşık dörtte biri "sakin": boşta kalma payını hep onlar dolduruyor. Gerçek kolonilerdeki gibi bir yedek iş gücü bu; koloni işçi kaybedince ya da acıkınca devreye giriyor. Yorulmak bilmeyenler de var; ikisi de karıncanın üzerine gelince görünüyor.
 - **İkinci kapı.** Koloni 120 işçiyi geçince, hasadının çoğunu topladığı tarafa doğru 7–13 cm ötede yeni bir ağız açıyor: yuvadan yukarı bir kuyu kazılıyor, delinince kapı oluyor. Her karınca işine en yakın kapıyı kullanıyor; kazı toprağı çıktığı kapının etrafına atılıyor, yağmurda iki ağız da tıkanıyor.
 - **Genç koloninin cüreti.** Genç koloni kendi hasadıyla büyüyor: iyi beslenirse hızlı, aç kalırsa yavaş. Bizim boyumuzun yarısını aşınca ambarımızı yağmalamaya geliyor; iki koloninin de 40 işçiyi geçtiği yerde, yağmur sonrası nemli bir günde sınırda savaş çıkabiliyor. Biz üç kat güçlüysek yuvasını basıyor, depolarını eve taşıyoruz.
+- **Ağır yük ekibi.** Ölü çekirge, böcek ve solucan yerde bütün bir leş olarak yatıyor (çekirge 16, böcek 9, solucan 16 parçalık yiyecek; sürüklemek için çekirgeye 5, böceğe 3, solucana 6 işçi gücü gerekiyor, parça kesildikçe hafifliyor, majör iki sayılıyor).
+  - Bulan toplayıcı çoğunlukla tek başına çekmeye uğraşmıyor: güçlü bir iz bırakarak eve koşuyor, kapıdakileri ve yakındaki boştakileri dürtüyor, sonra onları leşe geri götürüyor.
+  - Yeterli el toplanınca leş en yakın kapıya doğru yavaşça sürükleniyor; ekip büyüdükçe hızlanıyor. Kapıda ya da krater kenarındaki toprak yığınında parçalanıp içeri taşınıyor.
+  - El yetmezse ya da bir topak toprağa takılırsa leşi olduğu yerde kesip parça parça götürüyorlar. Bu yüzden küçük koloni parçalıyor, büyük koloni bütün taşıyor.
+  - Komşunun işçileri de aynı leşe tutunabiliyor: her taraf kendi yuvasına çekiyor ve güçlü olan kazanıyor. Taşıyıcılar arasındaki temas kavgaya dönerse kavgacılar leşi bırakıyor.
+  - Yağmurda herkes bırakıp sığınıyor; kimsenin dokunmadığı leşi birkaç hafta içinde leşçiler ve çürüme götürüyor.
 - Yağma artık komşunun yuvasından yürüyüp dönmeye yetecek kadar sürüyor (önce yağmacılar daha varmadan süre doluyordu).
 
 **Anlatıcı katmanı**
@@ -319,7 +325,7 @@ Amaç, sayıların "2+2=4" gibi doğrudan yürümemesi; o anki koşullardan doğ
 **Performans**
 
 - 300 karıncalık kolonide simülasyon adımı yaklaşık 0,45 ms (16× hızda bir çekirdeğin ~%20'si). Zamanın çoğu mesafe alanlarına ve kum fiziğine gidiyor.
-- Altı sahada 8 haritalık bir yıllık testte (60 hafta) bütün koloniler kışı açlık ölümü olmadan geçti: ilk yıl sonunda 23–75 işçi, ikinci yılın Haziranında 44–139 işçi ve çıkmak üzere 80–184 yavru, depoda 150–390 tohum (eski dengede 33–85 işçi). Kapıda bekleme ve alarm dalgasıyla birlikte ölçüldü; komşu kayıpları yılda 0–27 işçi.
+- Altı sahada 8 haritalık bir yıllık testte (60 hafta) bütün koloniler kışı açlık ölümü olmadan geçti: ilk yıl sonunda 24–73 işçi, ikinci yılın Haziranında 46–132 işçi ve çıkmak üzere 85–193 yavru (eski dengede 33–85 işçi). Kapıda bekleme, alarm dalgası ve ağır yük ekibiyle birlikte ölçüldü. Bir haritada hızlı büyüyen koloni hasattan önceki Mayıs–Haziran darlığında 18 işçi kaybetti; geri kalanlarda açlık yok.
 - Görüntüsüz test aracı var: `npm run headless` ve `scripts/batch.sh`.
 
 ## 6. Formicarium'dan aldıklarımız ve geçtiğimiz yerler
