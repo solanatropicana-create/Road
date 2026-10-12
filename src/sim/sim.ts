@@ -383,6 +383,11 @@ export class Sim {
       this.physics.moisture.collapses = 0;
       if (n >= 3) this.events.push(`Sodden ceilings are <b>collapsing</b> (${n} cells)`);
     }
+    if (this.physics.moisture.sprouted > 0 && this.tick % (TICK_HZ * 6) === 0) {
+      const n = this.physics.moisture.sprouted;
+      this.physics.moisture.sprouted = 0;
+      if (n >= 2) this.events.push(`Damp seed is <b>sprouting</b> in the stores (${n}); the workers throw it out`);
+    }
   }
 
   /** Start a shower now (or a storm). */

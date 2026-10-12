@@ -1,5 +1,5 @@
 import { World, CHUNK } from './world';
-import { EMPTY, WATER, POWDER, SAND, REFUSE } from './mat';
+import { EMPTY, WATER, POWDER, SAND, REFUSE, SEED } from './mat';
 import { Rng } from '../util/rng';
 import { Moisture, ABSORB } from './moisture';
 
@@ -129,7 +129,9 @@ export class Physics {
     for (const n of [below, i + dir, i - dir]) {
       const a = ABSORB[w.mat[n]!]!;
       // Tunnel walls drink slowly, so a flood in the nest stands for a while.
-      if (a > 0 && w.moist[n]! < 236 && this.rng.next() < a * (w.bg[i] === 1 ? 0.01 : 0.05)) {
+      // (Dry seed drinks at once, which is how a flooded granary starts to sprout.)
+      const rate = w.mat[n] === SEED ? 0.3 : w.bg[i] === 1 ? 0.01 : 0.05;
+      if (a > 0 && w.moist[n]! < 236 && this.rng.next() < a * rate) {
         this.moisture.add(n, 70);
         w.set(i, EMPTY, w.tone[i], w.tint[i]);
         return;

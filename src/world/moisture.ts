@@ -1,6 +1,9 @@
 import { World } from './world';
 import { Rng } from '../util/rng';
-import { EMPTY, WATER, HUMUS, LOAM, CLAY, SUBSOIL, GRAVEL, SAND, SEED, REFUSE } from './mat';
+import { EMPTY, WATER, HUMUS, LOAM, CLAY, SUBSOIL, GRAVEL, SAND, SEED, REFUSE, ROOT } from './mat';
+
+/** `tint` of a refuse grain that is a germinated seed. */
+export const SPROUT = 1;
 
 const table = (entries: [number, number][]): Float32Array => {
   const t = new Float32Array(32);
@@ -10,8 +13,16 @@ const table = (entries: [number, number][]): Float32Array => {
 
 /** How readily each material soaks up water (chance per contact per tick). */
 export const ABSORB = table([
-  [HUMUS, 0.5], [LOAM, 0.3], [SUBSOIL, 0.35], [CLAY, 0.06], [GRAVEL, 0.45], [SAND, 0.55], [SEED, 0.15], [REFUSE, 0.3],
+  [HUMUS, 0.5], [LOAM, 0.3], [SUBSOIL, 0.35], [CLAY, 0.06], [GRAVEL, 0.45], [SAND, 0.55], [SEED, 0.6], [REFUSE, 0.3],
+  [ROOT, 0.5],
 ]);
+
+/**
+ * How much of the difference passes into a cell per visit. Water runs fast down
+ * root channels and the loose fill of old worm burrows (preferential flow),
+ * and barely into clay.
+ */
+const SEEP = table([[HUMUS, 0.6], [LOAM, 0.45], [SUBSOIL, 0.45], [CLAY, 0.12], [GRAVEL, 0.5], [SAND, 0.5], [SEED, 0.45], [REFUSE, 0.45], [ROOT, 0.9]]);
 
 /** Moisture above which a ceiling of this soil gives way. Clay holds best. */
 const SLUMP = table([[HUMUS, 125], [LOAM, 140], [SUBSOIL, 135], [CLAY, 190], [GRAVEL, 150]]);
@@ -29,6 +40,8 @@ export class Moisture {
   private cursor = 0;
   /** Ceiling cells that slumped since the last read (for event messages). */
   collapses = 0;
+  /** Stored seeds that germinated since the last read. */
+  sprouted = 0;
 
   constructor(world: World, rng: Rng) {
     this.world = world;
@@ -79,14 +92,25 @@ export class Moisture {
         list.pop();
         continue;
       }
-      // Seep: straight down first, then a random side.
-      for (let s = 0; s < 2; s++) {
+      // Soaked seed in the nest germinates: it is no longer food, and the
+      // workers carry the sprouts out (a refuse grain flagged as a sprout).
+      if (mat === SEED && m > 40 && w.bg[i] === 1 && this.rng.next() < 0.15) {
+        w.set(i, REFUSE, w.tone[i], SPROUT);
+        if (!w.plan[i]) w.claimed.push(i);
+        this.sprouted++;
+        this.cursor++;
+        continue;
+      }
+      // Seep: straight down first, then a random side (a root channel passes it straight on down).
+      const passes = mat === ROOT ? 3 : 2;
+      for (let s = 0; s < passes; s++) {
         const r = this.rng.next();
-        const n = s === 0 ? i + W : r < 0.45 ? i - 1 : r < 0.9 ? i + 1 : i - W;
+        const n = s === 0 || (mat === ROOT && s === 1) ? i + W : r < 0.45 ? i - 1 : r < 0.9 ? i + 1 : i - W;
         if (n <= 0 || n >= w.size || !(ABSORB[w.mat[n]!]! > 0)) continue;
         const mn = w.moist[n]!;
         if (mn >= m - 6) continue;
-        const t = Math.floor((m - mn) * (w.mat[n] === CLAY ? 0.12 : 0.45));
+        // A soaked seed holds its water (that is what wakes the embryo).
+        const t = Math.floor((m - mn) * SEEP[w.mat[n]!]! * (mat === SEED ? 0.2 : 1));
         if (t > 0) {
           m -= t;
           this.add(n, t);

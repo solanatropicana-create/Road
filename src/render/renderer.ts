@@ -12,6 +12,7 @@ import type { Ant } from '../sim/ant';
 import { TUNING } from '../config';
 import { smoothstep, clamp } from '../util/math';
 import { Noise } from '../util/noise';
+import { SPROUT } from '../world/moisture';
 
 const BACKWALL_DARK = hex('#120b07');
 
@@ -160,7 +161,7 @@ export class Renderer {
           c = this.backwall(i, x, y);
           return pack(c[0], c[1], c[2]);
         }
-        c = m === SEED ? sampleRamp(PAL.seed, tone) : sampleRamp(PAL.refuse, tone);
+        c = m === SEED ? sampleRamp(PAL.seed, tone) : w.tint[i] === SPROUT ? sampleRamp(PAL.leaf, 0.75) : sampleRamp(PAL.refuse, tone);
         break;
       case LITTER: c = w.tint[i] === 1 ? sampleRamp(PAL.twig, tone) : sampleRamp(PAL.leafLitter, tone); break;
       case FRUIT: c = sampleRamp(PAL.fruit, tone); break;
@@ -392,6 +393,7 @@ export class Renderer {
       huskPaths.push(new Path2D());
     }
     const gloss = new Path2D();
+    const shoots = new Path2D();
     let any = false;
     // One light level for the whole view keeps this to a handful of fills.
     const l = this.lightAt((x0 + x1) / 2, (y0 + y1) / 2);
@@ -414,6 +416,13 @@ export class Renderer {
           p.ellipse(cx, cy, 0.68, 0.5, rot, 0, Math.PI * 2);
           gloss.moveTo(cx - 0.12 + 0.2, cy - 0.2);
           gloss.ellipse(cx - 0.12, cy - 0.2, 0.2, 0.1, rot, 0, Math.PI * 2);
+        } else if (w.tint[i] === SPROUT) {
+          // A germinated seed: the grain with a pale root and a green shoot.
+          const p = seedPaths[b]!;
+          p.moveTo(cx + 0.6, cy);
+          p.ellipse(cx, cy, 0.6, 0.45, 0, 0, Math.PI * 2);
+          shoots.moveTo(cx + 0.1, cy - 0.3);
+          shoots.quadraticCurveTo(cx + 0.5, cy - 1.0, cx + 0.2, cy - 1.5);
         } else {
           const p = huskPaths[b]!;
           p.moveTo(cx + 0.6 * Math.cos(rot), cy + 0.6 * Math.sin(rot));
@@ -431,6 +440,10 @@ export class Renderer {
     }
     ctx.fillStyle = lit([255, 236, 196], 0.45);
     ctx.fill(gloss);
+    ctx.strokeStyle = lit([120, 170, 80]);
+    ctx.lineWidth = 0.22;
+    ctx.lineCap = 'round';
+    ctx.stroke(shoots);
   }
 
   /** Dust, shed wings and rain at screen resolution, for close-ups. */
