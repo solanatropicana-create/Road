@@ -401,6 +401,12 @@ export class UI {
       this.wingsNoted = true;
       this.note('The queen lands and <b>tears off her wings</b>', true);
       setTimeout(() => this.toast('Drag to look around · scroll to zoom · click an ant to follow it · <b>?</b> shows all keys', 9000), 2500);
+      // Founding takes a few in-game hours; suggest speeding up if they haven't.
+      setTimeout(() => {
+        if (this.game.speed === 1 && !this.game.paused && this.game.sim.phase === 'founding') {
+          this.toast('She raises her first daughters alone, which takes a while: try <b>8×</b> or <b>16×</b> (keys 4, 5)', 8000);
+        }
+      }, 14000);
     }
     const marks = [10, 25, 50, 100, 150, 200, 300, 500];
     while (this.milestone < marks.length && col.adults >= marks[this.milestone]!) {
