@@ -31,4 +31,6 @@ export interface Corpse {
   x: number;
   y: number;
   carried: boolean;
+  /** Died of a fungus (it sprouts mould, and spreads spores), or killed by a parasitoid fly. */
+  kind?: 'fungus' | 'parasite';
 }

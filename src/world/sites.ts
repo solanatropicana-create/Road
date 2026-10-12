@@ -14,7 +14,9 @@ import { Rng } from '../util/rng';
 export type SiteId = 'pannonian' | 'sand' | 'limestone' | 'vineyard' | 'anatolia' | 'pontic';
 export const SITE_IDS: SiteId[] = ['pannonian', 'anatolia', 'sand', 'limestone', 'vineyard', 'pontic'];
 
-export type PlantMix = { grass: number; purse: number; clover: number };
+import type { PlantKind } from './plants';
+
+export type PlantMix = Partial<Record<PlantKind, number>>;
 
 export interface Layer {
   mat: number;
@@ -58,7 +60,7 @@ const PANNONIAN_SITE: SiteDef = {
     { mat: SUBSOIL, top: 620 },
   ],
   relief: 7,
-  plants: { grass: 4, purse: 2, clover: 2 },
+  plants: { grass: 4, purse: 2, clover: 2, erodium: 1, stipa: 0.5 },
   plantDensity: 38,
   stones: 25,
   krotovinas: 8,
@@ -84,7 +86,8 @@ const SAND_STEPPE: SiteDef = {
     { mat: SANDY, top: 55 },
   ],
   relief: 14,
-  plants: { grass: 5, purse: 1, clover: 1 },
+  // Sand fescue and sand feather grass, with stork's bill on the bare patches.
+  plants: { grass: 3, stipa: 2.5, erodium: 2, purse: 1, clover: 0.5 },
   plantDensity: 26,
   stones: 3,
   krotovinas: 2,
@@ -110,7 +113,7 @@ const LIMESTONE_HILL: SiteDef = {
     { mat: ROCK, top: 260 },
   ],
   relief: 20,
-  plants: { grass: 3, purse: 2, clover: 2 },
+  plants: { grass: 3, stipa: 1.5, clover: 2, purse: 1, erodium: 1 },
   plantDensity: 30,
   stones: 90,
   krotovinas: 1,
@@ -137,7 +140,8 @@ const VINEYARD_EDGE: SiteDef = {
     { mat: SUBSOIL, top: 430 },
   ],
   relief: 5,
-  plants: { grass: 3, purse: 3, clover: 2 },
+  // Weedy: shepherd's purse and stork's bill thrive on the tilled margin.
+  plants: { grass: 2, purse: 3, clover: 2, erodium: 2 },
   plantDensity: 34,
   stones: 18,
   krotovinas: 6,
@@ -165,7 +169,7 @@ const ANATOLIA: SiteDef = {
     { mat: SUBSOIL, top: 580 },
   ],
   relief: 10,
-  plants: { grass: 3, purse: 2, clover: 1 },
+  plants: { grass: 3, stipa: 2, erodium: 2, purse: 2, clover: 1 },
   plantDensity: 24,
   stones: 40,
   krotovinas: 4,
@@ -192,7 +196,8 @@ const PONTIC: SiteDef = {
     { mat: LIME, top: 520 },
   ],
   relief: 6,
-  plants: { grass: 5, purse: 1, clover: 1 },
+  // Feather-grass steppe.
+  plants: { stipa: 4, grass: 3, purse: 1, clover: 1, erodium: 1 },
   plantDensity: 30,
   stones: 10,
   krotovinas: 10,
@@ -240,6 +245,17 @@ export interface Variant {
   shrub: boolean;
   /** Ground water near the bottom of the slice. */
   wetBottom: boolean;
+  /** Old potsherds in the topsoil (people farmed or lived here long ago). */
+  shards: number;
+  /** Bones of small animals buried in the soil. */
+  bones: number;
+  /** Cicada nymphs in their cells by the roots, years from emerging. */
+  nymphs: number;
+  /** Antlion pits in dry, loose sand. */
+  antlions: number;
+  /** Workers of the neighbouring Messor colony beyond one edge (0: none in reach), and which edge. */
+  neighbour: number;
+  neighbourSide: number;
   traits: Trait[];
 }
 
@@ -257,6 +273,12 @@ export function makeVariant(site: SiteId, seed: number): Variant {
     tree: rng.chance(def.tree),
     shrub: rng.chance(def.shrub),
     wetBottom: (site === 'pannonian' || site === 'sand' || site === 'vineyard') && rng.chance(0.25),
+    shards: (site === 'anatolia' || site === 'vineyard' || site === 'pontic') && rng.chance(0.55) ? rng.int(1, 4) : 0,
+    bones: rng.chance(0.4) ? rng.int(1, 2) : 0,
+    nymphs: rng.chance(0.5) ? rng.int(1, 3) : 0,
+    antlions: site === 'sand' ? rng.int(1, 3) : site === 'anatolia' && rng.chance(0.35) ? 1 : 0,
+    neighbour: rng.chance(0.8) ? Math.round(rng.range(250, 1400)) : 0,
+    neighbourSide: rng.chance(0.5) ? -1 : 1,
     traits: [],
   };
   const t = v.traits;
@@ -272,6 +294,12 @@ export function makeVariant(site: SiteId, seed: number): Variant {
   if (v.tree) t.push({ key: 'tr_tree', sign: 0 });
   if (v.shrub) t.push({ key: 'tr_shrub', sign: 1 });
   if (v.wetBottom) t.push({ key: 'tr_wetBottom', sign: -1 });
+  if (v.shards) t.push({ key: 'tr_shards', sign: 0 });
+  if (v.nymphs) t.push({ key: 'tr_nymphs', sign: 1 });
+  if (v.antlions) t.push({ key: 'tr_antlions', sign: -1 });
+  if (v.neighbour > 900) t.push({ key: 'tr_bigNeighbour', sign: -1 });
+  else if (v.neighbour) t.push({ key: 'tr_neighbour', sign: 0 });
+  else t.push({ key: 'tr_noNeighbour', sign: 1 });
   return v;
 }
 

@@ -2,8 +2,8 @@ import { Rng } from '../util/rng';
 import { generate, Horizons } from '../world/gen';
 import { World } from '../world/world';
 import { Plants } from '../world/plants';
-import { Physics, PACKED } from '../world/physics';
-import { EMPTY, SAND, SEED, FRUIT, SOLID, REFUSE, WATER, HARD, ROCK, WOOD, LIME } from '../world/mat';
+import { Physics, PACKED, PLUG } from '../world/physics';
+import { EMPTY, SAND, SEED, SOLID, REFUSE, WATER, HARD, ROCK, WOOD, LIME, SANDY, STONE, PREY, SOIL, TWIG, FRUIT } from '../world/mat';
 import { ABSORB } from '../world/moisture';
 import { Nest } from './nest';
 import { Fields, F, FIELD_COUNT, FAR } from './fields';
@@ -12,10 +12,13 @@ import { Ant } from './ant';
 import { Particles } from './particles';
 import { Task } from './types';
 import { TUNING, TICK_HZ, DAY_TICKS, GROUND_Y } from '../config';
-import { pack, sampleRamp, PAL, mixRGB } from '../render/palette';
+import { pack, sampleRamp, PAL, mixRGB, SEED_TONE } from '../render/palette';
 import { HUMUS, LOAM, CLAY, SUBSOIL } from '../world/mat';
 import { Calendar, Season, forageWindow } from './calendar';
 import { SITES, SiteId, Variant, siteForSeed } from '../world/sites';
+import { Ecology } from './ecology';
+import { Critters } from './critters';
+import { Neighbour } from './rivals';
 
 /** An event for the player; `key` names a message in the UI's string table. */
 export interface SimEvent {
@@ -27,6 +30,14 @@ export interface SimEvent {
   what?: string;
   /** A chamber kind the message is about. */
   kind?: string;
+  /** Where it happened (the documentary camera cuts there; the journal line links to it). */
+  x?: number;
+  y?: number;
+}
+
+export interface Where {
+  x: number;
+  y: number;
 }
 
 export type Phase = 'choose' | 'founding' | 'growing' | 'failed';
@@ -84,6 +95,20 @@ export class Sim {
   readonly variant: Variant;
   /** A tree at the edge of the slice (shade, roots, autumn leaves), if any. */
   readonly tree: { x: number; r: number } | null;
+  /** The surface's year beyond the meadow: shrub, tree, dead insects. */
+  readonly eco: Ecology;
+  /** Birds, grasshoppers, ground beetles, earthworms. */
+  readonly critters = new Critters();
+  /** What the year brought, for the review at the start of the winter rest. */
+  private yearStart = { born: 0, deaths: {} as Record<string, number>, flown: 0 };
+  readonly yearCount = { wars: 0, raids: 0, peak: 0 };
+  /** The queen's name (from the site's own region) and the colony's (from the place it chose). */
+  names = { queen: '', colony: '' };
+  /** The neighbouring Messor colony beyond one edge, if any. */
+  readonly neighbour: Neighbour | null;
+  /** Other young queens that came down after the same flight, and how many landed. */
+  readonly foreigners: Ant[] = [];
+  foreignLanded = 0;
   /**
    * The part of the world the colony knows so far (x0..x1, down to y1): the
    * view starts small around the nest and widens and deepens as the nest and
@@ -121,6 +146,10 @@ export class Sim {
   seedRain = 0.4;
   /** Seeds lying loose on the surface (birds and mice keep this in check). */
   looseSeeds = 0;
+  /** Awned seeds that drilled themselves into the soil. */
+  drilled = 0;
+  /** Year each once-a-year (or, with -1, once-ever) message was last given. */
+  private noted: Record<string, number> = {};
   private src: Int32Array;
 
   constructor(seed: number, site: SiteId = siteForSeed(seed)) {
@@ -133,6 +162,9 @@ export class Sim {
     this.horizons = gen.horizons;
     this.variant = gen.variant;
     this.tree = gen.tree;
+    this.eco = new Ecology(gen.shrub, gen.tree);
+    this.neighbour = gen.variant.neighbour ? new Neighbour(gen.variant.neighbourSide, gen.variant.neighbour) : null;
+    for (const p of gen.pits) this.critters.addAntlion(p.x, p.y, p.r);
     this.cal = new Calendar(SITES[site].climate);
     this.cal.tOffset = gen.variant.exposure * 1.5;
     this.cal.heat = SITES[site].surfaceHeat;
@@ -191,9 +223,24 @@ export class Sim {
     return this.colony.hadWorkers ? 'growing' : 'founding';
   }
 
-  /** Is this column a reasonable place for a queen to dig in? */
+  /** Is this column a reasonable place for a queen to dig in? (Not on a tree or a bush.) */
   canFound(x: number): boolean {
-    return x > 40 && x < this.world.w - 40;
+    return x > 40 && x < this.world.w - 40 && !this.woodNear(Math.round(x), 8) && !this.inPit(x, 10);
+  }
+
+  /** Within an antlion's pit (or this close to its rim)? */
+  private inPit(x: number, margin: number): boolean {
+    return this.critters.list.some((c) => c.kind === 'antlion' && Math.abs(x - (c.px ?? c.x)) < (c.pr ?? 0) + margin);
+  }
+
+  /** Any trunk, branch or root at the surface within r columns of x? */
+  private woodNear(x: number, r: number): boolean {
+    const w = this.world;
+    for (let xx = Math.max(0, x - r); xx <= Math.min(w.w - 1, x + r); xx++) {
+      const g = w.ground[xx]!;
+      for (let y = Math.max(1, g - 220); y <= g + 10; y++) if (w.mat[y * w.w + xx] === WOOD || w.plant[y * w.w + xx] === TWIG) return true;
+    }
+    return false;
   }
 
   /** Nearest column to x where no pebble sits over the burrow (she cannot dig through stone). */
@@ -207,9 +254,9 @@ export class Sim {
           if (HARD[m]) return false;
         }
       }
-      return true;
+      return !this.woodNear(cx, 6) && !this.inPit(cx, 8);
     };
-    for (let d = 0; d < 40; d++) {
+    for (let d = 0; d < 200; d++) {
       for (const s of d === 0 ? [0] : [d, -d]) {
         const cx = x + s;
         if (cx > 40 && cx < w.w - 40 && clear(cx)) return cx;
@@ -244,6 +291,107 @@ export class Sim {
     }
     this.nest.scan();
     for (let f = 0; f < FIELD_COUNT; f++) this.buildField(f);
+    this.names = { queen: this.queenName(), colony: this.colonyName(x) };
+    // Other young queens from the same nuptial flight come down nearby.
+    const n = this.rng.int(2, 4);
+    for (let k = 0; k < n; k++) {
+      let fx = -1;
+      for (let tries = 0; tries < 30; tries++) {
+        const c = this.rng.int(60, w.w - 61);
+        if (Math.abs(c - x) > 90 && this.canFound(c) && !this.foreigners.some((q) => Math.abs(q.x - c) < 40)) {
+          fx = c;
+          break;
+        }
+      }
+      if (fx < 0) continue;
+      let fy = 1;
+      while (fy < w.h - 1 && !SOLID[w.mat[(fy + 1) * w.w + fx]!]) fy++;
+      const fq = new Ant('queen', fx, fy, Number.MAX_SAFE_INTEGER, TUNING.queenSpeed);
+      fq.foreign = true;
+      fq.wings = true;
+      fq.phase = 0;
+      fq.age = -this.rng.int(0, TICK_HZ * 6);
+      fq.orient(this, 1, 0);
+      this.foreigners.push(fq);
+    }
+    this.foreignLanded = this.foreigners.length;
+    if (this.foreignLanded) this.events.push({ key: 'otherQueens', n: this.foreignLanded, x: this.foreigners[0]!.x, y: this.foreigners[0]!.y });
+  }
+
+  /** A name from the languages spoken where this site is. */
+  private queenName(): string {
+    const names: Record<SiteId, string[]> = {
+      pannonian: ['Ilka', 'Réka', 'Zsófi', 'Hedvig', 'Kata', 'Boróka', 'Etelka', 'Panni'],
+      sand: ['Csilla', 'Enikő', 'Tünde', 'Boróka', 'Ilona', 'Piroska'],
+      limestone: ['Lenka', 'Eliška', 'Marta', 'Vera', 'Johana', 'Bára'],
+      vineyard: ['Hedwig', 'Resi', 'Vroni', 'Lisl', 'Anni', 'Gretl'],
+      anatolia: ['Ayla', 'Defne', 'Elif', 'Gülay', 'Ilgın', 'Meltem', 'Yaprak', 'Ceren'],
+      pontic: ['Oksana', 'Lesya', 'Daryna', 'Mila', 'Zlata', 'Vira'],
+    };
+    const list = names[this.site];
+    return list[(this.seed * 7 + 3) % list.length]!;
+  }
+
+  /** The colony is known by what stands over or beside its nest. */
+  private colonyName(x: number): string {
+    const s = this.eco.shrub;
+    if (s && Math.abs(s.x - x) < 170) return s.kind === 'blackthorn' ? 'cn_blackthorn' : 'cn_rose';
+    if (this.tree && Math.abs(this.tree.x - x) < this.tree.r + 300) return 'cn_tree';
+    const w = this.world;
+    for (let xx = x - 40; xx <= x + 40; xx++) {
+      const g = w.ground[xx]!;
+      for (let y = g; y < g + 25; y++) if (w.mat[y * w.w + xx] === STONE && w.tint[y * w.w + xx] !== 4 && w.tint[y * w.w + xx] !== 5) return 'cn_stone';
+    }
+    if (this.critters.list.some((c) => c.kind === 'antlion')) return 'cn_sand';
+    const stipa = this.plants.list.filter((p) => p.kind === 'stipa' && Math.abs(p.x - x) < 120).length;
+    if (stipa >= 2) return 'cn_featherGrass';
+    return `cn_${this.site}`;
+  }
+
+  /**
+   * The other founding queens: almost none survive. Birds take those still
+   * on the surface; foragers of established colonies (ours, once we have
+   * workers, and the neighbours') find their burrows, dig them out and kill
+   * them; others starve or sicken in their cells.
+   */
+  private foundresses(): void {
+    const w = this.world;
+    const rng = this.rng;
+    for (const q of this.foreigners) {
+      if (!q.alive) continue;
+      q.tick(this);
+      if (this.tick % 30 !== 0) continue;
+      const bird = this.critters.birdX;
+      if (q.phase < 2 && bird === bird && Math.abs(q.x - bird) < 70 && rng.chance(0.05)) {
+        q.alive = false;
+        this.noteYearly('foundressBird', q);
+        continue;
+      }
+      if (q.phase === 2) {
+        // A forager passing over the burrow scents her.
+        const finder = this.colony.ants.find((a) => !a.away && a.task === Task.Forage && Math.abs(a.x - q.x) <= 3 && w.bg[a.y * w.w + a.x] === 0 && a.carry === 0);
+        if (finder && rng.chance(0.25)) {
+          q.alive = false;
+          // She is dug out, killed and carried home: a big meal of protein.
+          finder.carry = 9;
+          finder.carryTone = 40;
+          this.noteOnce('foundressKilled', q);
+          continue;
+        }
+        const rival = this.neighbour?.ants.find((a) => Math.abs(a.x - q.x) <= 3 && w.bg[a.y * w.w + a.x] === 0);
+        if (rival && rng.chance(0.25)) {
+          q.alive = false;
+          this.noteOnce('foundressKilledByRivals', q);
+          continue;
+        }
+        if (!this.dormant && rng.chance(0.0012)) q.alive = false;
+      }
+    }
+    if (this.foreigners.some((q) => !q.alive)) {
+      const left = this.foreigners.filter((q) => q.alive);
+      this.foreigners.length = 0;
+      this.foreigners.push(...left);
+    }
   }
 
   // ---------------------------------------------------------------- effects
@@ -463,7 +611,11 @@ export class Sim {
     this.fields.build(f, src, n);
   }
 
-  /** Birds and mice glean the surface, so fallen seed never piles up for long. */
+  /**
+   * Birds and mice glean the surface, so fallen seed never piles up for long;
+   * other scavengers take dead insects. Feather-grass and stork's-bill seeds
+   * left lying on damp ground screw themselves into the soil with their awns.
+   */
   private gleaners(): void {
     const w = this.world;
     const found: number[] = [];
@@ -472,7 +624,22 @@ export class Sim {
     for (let y = y0; y < y1; y++) {
       for (let x = 1; x < w.w - 1; x++) {
         const i = y * w.w + x;
-        if (w.mat[i] === SEED && w.bg[i] === 0) found.push(i);
+        const m = w.mat[i];
+        if (m === SEED && w.bg[i] === 0) {
+          // Awned seed (feather grass, stork's bill) drills down when wet.
+          const dn = i + w.w;
+          if (w.tone[i]! >= 154 && SOIL[w.mat[dn]!] && w.moist[dn]! > 30 && w.mat[i - w.w] === EMPTY && this.rng.chance(0.05)) {
+            w.set(dn, SEED, w.tone[i], 0);
+            w.set(i, EMPTY, 0, 0);
+            this.drilled++;
+            this.noteOnce('awnsDrill', { x: i % w.w, y: (i / w.w) | 0 });
+            continue;
+          }
+          found.push(i);
+        } else if ((m === PREY || m === FRUIT) && w.bg[i] === 0 && w.mat[i - w.w] === EMPTY && this.rng.chance(m === FRUIT ? 0.012 : 0.006)) {
+          // Scavengers and rot: dead insects and fallen fruit don't lie out for long.
+          w.set(i, EMPTY, 0, 0);
+        }
       }
     }
     this.looseSeeds = found.length;
@@ -482,7 +649,7 @@ export class Sim {
       const c = dead[k]!;
       if (!c.carried && w.bg[c.y * w.w + c.x] === 0 && this.rng.chance(0.04)) dead.splice(k, 1);
     }
-    const eat = Math.max(0, Math.floor((found.length - 160) / 6)) + (this.rng.chance(0.3) ? 1 : 0);
+    const eat = Math.max(0, Math.floor((found.length - 160 * (w.w / 640)) / 6)) + (this.rng.chance(0.3) ? 1 : 0);
     for (let k = 0; k < eat && found.length; k++) {
       const j = this.rng.int(0, found.length - 1);
       const i = found[j]!;
@@ -498,10 +665,31 @@ export class Sim {
   step(): void {
     this.tick++;
     if (this.tick % 15 === 0) this.climate();
-    if (this.tick % 30 === 0) this.updateView();
+    if (this.tick % 30 === 0) {
+      this.updateView();
+      if (this.colony.adults > this.yearCount.peak) this.yearCount.peak = this.colony.adults;
+    }
     if (this.tick % 300 === 150 && this.nest.founded) this.discoveries();
-    // Plants grow and ripen only in the warm months.
-    if (this.cal.airMean(this.doy) > 6) this.plants.tick();
+    if (this.site === 'sand' && this.tick % 20 === 0) this.drySand();
+    // Plants grow and ripen in their season; the year turns for the meadow, shrub and tree.
+    const air = this.cal.airMean(this.doy);
+    // (Seedlings come up in the week or so after rain, while the topsoil is damp.)
+    this.plants.tick(this.doy, air, this.tick - this.lastRain < DAY_TICKS * 1.2);
+    this.eco.step(this);
+    this.critters.step(this);
+    if (this.tick % Ecology.PERIOD === 0) {
+      const doy = this.doy;
+      this.plants.season(doy, air);
+      this.eco.season(this);
+      this.critters.season(this);
+      this.neighbour?.season(this);
+      if (this.site === 'vineyard') this.eco.grapes(this);
+      // The meadow's year, as the colony lives it.
+      if (doy >= 150 && doy < 165) this.noteYearly('harvest');
+      if (doy >= 222 && doy < 240) this.noteYearly('meadowStraw');
+      if (doy > 240 && this.plants.list.some((p) => p.resting)) this.noteYearly('dieback');
+      if (this.plants.gardens > 0) this.noteOnce('antGarden');
+    }
     this.physics.step();
     if (this.tick % 15 === 0) this.nest.scan();
     if (this.nest.founded) {
@@ -510,6 +698,8 @@ export class Sim {
       const f = this.fields.nextDue(this.tick);
       if (f >= 0) this.buildField(f);
       if (this.tick % (TICK_HZ * 3) === 0 && this.colony.hadWorkers) this.growNest();
+      this.neighbour?.step(this);
+      if (this.foreigners.length) this.foundresses();
     }
     if ((this.tick & 3) === 0) this.decayPheromone();
     this.particles.step();
@@ -543,6 +733,55 @@ export class Sim {
     }
   }
 
+  /** Tone of a seed of a species drawn from this site's plant mix. */
+  seedToneFromMix(): number {
+    const [lo, hi] = SEED_TONE[this.plants.pickKind()]!;
+    return this.rng.int(lo, hi);
+  }
+
+  /**
+   * Close the year's books: births, deaths by cause, battles and raids, the
+   * nuptial flight, since the last review. (Called by the field notes when
+   * the colony goes into its winter rest.)
+   */
+  closeYear(): { year: number; born: number; deaths: [string, number][]; flown: number; wars: number; raids: number; peak: number } {
+    const c = this.colony;
+    const s = this.yearStart;
+    const deaths: [string, number][] = [];
+    for (const [k, v] of Object.entries(c.deaths)) {
+      const d = v - (s.deaths[k] ?? 0);
+      if (d > 0) deaths.push([k, d]);
+    }
+    deaths.sort((a, b) => b[1] - a[1]);
+    const out = { year: this.cal.year(this.simDays), born: c.born - s.born, deaths, flown: c.flown.total - s.flown, wars: this.yearCount.wars, raids: this.yearCount.raids, peak: Math.max(this.yearCount.peak, c.adults) };
+    this.yearStart = { born: c.born, deaths: { ...c.deaths }, flown: c.flown.total };
+    this.yearCount.wars = 0;
+    this.yearCount.raids = 0;
+    this.yearCount.peak = c.adults;
+    return out;
+  }
+
+  /** Has it rained in the last `ticks`? */
+  recentRain(ticks: number): boolean {
+    return this.tick - this.lastRain < ticks;
+  }
+
+  /** A message given at most once a year (and only once there is a colony to tell of). */
+  noteYearly(key: string, at?: Where): void {
+    if (!this.nest.founded) return;
+    const y = this.cal.year(this.simDays);
+    if (this.noted[key] === y) return;
+    this.noted[key] = y;
+    this.events.push({ key, x: at?.x, y: at?.y });
+  }
+
+  /** A message given once in the colony's life. */
+  noteOnce(key: string, at?: Where): void {
+    if (!this.nest.founded || this.noted[key] !== undefined) return;
+    this.noted[key] = -1;
+    this.events.push({ key, x: at?.x, y: at?.y });
+  }
+
   /** Start a shower now (or a storm). */
   startRain(storm: boolean): void {
     const w = this.weather;
@@ -574,6 +813,11 @@ export class Sim {
       const perWeek = this.cal.climate.showers[this.cal.month(this.doy)]!;
       wt.next = this.tick + Math.round((DAY_TICKS / Math.max(0.2, perWeek)) * this.rng.range(0.5, 1.5));
       this.events.push({ key: wt.snowing ? 'snowStops' : 'rainStops' });
+      // A downpour drives earthworms up; some die stranded on the surface.
+      if (wt.storm && !wt.snowing) {
+        this.eco.afterStorm(this);
+        this.critters.afterStorm();
+      }
       wt.snowing = false;
       // The rain is over: dig the door open again once the crater has drained (unless it is winter).
       if (this.colony.hadWorkers && !this.dormant) this.openAt = this.tick + TICK_HZ * 25;
@@ -727,6 +971,8 @@ export class Sim {
     if (this.rng.next() < 0.01) this.cloudGoal = Math.pow(this.rng.next(), 1.6) * 0.9;
     const goal = wt.rain > 0.15 ? 1 : this.cloudGoal;
     this.cloud += (goal - this.cloud) * 0.05;
+    // Under a tree's crown the ground keeps cool.
+    this.cal.shade = this.eco.shadeAt(this.nest.founded ? this.nest.foundX : this.world.w / 2, doy);
     this.surfaceT = this.cal.surfaceTemp(this.dayT, doy, this.cloud, this.snow);
     // Snow melts in the sun and in thaw; meltwater soaks the topsoil.
     if (this.snow > 0) {
@@ -750,6 +996,11 @@ export class Sim {
     if (dormant !== this.dormant) {
       this.dormant = dormant;
       if (this.nest.founded) this.events.push({ key: dormant ? 'dormancy' : 'waking' });
+      // The first winter: what became of the other queens of the spring.
+      if (dormant && this.foreignLanded && !this.noted.foundressSummary) {
+        this.noted.foundressSummary = -1;
+        this.events.push({ key: this.foreigners.length ? 'foundressSummary' : 'foundressNone', n: this.foreignLanded, m: this.foreigners.length });
+      }
       if (this.colony.hadWorkers) {
         if (dormant) this.sealAt = this.tick + TICK_HZ * 20;
         else if (!this.raining) this.openNest();
@@ -795,7 +1046,7 @@ export class Sim {
     this.flightYear = year;
     this.flightCount = { gynes: 0, males: 0 };
     this.openNest();
-    this.events.push({ key: 'flight' });
+    this.events.push({ key: 'flight', x: this.nest.foundX, y: this.world.ground[this.nest.foundX]! - 12 });
   }
 
   /** An alate leaves the ground: off it goes, up and away on the breeze. */
@@ -856,9 +1107,12 @@ export class Sim {
     for (const i of this.nest.frontier) {
       for (const n of [i - 1, i + 1, i - W, i + W]) {
         const m = w.mat[n]!;
-        if (m === ROCK) once('rock', { key: 'hitRock', what: 'rock' });
-        else if (m === WOOD) once('wood', { key: 'hitRock', what: 'wood' });
-        else if (m === LIME) once('lime', { key: 'hitLime' });
+        const at = { x: n % W, y: (n / W) | 0 };
+        if (m === ROCK) once('rock', { key: 'hitRock', what: 'rock', ...at });
+        else if (m === STONE && w.tint[n] === 4) once('shard', { key: 'foundShard', ...at });
+        else if (m === STONE && w.tint[n] === 5) once('bone', { key: 'foundBone', ...at });
+        else if (m === WOOD) once('wood', { key: 'hitRock', what: 'wood', ...at });
+        else if (m === LIME) once('lime', { key: 'hitLime', ...at });
       }
     }
     if (!this.discovered.burrow) {
@@ -866,13 +1120,44 @@ export class Sim {
         if (w.mat[i] !== EMPTY) continue;
         for (const n of [i - 1, i + 1, i - W, i + W]) {
           if (w.mat[n] === EMPTY && !w.plan[n] && w.bg[n] === 1) {
-            once('burrow', { key: 'foundBurrow', who: SITES[this.site].burrower ?? 'vole' });
+            once('burrow', { key: 'foundBurrow', who: SITES[this.site].burrower ?? 'vole', x: n % W, y: (n / W) | 0 });
             break;
           }
         }
         if (this.discovered.burrow) break;
       }
     }
+  }
+
+  /**
+   * Sand holds a tunnel only while it is damp: a dry ceiling of loose sand
+   * trickles down into the tunnel below, and the diggers have to clear it.
+   */
+  private drySand(): void {
+    const w = this.world;
+    const cells = this.nest.planCells;
+    if (cells.length === 0) return;
+    for (let k = 0; k < 6; k++) {
+      const i = cells[this.rng.int(0, cells.length - 1)]!;
+      if (w.mat[i] !== EMPTY) continue;
+      const up = i - w.w;
+      if (w.mat[up] !== SANDY || w.moist[up]! > 40) continue;
+      if (this.rng.next() < 0.25) {
+        w.set(up, SAND, w.tone[up], SANDY);
+        if (!w.plan[up]) w.claimed.push(up);
+      }
+    }
+  }
+
+  /** How much a flat stone lying over this spot warms it in the sun, °C. */
+  stoneWarmth(x: number, y: number): number {
+    const w = this.world;
+    for (let yy = y - 1; yy > y - 45 && yy > 0; yy--) {
+      const m = w.mat[yy * w.w + x]!;
+      if (m === STONE) return 5 * this.cal.daylight(this.dayT, this.doy) * (1 - this.cloud * 0.7);
+      if (m === EMPTY && w.bg[yy * w.w + x] === 0) break;
+    }
+    return 0;
   }
 
   /** A digger turned up a seed buried in the soil (reported once a year). */
@@ -883,13 +1168,28 @@ export class Sim {
     this.events.push({ key: 'foundSeeds' });
   }
 
-  /** Unshut the nest: the plug becomes soil to dig out. */
+  /**
+   * Unshut the nest: the workers inside push the plug up and out onto the
+   * spoil ring. (Left for the diggers to clear, it could lock the colony in:
+   * the diggers caught inside by the rain all hold a load they cannot dump.)
+   */
   openNest(): void {
     this.sealAt = 0;
-    if (this.world.sealed) {
-      this.nest.unseal();
-      this.nest.scan();
+    const w = this.world;
+    if (!w.sealed) return;
+    const [x0, x1, y0, y1] = w.sealBox;
+    for (let y = Math.max(1, y0); y <= Math.min(w.h - 2, y1); y++) {
+      for (let x = Math.max(1, x0); x <= Math.min(w.w - 2, x1); x++) {
+        const i = y * w.w + x;
+        if (w.mat[i] !== SAND || !(w.tint[i]! & PLUG)) continue;
+        const src = w.tint[i]! & 0x3f;
+        const tone = w.tone[i]!;
+        w.set(i, EMPTY, tone, w.bg[i] ? src : 0);
+        this.spoil(src, tone);
+      }
     }
+    this.nest.unseal();
+    this.nest.scan();
   }
 
   /** Meltwater (in cells' worth of moisture) soaks into the top of the soil. */
@@ -905,24 +1205,17 @@ export class Sim {
     }
   }
 
-  /** Seeds blow in from the meadow beyond the frame; now and then a berry drops. */
+  /** Seeds blow in from the meadow beyond the frame. */
   private seasonal(): void {
     const w = this.world;
     if (this.tick % 150 === 0) this.gleaners();
+    // Seed blows in all along the slice: the rate (and the most that lies about) scale with its width.
     const monthly = SEED_RAIN_MONTH[this.cal.month(this.doy)]!;
-    if (this.looseSeeds < 260 && this.rng.next() < (this.seedRain * monthly) / TICK_HZ) {
+    const across = w.w / 640;
+    if (this.looseSeeds < 260 * across && this.rng.next() < (this.seedRain * monthly * across) / TICK_HZ) {
       const x = this.rng.int(12, w.w - 13);
       const i = 2 * w.w + x;
       if (w.mat[i] === EMPTY) w.set(i, SEED, this.rng.int(0, 255), 0);
-    }
-    if (this.rng.next() < 1 / (TICK_HZ * 240)) {
-      const cx = this.rng.int(30, w.w - 31);
-      for (let dy = 0; dy < 4; dy++)
-        for (let dx = -2; dx <= 2; dx++) {
-          if (dx * dx + (dy - 1.5) * (dy - 1.5) > 5) continue;
-          const i = (3 + dy) * w.w + cx + dx;
-          if (w.mat[i] === EMPTY) w.set(i, FRUIT, this.rng.int(0, 255), 0);
-        }
     }
   }
 }

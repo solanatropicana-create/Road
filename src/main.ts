@@ -41,7 +41,7 @@ export class Game {
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement, seed: number, site: SiteId) {
     this.canvas = canvas;
     this.sim = new Sim(seed, site);
-    this.renderer = new Renderer(canvas, this.sim.world, seed);
+    this.renderer = new Renderer(canvas, this.sim.world, seed, site);
     this.cam = new Camera(this.sim.world.w, this.sim.world.h);
     this.director = new Director(this);
     this.ui = new UI(this, uiRoot);
@@ -112,7 +112,7 @@ export class Game {
       const { sim, extra } = await loadSim(blob);
       this.sim = sim;
       this.lastSaveTick = sim.tick;
-      this.renderer = new Renderer(this.canvas, sim.world, sim.seed);
+      this.renderer = new Renderer(this.canvas, sim.world, sim.seed, sim.site);
       this.selected = null;
       this.director.stop();
       this.resize();
@@ -128,7 +128,7 @@ export class Game {
   /** A fresh, unlanded world from another seed (the title screen's "another site"). */
   newWorld(seed: number, site: SiteId = siteForSeed(seed)): void {
     this.sim = new Sim(seed, site);
-    this.renderer = new Renderer(this.canvas, this.sim.world, seed);
+    this.renderer = new Renderer(this.canvas, this.sim.world, seed, site);
     this.selected = null;
     this.director.stop();
     this.lastSaveTick = 0;

@@ -1,22 +1,24 @@
 import { World } from '../world/world';
 import {
   EMPTY, HUMUS, LOAM, CLAY, SUBSOIL, GRAVEL, STONE, ROOT, SAND, WATER, STEM, LEAF, FLOWER,
-  SEED, REFUSE, LITTER, FRUIT, BEDROCK, SOLID, SANDY, LIME, ROCK, WOOD,
+  SEED, REFUSE, LITTER, FRUIT, BEDROCK, SOLID, SANDY, LIME, ROCK, WOOD, TWIG, BERRY, PREY,
 } from '../world/mat';
-import { PAL, RGB, ZONE_TINT, hex, mixRGB, pack, sampleRamp, seedLook } from './palette';
+import { PAL, RGB, ZONE_TINT, hex, mixRGB, pack, sampleRamp, seedLook, preyColor, fruitColor } from './palette';
 
-/** Tone buckets for drawing seeds (each species gets four shades). */
-const SEED_BUCKETS = 12;
+/** Tone buckets for drawing seeds (each species gets three shades). */
+const SEED_BUCKETS = 15;
 import { Backdrop, skyAt } from './backdrop';
 import { Camera } from './camera';
 import { AntPainter } from './antdraw';
 import { MacroLens } from './macro';
+import { drawCritters } from './critterdraw';
 import type { Sim } from '../sim/sim';
 import type { Ant } from '../sim/ant';
-import { TUNING } from '../config';
+import { TUNING, GROUND_Y } from '../config';
 import { smoothstep, clamp } from '../util/math';
 import { Noise } from '../util/noise';
 import { SPROUT } from '../world/moisture';
+import { DRY_SHIFT } from '../world/plants';
 
 const BACKWALL_DARK = hex('#120b07');
 
@@ -91,7 +93,7 @@ export class Renderer {
   /** Seconds, for animation. */
   time = 0;
 
-  constructor(canvas: HTMLCanvasElement, world: World, seed: number) {
+  constructor(canvas: HTMLCanvasElement, world: World, seed: number, site = 'pannonian') {
     this.canvas = canvas;
     this.ctx = canvas.getContext('2d', { alpha: false })!;
     this.world = world;
@@ -102,7 +104,7 @@ export class Renderer {
     this.img = this.wctx.createImageData(world.w, world.h);
     this.buf = new Uint32Array(this.img.data.buffer);
     this.base = new Uint32Array(world.size);
-    this.backdrop = new Backdrop(world.w, world.h, seed);
+    this.backdrop = new Backdrop(world.w, world.h, seed, site);
     this.grain = this.makeGrain();
     this.painter = new AntPainter(world);
     this.seed = seed;
@@ -156,8 +158,15 @@ export class Renderer {
         // Under the macro lens, plants are drawn as smooth shapes over the slice.
         if (pl && !(this.closeUp && this.propWas)) {
           const pt = w.ptone[i]! / 255;
-          if (pl === STEM) c = sampleRamp(PAL.stem, pt);
-          else if (pl === LEAF) c = sampleRamp(PAL.leaf, pt);
+          if (pl === STEM || pl === LEAF) {
+            // Shade in the low bits, dryness (green, yellowing, straw, dead) in the top two.
+            const sh = (w.ptone[i]! & 63) / 63;
+            const dry = w.ptone[i]! >> DRY_SHIFT;
+            c = sampleRamp(pl === STEM ? PAL.stem : PAL.leaf, sh);
+            if (dry === 3) c = mixRGB(c, sampleRamp(PAL.deadPlant, sh), 0.9);
+            else if (dry > 0) c = mixRGB(c, sampleRamp(PAL.straw, sh), dry === 1 ? 0.45 : 0.88);
+          } else if (pl === TWIG) c = sampleRamp(PAL.bark, pt);
+          else if (pl === BERRY) c = pt < 0.5 ? sampleRamp(PAL.sloe, pt * 2) : sampleRamp(PAL.hip, (pt - 0.5) * 2);
           else if (pl === FLOWER) c = pt >= 0.5 ? sampleRamp(PAL.flowerPink, (pt - 0.5) * 2) : sampleRamp(PAL.flowerWhite, pt * 2);
           else c = sampleRamp(PAL.seedhead, pt);
           return pack(c[0], c[1], c[2]);
@@ -180,7 +189,7 @@ export class Renderer {
       case CLAY: c = sampleRamp(PAL.clay, tone); break;
       case SUBSOIL: c = sampleRamp(PAL.subsoil, tone); break;
       case GRAVEL: c = sampleRamp(PAL.gravel, tone); break;
-      case STONE: c = sampleRamp(PAL.stone[w.tint[i]! & 3]!, tone); break;
+      case STONE: c = sampleRamp(PAL.stone[w.tint[i]! & 7] ?? PAL.stone[0]!, tone); break;
       case ROOT: {
         // Fine roots: pale threads in whatever soil they run through.
         const soil = sampleRamp(soilRamp(this.guessSoil(x, y)), 0.35 + tone * 0.3);
@@ -218,7 +227,8 @@ export class Renderer {
         c = m === SEED ? seedLook(w.tone[i]!).col : w.tint[i] === SPROUT ? sampleRamp(PAL.leaf, 0.75) : sampleRamp(PAL.refuse, tone);
         break;
       case LITTER: c = w.tint[i] === 1 ? sampleRamp(PAL.twig, tone) : sampleRamp(PAL.leafLitter, tone); break;
-      case FRUIT: c = sampleRamp(PAL.fruit, tone); break;
+      case FRUIT: c = fruitColor(w.tone[i]!); break;
+      case PREY: c = w.tint[i] === 3 ? sampleRamp(PAL.nymph, (w.tone[i]! - 150) / 60) : preyColor(w.tone[i]!); break;
       default: c = [255, 0, 255];
     }
     // Relief: lit rims on floors and the ground surface, shadowed ceilings.
@@ -791,6 +801,96 @@ export class Renderer {
     return [this.lutR[k]! / 256, this.lutG[k]! / 256, this.lutB[k]! / 256];
   };
 
+  /** The open air over the slice (above the original ground line), for shading the surface. */
+  private airPath: Path2D | null = null;
+
+  /**
+   * A tree's crown overhead: the ground under it lies in soft shade, with
+   * sunflecks drifting as the leaves move.
+   */
+  private drawShade(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }, solar: number): void {
+    const eco = sim.eco;
+    const doy = sim.doy;
+    const cover = eco.leafCover(doy);
+    if (cover <= 0) return;
+    const sun = Math.max(0, Math.sin((solar - 0.25) * Math.PI * 2)) * (1 - 0.7 * Math.min(1, sim.cloud));
+    if (sun < 0.05) return;
+    const w = this.world;
+    const ctx = this.ctx;
+    if (!this.airPath) {
+      const p = new Path2D();
+      p.moveTo(0, -200);
+      for (let x = 0; x < w.w; x += 2) p.lineTo(x, w.ground[x]! + 3);
+      p.lineTo(w.w, w.ground[w.w - 1]! + 3);
+      p.lineTo(w.w, -200);
+      p.closePath();
+      this.airPath = p;
+    }
+    const x0 = Math.max(0, view.x0);
+    const x1 = Math.min(w.w, view.x1);
+    if (x1 <= x0) return;
+    ctx.save();
+    ctx.clip(this.airPath);
+    const g = ctx.createLinearGradient(x0, 0, x1, 0);
+    for (let k = 0; k <= 4; k++) {
+      const x = x0 + ((x1 - x0) * k) / 4;
+      g.addColorStop(k / 4, `rgba(14,22,12,${(eco.shadeAt(x, doy) * 0.42 * sun).toFixed(3)})`);
+    }
+    ctx.fillStyle = g;
+    ctx.fillRect(x0, Math.max(view.y0, -200), x1 - x0, GROUND_Y + 60 - Math.max(view.y0, -200));
+    // Sunflecks: soft spots of light that wander as the crown sways.
+    ctx.globalCompositeOperation = 'lighter';
+    const t = this.time * 0.15;
+    for (let k = 0; k < 28; k++) {
+      const hx = ((k * 7919) % 1000) / 1000;
+      const x = x0 + hx * (x1 - x0) + Math.sin(t + k * 1.7) * 6;
+      if (eco.shadeAt(x, doy) < 0.15) continue;
+      const gx = clamp(Math.round(x), 0, w.w - 1);
+      const y = w.ground[gx]! - 2 - ((k * 37) % 60);
+      const r = 3 + ((k * 13) % 7);
+      const a = 0.06 * sun * cover * (0.6 + 0.4 * Math.sin(t * 2.3 + k));
+      const rg = ctx.createRadialGradient(x, y, 0, x, y, r);
+      rg.addColorStop(0, `rgba(255,236,190,${a.toFixed(3)})`);
+      rg.addColorStop(1, 'rgba(255,236,190,0)');
+      ctx.fillStyle = rg;
+      ctx.fillRect(x - r, y - r, r * 2, r * 2);
+    }
+    ctx.restore();
+  }
+
+  /** Leaves on their way down in autumn, turning as they fall. */
+  private drawFallers(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }): void {
+    const ctx = this.ctx;
+    for (const f of sim.eco.fallers) {
+      if (f.x < view.x0 - 4 || f.x > view.x1 + 4 || f.y < view.y0 - 4 || f.y > view.y1 + 4) continue;
+      const l = this.lightAt(f.x, Math.max(f.y, 0));
+      if (f.fruit) {
+        const c = fruitColor(f.tone);
+        ctx.fillStyle = `rgb(${(c[0] * l[0]) | 0},${(c[1] * l[1]) | 0},${(c[2] * l[2]) | 0})`;
+        ctx.beginPath();
+        ctx.ellipse(f.x, f.y, f.tone < 100 ? 3.6 : 3.2, f.tone < 100 ? 3.6 : 4.4, 0, 0, Math.PI * 2);
+        ctx.fill();
+        continue;
+      }
+      const c = sampleRamp(PAL.leafLitter, f.tone / 255);
+      // A leaf turns as it falls: broad face-on, a line edge-on.
+      const spin = Math.sin(f.t * 0.05 + f.tone);
+      const half = Math.max(2.2, f.len / 2);
+      ctx.fillStyle = `rgb(${(c[0] * l[0]) | 0},${(c[1] * l[1]) | 0},${(c[2] * l[2]) | 0})`;
+      ctx.beginPath();
+      ctx.ellipse(f.x, f.y, half, 0.5 + Math.abs(spin) * half * 0.42, Math.sin(f.t * 0.03 + f.tone * 2) * 0.5, 0, Math.PI * 2);
+      ctx.fill();
+      // The midrib.
+      ctx.strokeStyle = `rgba(${(c[0] * l[0] * 0.6) | 0},${(c[1] * l[1] * 0.6) | 0},${(c[2] * l[2] * 0.6) | 0},0.7)`;
+      ctx.lineWidth = 0.4;
+      ctx.beginPath();
+      const a = Math.sin(f.t * 0.03 + f.tone * 2) * 0.5;
+      ctx.moveTo(f.x - Math.cos(a) * half, f.y - Math.sin(a) * half);
+      ctx.lineTo(f.x + Math.cos(a) * half, f.y + Math.sin(a) * half);
+      ctx.stroke();
+    }
+  }
+
   /** speed: sim time per real time (0 when paused). */
   render(sim: Sim, cam: Camera, dt: number, speed = 1, selected: Ant | null = null): void {
     this.time += dt;
@@ -912,10 +1012,15 @@ export class Renderer {
       this.lens.drawPlants(ctx, sim.plants, this.lightAt, view);
       ctx.globalAlpha = 1;
     }
+    this.drawShade(sim, view, solar);
     if (sim.snow > 0.5) this.drawSnow(sim.snow, view);
     // Ants, brood and the dead, at full screen resolution over the slice.
     const col = sim.colony;
-    const base = col.alates.length ? [...col.ants, ...col.alates] : col.ants;
+    // (Foragers out in the meadow beyond the slice are out of view.)
+    const out = col.ants.filter((a) => a.away === 0);
+    if (sim.neighbour?.ants.length) out.push(...sim.neighbour.ants);
+    if (sim.foreigners.length) out.push(...sim.foreigners.filter((q) => q.phase < 2));
+    const base = col.alates.length ? [...out, ...col.alates] : out;
     const ants = col.queen && col.queen.alive ? [...base, col.queen] : base;
     this.painter.update(ants, dt, speed);
     if (sim.phase === 'choose') this.painter.drawFlight(ctx, z, this.lightAt, w.w, dt);
@@ -931,9 +1036,11 @@ export class Renderer {
     if (this.trails) this.drawTrails(sim, view);
     this.painter.drawCorpses(ctx, col.corpses, z, this.lightAt, view);
     this.painter.drawBrood(ctx, col.brood, z, this.lightAt, view, TUNING.pupaTicks);
+    if (sim.critters.list.length) drawCritters(ctx, sim.critters.list, w, this.lightAt, view);
     this.painter.strongRim = this.propWas;
     this.painter.draw(ctx, ants, z, this.lightAt, view, selected);
     if (sim.flyers.length) this.painter.drawFlyers(ctx, sim.flyers, z, this.lightAt);
+    if (sim.eco.fallers.length) this.drawFallers(sim, view);
     if (this.closeUp) this.specks(sim, view, z);
     if (this.propWas) this.lampPool(view);
     this.unknown(sim, view);

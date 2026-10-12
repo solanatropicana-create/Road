@@ -2,7 +2,7 @@ import { World } from '../world/world';
 import { PACKED, PLUG } from '../world/physics';
 import { Rng } from '../util/rng';
 import { Noise } from '../util/noise';
-import { EMPTY, ROOT, CLAY, GRAVEL, SEED, REFUSE, FRUIT, HARDNESS, SOLID, LITTER, SAND, SOIL, HUMUS, HARD, LIME } from '../world/mat';
+import { EMPTY, ROOT, CLAY, GRAVEL, SEED, REFUSE, FRUIT, PREY, HARDNESS, SOLID, LITTER, SAND, SOIL, HUMUS, HARD, LIME } from '../world/mat';
 import type { ChamberKind } from './types';
 
 export interface Chamber {
@@ -258,7 +258,7 @@ export class Nest {
     if (!w.plan[i]) return false;
     const m = w.mat[i]!;
     if (w.sealed && m === SAND && w.tint[i]! & PLUG) return false;
-    if (m === SEED || m === FRUIT || m === REFUSE) return w.zone[i] === 0 && w.bg[i] === 1;
+    if (m === SEED || m === FRUIT || m === PREY || m === REFUSE) return w.zone[i] === 0 && w.bg[i] === 1;
     return HARDNESS[m]! > 0;
   }
 

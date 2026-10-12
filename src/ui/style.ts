@@ -46,6 +46,8 @@ export const CSS = `
 .eyebrow { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-faint); }
 .title { font-family: var(--mono); font-weight: 600; letter-spacing: 0.22em; font-size: 11px; color: var(--accent); }
 .species { font-family: var(--serif); font-style: italic; color: var(--ink-dim); font-size: 13px; margin-top: 2px; }
+.cname { font-family: var(--serif); color: var(--ink-faint); font-size: 12px; margin-top: 1px; }
+.cname:empty { display: none; }
 .brand { display: flex; align-items: center; gap: 7px; }
 .wordmark-s { font-family: var(--serif); font-weight: 600; font-size: 19px; letter-spacing: 0.01em; color: var(--ink); }
 .specimen { display: inline-block; margin-top: 6px; font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; color: var(--ink-faint); border: 1px solid var(--line); border-radius: 2px; padding: 1px 6px; }
@@ -183,6 +185,18 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
 #over { left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; padding: 22px 28px; display: none; width: max-content; max-width: min(440px, calc(100vw - 24px)); }
 #over h2 { margin: 6px 0 8px; font-weight: 500; }
+#season { position: fixed; left: 50%; top: 17%; transform: translateX(-50%); text-align: center; pointer-events: none; opacity: 0; z-index: 30; }
+#season.on { animation: seasonCard 4.2s ease forwards; }
+#season .s1 { font-family: var(--serif); font-size: clamp(34px, 6vw, 58px); letter-spacing: 0.14em; text-transform: uppercase; color: #f4ead7; text-shadow: 0 2px 18px rgba(0,0,0,0.55); }
+#season .s2 { font-family: var(--serif); font-style: italic; font-size: 15px; color: #e3d6bc; margin-top: 4px; text-shadow: 0 1px 10px rgba(0,0,0,0.6); }
+@keyframes seasonCard { 0% { opacity: 0; transform: translateX(-50%) translateY(6px); } 18% { opacity: 1; transform: translateX(-50%); } 78% { opacity: 1; } 100% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { #season.on { animation-duration: 3s; } }
+#review { left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 20px 26px; display: none; width: max-content; max-width: min(460px, calc(100vw - 24px)); z-index: 25; }
+#review h2 { margin: 4px 0 10px; font-weight: 500; font-family: var(--serif); }
+#review dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0 0 12px; font-size: 13px; }
+#review dt { color: var(--ink-faint); }
+#review dd { margin: 0; color: var(--ink); }
+#review p { color: var(--ink-dim); margin: 0 0 12px; line-height: 1.5; font-size: 13px; }
 #over p { color: var(--ink-dim); margin: 0 0 14px; line-height: 1.5; }
 
 /* --- the colony, read-only (watch mode) */

@@ -53,6 +53,8 @@ export class Calendar {
   tOffset = 0;
   /** How much hotter than a meadow the bare ground gets in sun (sand and rock heat up more). */
   heat = 1;
+  /** Shade over the nest from a tree's crown, 0..1 (cuts the sun's heating). */
+  shade = 0;
 
   constructor(climate: Climate) {
     this.climate = climate;
@@ -163,7 +165,7 @@ export class Calendar {
     const s = this.solar(dayT, doy);
     // Air: coolest just before dawn, warmest mid-afternoon.
     const air = mean + (3.5 + 3.5 * warm) * Math.sin((s - 0.33) * Math.PI * 2);
-    const sunHeat = (5 + 18 * warm) * this.heat * this.daylight(dayT, doy) * (1 - 0.75 * clamp(cloud, 0, 1));
+    const sunHeat = (5 + 18 * warm) * this.heat * this.daylight(dayT, doy) * (1 - 0.75 * clamp(cloud, 0, 1)) * (1 - this.shade);
     const t = air + sunHeat;
     // Snow holds the surface near freezing.
     return snow > 3 ? Math.min(t, 0) * 0.3 : t;

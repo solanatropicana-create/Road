@@ -3,7 +3,7 @@ import type { Brood, Corpse } from '../sim/brood';
 import type { World } from '../world/world';
 import { Carry, Task } from '../sim/types';
 import { SOLID } from '../world/mat';
-import { PAL, RGB, hex, mixRGB, sampleRamp, seedLook } from './palette';
+import { PAL, RGB, hex, mixRGB, sampleRamp, seedLook, preyColor, fruitColor } from './palette';
 
 /**
  * Ants are the subject of the shot, so unlike the soil they are drawn at the
@@ -110,6 +110,11 @@ const MALE: Body = {
 const bodyOf = (caste: string): Body => (caste === 'queen' || caste === 'gyne' ? QUEEN : caste === 'soldier' ? MAJOR : caste === 'male' ? MALE : WORKER);
 
 const BODY_COL = hex('#261a12');
+/**
+ * The neighbours' workers are the same species and look the same; a faint
+ * reddish cast lets the eye follow who is whose (a concession to the viewer).
+ */
+const RIVAL_COL = hex('#3c1d12');
 const SHEEN_COL = hex('#c09a78');
 const LEG_COL = hex('#30221a');
 const DEAD_COL = hex('#2c241f');
@@ -160,6 +165,8 @@ function addEllipse(path: Path2D, cx: number, cy: number, rx: number, ry: number
 
 interface Shapes {
   body: Path2D;
+  /** The body in the "C" posture: gaster curled forward under the waist. */
+  bodyC: Path2D;
   head: Path2D;
   sheen: Path2D;
   eye: Path2D;
@@ -188,6 +195,15 @@ function shapes(b: Body): Shapes {
   }
   addSmooth(body, THORAX_PTS, tx, ty, trx, tr_y, trot);
   addEllipse(sheen, tx + trx * 0.05, ty - tr_y * 0.58, trx * 0.55, tr_y * 0.14, trot);
+  // C posture: the gaster swings down and forward about the waist.
+  const bodyC = new Path2D();
+  const [px, py] = b.nodes[b.nodes.length - 1]!;
+  const a = -1.35;
+  const rx = gx - px;
+  const ry = gy - py;
+  addSmooth(bodyC, GASTER_PTS, px + rx * Math.cos(a) - ry * Math.sin(a), py + rx * Math.sin(a) + ry * Math.cos(a), grx, gry, grot + a);
+  for (const [nx, ny, nr] of b.nodes) addSmooth(bodyC, NODE_PTS, nx, ny, nr, nr * 1.15, 0);
+  addSmooth(bodyC, THORAX_PTS, tx, ty, trx, tr_y, trot);
   const head = new Path2D();
   addSmooth(head, HEAD_PTS, hx, hy, hrx, hry, 0.12);
   addEllipse(sheen, hx + hrx * 0.05, hy - hry * 0.58, hrx * 0.55, hry * 0.14, 0.12);
@@ -212,7 +228,7 @@ function shapes(b: Body): Shapes {
   addEllipse(shadow, 0, 0.05, 2.8 * (b === QUEEN ? 1.5 : 1), 0.3, 0);
   const wallShadow = new Path2D();
   addEllipse(wallShadow, tx - 0.4, ty + 0.55, 3.2 * (b === QUEEN ? 1.6 : 1), 1.0, 0);
-  S = { body, head, sheen, eye, jaw, beard, wings, shadow, wallShadow };
+  S = { body, bodyC, head, sheen, eye, jaw, beard, wings, shadow, wallShadow };
   SHAPES.set(b, S);
   return S;
 }
@@ -346,7 +362,7 @@ export class AntPainter {
       const wall = this.world.bg[a.y * this.world.w + a.x] === 1;
       // Standing about for a while: groom, drawing a foreleg over the antennae.
       this.groom = v.still > 1.5 && a.carry === Carry.None && a.meet === 0 ? Math.sin(this.time * 7 + a.id) : null;
-      this.meeting = a.meet > 0;
+      this.meeting = a.meet > 0 || a.fight > 0;
       this.airborne = a.caste === 'queen' && a.wings && Math.hypot(a.x + 0.5 - v.x, a.y + 0.5 - v.y) > 1.5;
       this.ant(ctx, a, body, v.gait, l, z, busy, false, wall);
       this.airborne = false;
@@ -404,16 +420,20 @@ export class AntPainter {
         ctx.stroke(S.wings);
       }
     }
-    // In the nest a black ant sits on dark soil: the proposal gives it a stronger rim there.
+    // In the nest a black ant sits on dark soil: a stronger rim there keeps it off the wall.
     const strong = this.strongRim && wall;
     const rim = full && !dead ? css(SHEEN_COL, l, strong ? 0.5 : 0.3) : '';
-    ctx.fillStyle = css(dead ? DEAD_COL : BODY_COL, l);
-    ctx.fill(S.body);
+    // Curled into a "C" against a fly: body raised on the legs, gaster tucked under.
+    const curled = !!a && a.cpose > 0;
+    if (curled) ctx.translate(0, -0.9);
+    const bodyPath = curled ? S.bodyC : S.body;
+    ctx.fillStyle = css(dead ? DEAD_COL : a && a.rival ? RIVAL_COL : BODY_COL, l);
+    ctx.fill(bodyPath);
     if (rim) {
       // Rim light: one screen pixel of warm edge so overlapping ants stay separate.
       ctx.strokeStyle = rim;
       ctx.lineWidth = strong ? px * 1.5 : px;
-      ctx.stroke(S.body);
+      ctx.stroke(bodyPath);
     }
     if (busy) ctx.translate(busy, 0);
     ctx.fillStyle = css(dead ? DEAD_COL : b.headCol, l);
@@ -432,11 +452,12 @@ export class AntPainter {
       }
     }
     if (busy) ctx.translate(-busy, 0);
-    if (full) {
+    if (full && !curled) {
       // A specular streak near the top edge of each segment, as on a glossy cuticle under a lamp.
       ctx.fillStyle = css(SHEEN_COL, l, dead ? 0.12 : strong ? 0.62 : 0.45);
       ctx.fill(S.sheen);
     }
+    if (curled) ctx.translate(0, 0.9);
     if (mid) {
       this.legs(ctx, b, gait, legCol, l, px, dead);
       this.antenna(ctx, b, busy, legCol, l, px, a ? a.id : 0, dead);
@@ -613,7 +634,11 @@ export class AntPainter {
         blob(0.55, 0.48, mixRGB(sampleRamp(PAL.loam, a.carryTone / 255), [230, 215, 190], 0.14), 0.4);
         break;
       case Carry.Fruit:
-        blob(0.8, 0.75, sampleRamp(PAL.fruit, 0.8));
+        blob(0.8, 0.75, fruitColor(a.carryTone));
+        break;
+      case Carry.Prey:
+        // A leg or a piece of wing case.
+        blob(1.0, 0.45, preyColor(a.carryTone), 0.5);
         break;
       case Carry.Egg:
         blob(0.4, 0.3, [240, 234, 216]);
@@ -713,6 +738,15 @@ export class AntPainter {
       ctx.translate(c.x + 0.5, c.y + 1 - 2.2);
       ctx.scale(((c.x + c.y) & 1) === 0 ? 1 : -1, -1);
       this.ant(ctx, null, WORKER, 0, l, z, 0, true);
+      if (c.kind === 'fungus') {
+        // Mould bursting from the joints: white tufts of a muscardine fungus.
+        ctx.fillStyle = css([236, 234, 222], l, 0.9);
+        for (const [mx, my, mr] of [[-0.6, -1.3, 0.55], [-1.2, -1.2, 0.5], [0.3, -1.3, 0.5], [1.6, -1.4, 0.45], [-2.4, -1.5, 0.6], [-3.0, -1.0, 0.4], [2.3, -1.6, 0.35]] as const) {
+          ctx.beginPath();
+          ctx.arc(mx, my, mr, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
       ctx.restore();
     }
   }
