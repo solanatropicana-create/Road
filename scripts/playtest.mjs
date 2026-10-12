@@ -5,7 +5,7 @@
  *   import { openGame } from '/home/user/Road/scripts/playtest.mjs';
  *   const g = await openGame({ dir: '/tmp/my-run', seed: 12 });
  *   await g.shot('landing');            // -> /tmp/my-run/landing.png (Read it to see it)
- *   await g.land();                     // "Let her choose"; or g.land(250) to land at x = 250 mm
+ *   await g.land();                     // the queen lands where she chooses; g.land(250) forces x = 250 mm
  *   await g.skip(10);                   // fast-forward 10 in-game minutes (instant-ish)
  *   console.log(await g.state());       // colony numbers, chambers, journal
  *   await g.close();
@@ -158,20 +158,28 @@ s.save(out)`;
     toasts: () => page.$$eval('#toasts .toast', (ts) => ts.map((t) => t.textContent)),
 
     /** Land the queen: no argument = "Let her choose"; a number = world x in mm (0..640). */
-    async land(x) {
+    /**
+     * Start the colony: pick the mode on the title screen; the queen comes
+     * down at a spot of her own choosing (pass x to force one, for tests).
+     * `watch` keeps the landing sequence playing; otherwise it is skipped.
+     */
+    async land(x, { watch = false } = {}) {
+      if (x !== undefined) await page.evaluate((x) => { const s = window.game.sim; s.canFound = (c) => Math.abs(c - x) < 2; }, x);
       if (await page.isVisible('#title')) await page.click(`#title [data-mode="${mode}"]`);
-      if (x === undefined) {
-        await page.click('#anywhere');
+      if (!watch) {
+        await page.waitForTimeout(200);
+        await page.evaluate(() => window.game.cine.skip());
       } else {
-        const gy = await page.evaluate((x) => window.game.sim.world.ground[Math.round(x)], x);
-        const p = await toScreen(x, gy);
-        await page.mouse.move(p.x, p.y);
-        await page.waitForTimeout(300);
-        await page.mouse.click(p.x, p.y);
+        await page.waitForFunction(() => window.game.sim.phase !== 'choose', null, { timeout: 20000 });
       }
       await page.waitForTimeout(400);
       const phase = await page.evaluate(() => window.game.sim.phase);
-      if (phase === 'choose') throw new Error('land(): the click did not land the queen (something covered that spot?)');
+      if (phase === 'choose') throw new Error('land(): the queen did not land');
+    },
+
+    /** Skip the founding montage (or the landing) if one is running. */
+    async skipCine() {
+      await page.evaluate(() => window.game.cine.skip());
     },
 
     /** Speed: 1..5 = 1x, 2x, 4x, 8x, 16x (same as pressing the number keys). */

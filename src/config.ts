@@ -23,19 +23,20 @@ export const TUNING = {
   carryingSlowdown: 0.85,
 
   // --- brood development, in development-ticks: one in-game day is one week,
-  // and brood only develops at full speed in the warmth (see devRate). Messor:
-  // egg ~3.5 weeks, larva ~3, pupa ~3 (8–12 weeks egg to worker at 22–27 °C).
-  eggTicks: DAY_TICKS * 3.5,
-  larvaTicks: DAY_TICKS * 2.8,
-  pupaTicks: DAY_TICKS * 3.0,
-  larvaFeedings: 3,
+  // and brood only develops at full speed in the warmth (see devRate). Messor
+  // takes 8–12 weeks egg to worker at 22–27 °C; the game runs at the quick end
+  // of that, and a little quicker, so a colony grows while you watch.
+  eggTicks: DAY_TICKS * 2.6,
+  larvaTicks: DAY_TICKS * 2.2,
+  pupaTicks: DAY_TICKS * 2.4,
+  larvaFeedings: 2,
   /** Eggs a week from a founding queen, and extra per adult worker (at full warmth, normal breeding). */
-  eggsBase: 8,
-  eggsPerWorker: 0.55,
+  eggsBase: 12,
+  eggsPerWorker: 0.9,
   /** Workers a colony needs before it raises winged queens and males (from mid-July). */
   alateMinWorkers: 100,
   /** Brood the colony will raise per worker (caps queen output; growing colonies carry more brood than workers). */
-  broodPerWorker: 2.0,
+  broodPerWorker: 3.0,
 
   // --- lifespans, in weeks of active life (ageing slows in the cold): workers live one to two years
   workerLife: [DAY_TICKS * 50, DAY_TICKS * 95] as const,

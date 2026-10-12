@@ -68,6 +68,15 @@ export class Camera {
     this.ty = (this.by0 + this.by1) / 2;
   }
 
+  /** Frame a part of the world (the known part, say): it fits on screen, with a little room around it. */
+  fitRect(x0: number, y0: number, x1: number, y1: number): void {
+    const z = Math.min(this.screenW / ((x1 - x0) * 1.12), this.screenH / ((y1 - y0) * 1.12));
+    this.tzoom = clamp(z, this.minZoom, this.maxZoom);
+    this.tx = (x0 + x1) / 2;
+    this.ty = (y0 + y1) / 2;
+    this.follow = null;
+  }
+
   toWorld(sx: number, sy: number): { x: number; y: number } {
     return { x: (sx - this.screenW / 2) / this.zoom + this.x, y: (sy - this.screenH / 2) / this.zoom + this.y };
   }

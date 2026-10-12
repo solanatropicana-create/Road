@@ -19,6 +19,7 @@ import { SITES, SiteId, Variant, siteForSeed } from '../world/sites';
 import { Ecology } from './ecology';
 import { Critters } from './critters';
 import { Neighbour } from './rivals';
+import { Fog } from './fog';
 
 /** An event for the player; `key` names a message in the UI's string table. */
 export interface SimEvent {
@@ -104,8 +105,8 @@ export class Sim {
   readonly yearCount = { wars: 0, raids: 0, peak: 0 };
   /** The queen's name (from the site's own region) and the colony's (from the place it chose). */
   names = { queen: '', colony: '' };
-  /** The neighbouring Messor colony beyond one edge, if any. */
-  readonly neighbour: Neighbour | null;
+  /** Other Messor colonies: an old one beyond an edge (most maps), a young one on our slice (sometimes). */
+  readonly neighbours: Neighbour[] = [];
   /** Other young queens that came down after the same flight, and how many landed. */
   readonly foreigners: Ant[] = [];
   foreignLanded = 0;
@@ -116,6 +117,8 @@ export class Sim {
    */
   readonly view = { x0: 0, x1: 0, y1: 0 };
   private viewGoal = { x0: 0, x1: 0, y1: 0 };
+  /** What the colony has seen of its world (the rest is in the dark). */
+  readonly fog: Fog;
   /** What the diggers have run into so far (each is told once). */
   private discovered: Record<string, boolean> = {};
   /** Year the last batch of buried seeds was reported. */
@@ -163,7 +166,9 @@ export class Sim {
     this.variant = gen.variant;
     this.tree = gen.tree;
     this.eco = new Ecology(gen.shrub, gen.tree);
-    this.neighbour = gen.variant.neighbour ? new Neighbour(gen.variant.neighbourSide, gen.variant.neighbour) : null;
+    this.fog = new Fog(this.world.w, this.world.h);
+    // (When its foragers reach us is set when we land.)
+    if (gen.variant.neighbour) this.neighbours.push(new Neighbour(gen.variant.neighbourSide, gen.variant.neighbour, 1e9));
     for (const p of gen.pits) this.critters.addAntlion(p.x, p.y, p.r);
     this.cal = new Calendar(SITES[site].climate);
     this.cal.tOffset = gen.variant.exposure * 1.5;
@@ -280,8 +285,10 @@ export class Sim {
     q.orient(this, 1, 0);
     this.colony.queen = q;
     this.cal.originDay = this.simDays;
-    // The colony's world starts as a hand's breadth around the burrow.
-    Object.assign(this.viewGoal, { x0: Math.max(0, x - 260), x1: Math.min(w.w, x + 260), y1: Math.min(w.h, w.ground[x]! + 200) });
+    // The colony's world starts as a hand's breadth around the queen.
+    this.fog.reveal(x, w.ground[x]! - 4, 46, true);
+    Object.assign(this.view, { x0: Math.max(0, x - 80), x1: Math.min(w.w, x + 80), y1: w.ground[x]! + 50 });
+    Object.assign(this.viewGoal, this.view);
     this.colony.middenSide = this.rng.chance(0.5) ? -1 : 1;
     this.nest.found(x);
     // Plants the crater cut through go entirely: a stem severed at the base would
@@ -315,6 +322,9 @@ export class Sim {
       this.foreigners.push(fq);
     }
     this.foreignLanded = this.foreigners.length;
+    // The old neighbours' foragers find our corner of the meadow some weeks on: this summer, or next spring.
+    const week = this.simDays;
+    for (const nb of this.neighbours) if (!nb.young) nb.arriveWeek = week + (this.rng.chance(0.75) ? this.rng.range(14, 30) : this.rng.range(48, 58));
     if (this.foreignLanded) this.events.push({ key: 'otherQueens', n: this.foreignLanded, x: this.foreigners[0]!.x, y: this.foreigners[0]!.y });
   }
 
@@ -378,13 +388,15 @@ export class Sim {
           this.noteOnce('foundressKilled', q);
           continue;
         }
-        const rival = this.neighbour?.ants.find((a) => Math.abs(a.x - q.x) <= 3 && w.bg[a.y * w.w + a.x] === 0);
+        const rival = this.neighbours.some((nb) => nb.ants.some((a) => Math.abs(a.x - q.x) <= 3 && w.bg[a.y * w.w + a.x] === 0));
         if (rival && rng.chance(0.25)) {
           q.alive = false;
           this.noteOnce('foundressKilledByRivals', q);
           continue;
         }
-        if (!this.dormant && rng.chance(0.0012)) q.alive = false;
+        // Most starve or sicken in their cells; a lucky one raises her first daughters.
+        if (!this.dormant && rng.chance(0.0006)) q.alive = false;
+        else if (!this.dormant && q.age > DAY_TICKS * 7.5 && !this.neighbours.some((nb) => nb.young)) this.youngColony(q);
       }
     }
     if (this.foreigners.some((q) => !q.alive)) {
@@ -392,6 +404,33 @@ export class Sim {
       this.foreigners.length = 0;
       this.foreigners.push(...left);
     }
+  }
+
+  /**
+   * A foundress made it: her first workers chew through the plug and a young
+   * colony starts on our slice. It is not announced; we find it when one of
+   * ours meets one of its workers or comes upon its door.
+   */
+  private youngColony(q: Ant): void {
+    const w = this.world;
+    const nb = new Neighbour(0, this.rng.int(3, 6), this.simDays);
+    nb.homeX = q.x;
+    nb.queen = q;
+    nb.reach = 40;
+    this.neighbours.push(nb);
+    const i = this.foreigners.indexOf(q);
+    if (i >= 0) this.foreigners.splice(i, 1);
+    const top = w.ground[q.x]! * w.w + q.x;
+    for (const c of [top, top + 1]) {
+      if (w.mat[c] !== SAND || !(w.tint[c]! & PLUG)) continue;
+      w.set(c, EMPTY, w.tone[c], w.bg[c] ? w.tint[c]! & 0x3f : 0);
+    }
+  }
+
+  /** The neighbours raiding us or fighting us right now, if any. */
+  trouble(): Neighbour | null {
+    for (const nb of this.neighbours) if (nb.war > 0 || nb.raid > 0) return nb;
+    return null;
   }
 
   // ---------------------------------------------------------------- effects
@@ -665,10 +704,8 @@ export class Sim {
   step(): void {
     this.tick++;
     if (this.tick % 15 === 0) this.climate();
-    if (this.tick % 30 === 0) {
-      this.updateView();
-      if (this.colony.adults > this.yearCount.peak) this.yearCount.peak = this.colony.adults;
-    }
+    if (this.tick % 10 === 0) this.updateView();
+    if (this.tick % 30 === 0 && this.colony.adults > this.yearCount.peak) this.yearCount.peak = this.colony.adults;
     if (this.tick % 300 === 150 && this.nest.founded) this.discoveries();
     if (this.site === 'sand' && this.tick % 20 === 0) this.drySand();
     // Plants grow and ripen in their season; the year turns for the meadow, shrub and tree.
@@ -682,7 +719,12 @@ export class Sim {
       this.plants.season(doy, air);
       this.eco.season(this);
       this.critters.season(this);
-      this.neighbour?.season(this);
+      for (const nb of this.neighbours) nb.season(this);
+      if (this.neighbours.some((nb) => nb.dead)) {
+        const left = this.neighbours.filter((nb) => !nb.dead);
+        this.neighbours.length = 0;
+        this.neighbours.push(...left);
+      }
       if (this.site === 'vineyard') this.eco.grapes(this);
       // The meadow's year, as the colony lives it.
       if (doy >= 150 && doy < 165) this.noteYearly('harvest');
@@ -698,7 +740,7 @@ export class Sim {
       const f = this.fields.nextDue(this.tick);
       if (f >= 0) this.buildField(f);
       if (this.tick % (TICK_HZ * 3) === 0 && this.colony.hadWorkers) this.growNest();
-      this.neighbour?.step(this);
+      for (const nb of this.neighbours) nb.step(this);
       if (this.foreigners.length) this.foundresses();
     }
     if ((this.tick & 3) === 0) this.decayPheromone();
@@ -999,7 +1041,8 @@ export class Sim {
       // The first winter: what became of the other queens of the spring.
       if (dormant && this.foreignLanded && !this.noted.foundressSummary) {
         this.noted.foundressSummary = -1;
-        this.events.push({ key: this.foreigners.length ? 'foundressSummary' : 'foundressNone', n: this.foreignLanded, m: this.foreigners.length });
+        const left = this.foreigners.length + this.neighbours.filter((nb) => nb.young).length;
+        this.events.push({ key: left ? 'foundressSummary' : 'foundressNone', n: this.foreignLanded, m: left });
       }
       if (this.colony.hadWorkers) {
         if (dormant) this.sealAt = this.tick + TICK_HZ * 20;
@@ -1062,31 +1105,29 @@ export class Sim {
    * ants have been, a little beyond. It never shrinks; it eases outward.
    */
   private updateView(): void {
+    if (!this.nest.founded) return;
     const w = this.world;
-    const g = this.viewGoal;
-    if (this.nest.founded && this.tick % 300 === 0) {
-      let x0 = Infinity;
-      let x1 = -Infinity;
-      let y1 = 0;
-      for (const i of this.nest.planCells) {
-        const x = i % w.w;
-        const y = (i / w.w) | 0;
-        if (x < x0) x0 = x;
-        if (x > x1) x1 = x;
-        if (y > y1) y1 = y;
-      }
-      for (const a of this.colony.ants) {
-        if (a.x < x0) x0 = a.x;
-        if (a.x > x1) x1 = a.x;
-        if (a.y > y1) y1 = a.y;
-      }
-      // Grow toward what the colony uses, but only so fast.
-      if (x0 - 140 < g.x0) g.x0 = Math.max(0, x0 - 140, g.x0 - 120);
-      if (x1 + 140 > g.x1) g.x1 = Math.min(w.w, x1 + 140, g.x1 + 120);
-      if (y1 + 110 > g.y1) g.y1 = Math.min(w.h, y1 + 110, g.y1 + 80);
+    const fog = this.fog;
+    // Ants learn the world around them: a few centimetres out on the meadow,
+    // less underground, where they know the soil around their tunnels.
+    const see = (a: Ant, r: number): void => {
+      const under = w.bg[a.y * w.w + a.x] === 1 && a.y > w.ground[a.x]! + 2;
+      fog.reveal(a.x, a.y, under ? r * 0.45 : r, !under);
+    };
+    if (this.tick % 10 === 0) {
+      fog.look();
+      for (const a of this.colony.ants) if (!a.away) see(a, 38);
+      const q = this.colony.queen;
+      if (q?.alive) see(q, 40);
     }
+    // The view (and the camera's "whole colony" framing) follows what is known.
+    const b = fog.box;
+    const g = this.viewGoal;
+    g.x0 = Math.max(0, b.x0 - 30);
+    g.x1 = Math.min(w.w, b.x1 + 30);
+    g.y1 = Math.min(w.h, b.y1 + 30);
     const v = this.view;
-    const k = this.nest.founded ? 0.06 : 1;
+    const k = 0.08;
     v.x0 += (g.x0 - v.x0) * k;
     v.x1 += (g.x1 - v.x1) * k;
     v.y1 += (g.y1 - v.y1) * k;

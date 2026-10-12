@@ -201,6 +201,9 @@ Ayrıca:
 **Yavru**
 
 - Yumurta, larva ve pupa evreleri var. Larvalar beslenmeli; beslenmeyen ölür.
+- Tam sıcaklıkta yumurtadan işçiye yaklaşık 7 hafta (yumurta 2,6, larva 2,2, pupa 2,4). Gerçek *Messor* 22–27 °C'de 8–12 hafta sürüyor; oyun izlenirken koloni büyüsün diye aralığın hızlı ucunun biraz altında. Kraliçe haftada 12 yumurtaya ek olarak işçi başına 0,9 yumurta bırakıyor; koloni işçi başına 3 yavruya kadar besliyor. Bir larva iki öğünde (tohum ezmesi) büyüyor; böcek parçası çift öğün sayılıyor.
+- Kıtlıkta önce işçiler yiyor: depo işçilere yetmeyecek kadar azalınca bakıcılar larvaya tohum taşımıyor, kraliçe de yumurtaları ve larvaları hesaba katıp yumurtlamayı kesiyor. Ağustos ortasından sonra ancak kışa yetecek tohum varsa yumurtluyor.
+- Genç koloninin ilk odaları küçük (gerçek yuva kalıplarında da öyle) ve ilk proje kreş: yumurta yığını büyüyünce kraliçenin odası dolmasın diye. Tohum o arada kraliçe odasında tutuluyor.
 - Bakıcılar yavruyu kreşe taşıyor.
 - Su basan kreşte yavru boğuluyor.
 
@@ -254,7 +257,9 @@ Ayrıca:
 
 - Altı gerçek saha: Pannonya lösü (çernozyom), kumlu bozkır, kireçtaşı tepe (rendzina), bağ kenarı, Orta Anadolu (kireç katmanlı kastanozem), Karadeniz kuzeyi tüylü ot bozkırı. Her birinin iklimi, toprak profili, bitki karışımı ve kazıcı hayvanı ayrı.
 - Aynı sahanın her haritası farklı: üst toprak kalınlığı, bakı (güney yamaç sıcak, kuzey serin), tohum bankası zenginliği, kil merceği, yassı taşlar, eski yuvalar, ağaç, çalı, dipte taban suyu, çömlek kırıkları, kemikler, ağustos böceği perileri. Saha kartında artı ve eksi olarak görünüyor.
-- Dünya 128 × 72 cm; görünen alan yuva ve toplayıcıların menziliyle birlikte büyüyor.
+- Dünya 128 × 72 cm. Başta yalnızca kraliçenin çevresi biliniyor; gerisi sis. Sis karıncaların gittiği yerde açılıyor (yüzeyde birkaç santim, yer altında yalnızca tünelin çevresi) ve açılan yer açık kalıyor. Yabancılar (komşu işçileri) ise yalnızca bizim bir karıncamız yakınındayken görünüyor.
+- Başlangıç yeri seçilmiyor: evlilik uçuşu sinematiğinde kraliçe her seferinde rastgele bir yere iniyor. Kendini yuvaya kapattıktan sonra ilk işçilere kadar geçen haftalar hızlandırılmış bir montajla (yumurta, larva, pupa, ilk işçiler) geçiyor; Boşluk ya da Esc ile atlanabiliyor.
+- Fareyle karıncanın üzerine gelince kim olduğu ve ne yaptığı görünüyor. Sol altta, RimWorld'deki gibi, imlecin altındaki kare sürekli yazıyor: malzeme, derinlik, nem, sıcaklık, oda ya da tünel, üzerindeki bitki ya da hayvan; sisli yerde "Keşfedilmemiş".
 
 **Yüzey ekolojisi**
 
@@ -276,6 +281,9 @@ Ayrıca:
 **Komşular ve kuruluş kaybı**
 
 - Haritaların çoğunda kenarın ötesinde daha yaşlı bir komşu koloni var; yalnızca toplayıcıları kesite giriyor ve aynı tohumlar için yarışıyor (komşunun rengi okunabilirlik için hafif kızıl).
+- Komşu baştan gelmiyor: toplayıcıları kuruluştan haftalar sonra (çoğunlukla ilk yaz ya da sonbahar, bazen ertesi bahar) kesite uzanıyor ve menzilleri haftadan haftaya genişliyor. Bizim bir karıncamız onlardan birini ilk gördüğünde "yabancı" olayı düşüyor: kamera oraya kesiyor, olay yerinde bir halka beliriyor. Savaş ve yağma ancak tanıştıktan sonra mümkün.
+- Aynı uçuştan bir kraliçe kapalı haftalarını atlatırsa ilk kızları kapıyı açıyor ve kesitte ikinci, genç bir koloni kuruluyor (yaklaşık her iki-üç oyunda bir). Duyurulmuyor; toplayıcılarımız işçilerinden birine ya da kapısına rastlayınca keşfediliyor. Kapısının yanına toprak atıyor, yavaş büyüyor; bizim koloni çok güçlenirse toplayıcılarımız yuvasını basıp kraliçesini öldürebiliyor.
+- Komşuların kesitimizden götürebileceği tohum haftalık bir bütçeyle sınırlı: genç koloni işçi sayısıyla orantılı topluyor, yaşlı komşunun hasadının ise ancak küçük bir kısmı bizim taraftan geliyor. (Bütçe olmadan kapının dibindeki genç koloni beş işçiyle haftada 50 tohum çekip bizimkini aç bırakıyordu.)
 - Karşılaşmalar çoğunlukla ritüel boks: ön bacaklarla itişip biri geri çekiliyor. Yağmurdan sonraki ılık, nemli günlerde nadiren savaş çıkıyor; savaşın kokusu forid sinekleri çekiyor (Delgado, Disney & Palma 2020).
 - Çok güçlü bir komşu zayıf koloninin ambarını yağmalayabiliyor; majörler depoya iniyor.
 - Aynı uçuştan 2–4 genç kraliçe daha kesite iniyor. Kuşlar, komşunun işçileri ve (ilk işçilerden sonra) bizim toplayıcılar onları bulup öldürüyor; ilk kışta saha defteri kaçının hayatta kaldığını söylüyor.
@@ -289,7 +297,7 @@ Ayrıca:
 **Performans**
 
 - 300 karıncalık kolonide simülasyon adımı yaklaşık 0,45 ms (16× hızda bir çekirdeğin ~%20'si). Zamanın çoğu mesafe alanlarına ve kum fiziğine gidiyor.
-- Altı sahada 8 haritalık bir yıllık testte (60 hafta) bütün koloniler kışı geçti; ikinci yılın Haziranında 30–85 işçi, 180–510 tohum stok.
+- Altı sahada 8 haritalık bir yıllık testte (60 hafta) bütün koloniler kışı açlık ölümü olmadan geçti: ilk yıl sonunda 24–84 işçi, ikinci yılın Haziranında 52–196 işçi ve çıkmak üzere 68–206 yavru, depoda 110–480 tohum (önceki dengede 33–85 işçi). Komşu kayıpları yılda 0–27 işçi.
 - Görüntüsüz test aracı var: `npm run headless` ve `scripts/batch.sh`.
 
 ## 6. Formicarium'dan aldıklarımız ve geçtiğimiz yerler
@@ -381,6 +389,11 @@ Aşağıdakiler benim önerilerim. Senin "benle konuşmadan tasarımı komple ya
 - Yağmur suyu kök ve solucan yollarından iniyor ama sağlam toprakta yine sığ kalıyor; tavan çökmeleri hâlâ nadir. Sel asıl olarak yuva ağzından giriyor.
 - **Majörler tohum kırmıyor.** Gerçek *Messor*'da majörler tohumu kırıp "karınca ekmeği" yaparlar. Şu an tüketim soyut: tohum ambardan eksiliyor, kabuk kalıyor. Görünür bir "değirmen" davranışı yiyecek akışını değiştireceği için ayrı ele alınmalı.
 - **Ambarlar küçük kalıyor.** Kraliçe fazla yiyeceği hemen yavruya çeviriyor. Bu bilinçli: oyuncu üremeyi Düşük'e alınca ambar doluyor. Yani büyüme mi, stok mu kararı oyuncuda.
+- **Bu turda düzeltilen gizli kilitlenmeler** (büyümeyi sessizce kısıyorlardı):
+  - Üst üste konan yavru: taşıyan karınca ölünce yavru başka bir yavrunun üstüne bırakılıyordu. Alttaki larva görünmez kalıp hiç beslenmiyordu, bütün bakıcılar da elinde tohumla o hücrede bekliyordu. Artık yavru yanındaki boş zemine kayıyor; teslim edemeyen bakıcı yiyeceği ortak stoğa veriyor.
+  - Yüklü boştaki karınca: komşuyla boks maçını kaybeden işçi elindeki toprakla "boşta"ya düşüyor ve sonsuza dek kilitleniyordu (bir haritada 32 işçinin 28'i). Artık yükü olan karınca önce o işi bitiriyor.
+  - Görünmeyen toprak: kesit dışına giden kazı toprağı yine de 5–6 cm taşınıyordu. Artık ağzın hemen yanına bırakılıyor; kazı hızı yaklaşık 1,6 kat arttı.
+  - Ambarsız toplama freni: ambar yokken koloni toplayıcıları 0,3 ile çarpıyordu; tohum kraliçe odasındaki ortak stoğa gidebildiği için artık yalnızca bütün ambarlar doluyken fren yapıyor.
 - Ses yok.
 - Klavye dışında erişilebilirlik ayarı yok.
 

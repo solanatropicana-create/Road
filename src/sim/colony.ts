@@ -179,6 +179,11 @@ export class Colony {
     return b.fed < req && b.age >= (b.fed / req) * TUNING.larvaTicks * 0.7;
   }
 
+  /** Seed to spare for the larvae: the workers eat first when stores run low. */
+  get foodForBrood(): boolean {
+    return this.stored + this.reserve > this.adults * 0.6 + 2;
+  }
+
   feedLarvaNear(x: number, y: number, meals = 1): boolean {
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
@@ -210,6 +215,16 @@ export class Colony {
     for (const b of this.brood) {
       b.age += rate;
       if (!b.carried) {
+        // Set down on top of another (its carrier died, a lost load): it would
+        // lie hidden under that one, never fed. Move it alongside.
+        const at = b.y * this.w + b.x;
+        if (this.broodCell[at] !== b.id) {
+          if (this.broodCell[at] === 0) this.broodCell[at] = b.id;
+          else {
+            const spot = this.freeFloorNear(sim, b.x, b.y, 6);
+            if (spot >= 0) this.placeBrood(b, spot % this.w, (spot / this.w) | 0);
+          }
+        }
         const m = world.mat[b.y * this.w + b.x]!;
         // Grains that slid onto it (seed, chaff, loose soil): the nurses pull it out at once.
         if (POWDER[m]) {
@@ -327,12 +342,21 @@ export class Colony {
     const perWeek = (TUNING.eggsBase + adults * TUNING.eggsPerWorker) * breedMult;
     this.eggTimer = Math.round((DAY_TICKS / perWeek) * foodFactor * sim.rng.range(0.8, 1.2));
     if (this.brood.length >= cap) return;
-    // From late August a big, well-fed colony raises winged young queens and males.
     const doy = sim.doy;
+    // From late August a big, well-fed colony raises winged young queens and males.
     const sexual = doy > 200 && doy < 275 && adults >= TUNING.alateMinWorkers && food >= adults && sim.rng.chance(0.3);
-    // Don't lay into a famine: the larvae already hatched need feeding first.
-    const larvae = this.brood.filter((b) => b.stage === 1).length;
-    if (adults > 0 && this.stored + this.reserve * 0.5 < larvae * 1.5 + 3) return;
+    // Don't lay into a famine: the larvae already hatched (and the eggs about
+    // to hatch) need feeding first, and the workers must eat too.
+    let larvae = 0;
+    let eggs = 0;
+    for (const b of this.brood) {
+      if (b.stage === 1) larvae++;
+      else if (b.stage === 0) eggs++;
+    }
+    if (adults > 0 && this.stored + this.reserve * 0.5 < (larvae + eggs * 0.7) * 1.5 + adults * 0.4 + 3) return;
+    // From August the stores must also see the colony, and the brood that will
+    // hatch into it, through the winter.
+    if (adults > 0 && doy > 212 && this.stored + this.reserve < (adults + larvae + eggs) * 4) return;
     if (adults === 0 && this.born === 0 && this.brood.length >= 8) return;
     const spot = this.freeFloorNear(sim, q.x, q.y, 6);
     if (spot < 0) return;
@@ -469,8 +493,10 @@ export class Colony {
       need[Task.Dig] = need[Task.Dig]! * 0.05;
     } else if (this.nestTemp < 8) need[Task.Dig] = need[Task.Dig]! * 0.3;
     if (this.starving || food < adults * 0.3) need[Task.Dig] = need[Task.Dig]! * 0.35;
-    // Nowhere left to put seed: fewer foragers, more diggers (the granary needs finishing).
-    if (f[F.Gran] === 0 && this.adults > 4) {
+    // Every granary full: fewer foragers, more diggers (the next one needs finishing).
+    // (With no granary yet, seed goes into the shared crops by the queen.)
+    const granaries = nest.chambers.some((c) => c.kind === 'granary' && c.ready);
+    if (granaries && f[F.Gran] === 0 && this.adults > 4) {
       need[Task.Forage] = need[Task.Forage]! * 0.3;
       if (nest.frontier.length > 0) need[Task.Dig] = need[Task.Dig]! + 0.6;
     }

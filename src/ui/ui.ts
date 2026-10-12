@@ -11,7 +11,8 @@ import { metabolism } from '../sim/calendar';
 import type { Sim } from '../sim/sim';
 import { ICON, LOGO_ANT } from './icons';
 import { SITES, SITE_IDS } from '../world/sites';
-import { TWIG, BERRY, FLOWER, SEEDHEAD, FRUIT, PREY, STONE, LITTER, SEED } from '../world/mat';
+import { TWIG, BERRY, FLOWER, SEEDHEAD, FRUIT, PREY, STONE, LITTER, SEED, EMPTY, SAND } from '../world/mat';
+import { PACKED, PLUG } from '../world/physics';
 
 export type Mode = 'watch' | 'guide';
 const MODE_KEY = 'underfoot.mode';
@@ -72,6 +73,17 @@ const depthCm = (c: Chamber, ground: Int16Array): string => num((c.floorY - grou
  * The HUD and the colony brain. Mode B: the player never commands an ant.
  * They set what the colony cares about and where it should grow.
  */
+/** The name key of a cell's material (loose spoil, a plug, a find told apart by their marks). */
+function matKey(m: number, tint: number): string {
+  if (m === SAND) return tint & PLUG ? 'plug' : tint & PACKED ? 'packed' : 'spoil';
+  return MAT_KEYS[m] ?? 'soil';
+}
+
+/** Hover-card things that are the cell itself (not an animal or plant on it). */
+const CELL_THINGS = new Set(['fruit', 'nymph', 'deadBeetle', 'deadHopper', 'deadWorm', 'shard', 'bone', 'leaf']);
+
+const MAT_KEYS = ['air', 'humus', 'loam', 'clay', 'subsoil', 'gravel', 'stone', 'root', 'spoil', 'water', 'stem', 'leaf', 'flower', 'seedhead', 'seed', 'refuse', 'litter', 'fruit', 'bedrock', 'sandy', 'lime', 'rock', 'wood', 'twig', 'berry', 'prey'];
+
 export class UI {
   /** Panels hidden for a clean frame (H); the documentary caption stays. */
   cinema = false;
@@ -340,7 +352,7 @@ export class UI {
     zfit.onclick = () => {
       manual();
       this.game.selected = null;
-      this.game.cam.fit();
+      this.game.fitKnown();
     };
     zoom.append(zout, zin, zfit);
     bar.appendChild(zoom);
@@ -371,6 +383,10 @@ export class UI {
     const insp = h('div', 'panel');
     insp.id = 'inspect';
     r.appendChild(insp);
+    // What is under the pointer, always in the corner (soil, depth, damp, warmth).
+    const here = h('div');
+    here.id = 'here';
+    r.appendChild(here);
     const prompt = h('div', 'panel');
     prompt.id = 'prompt';
     prompt.innerHTML = `<div class="eyebrow">${t('nuptialFlight')}</div><h2>${t('whereLand')}</h2><p>${t(coarse ? 'landHelpTouch' : 'landHelp')}</p>
@@ -402,9 +418,20 @@ export class UI {
     r.appendChild(title);
     title.querySelectorAll<HTMLElement>('[data-mode]').forEach((b) => {
       b.onclick = () => {
+        // A saved colony would be replaced: ask first (a real second click).
+        if (savedMeta()) {
+          const now = performance.now();
+          if (!this.replaceArmedAt || now - this.replaceArmedAt > 6000) {
+            this.replaceArmedAt = now;
+            this.toast(t('replaceSave'), 6000);
+            return;
+          }
+          if (now - this.replaceArmedAt < CONFIRM_DELAY_MS) return;
+        }
         this.setMode(b.dataset.mode as Mode, false);
         this.modeChosen = true;
         this.applyPhase(this.game.sim.phase);
+        this.beginLanding();
       };
     });
     title.querySelectorAll<HTMLElement>('#tlang [data-lang]').forEach((b) => {
@@ -443,16 +470,7 @@ export class UI {
         }
       };
     }
-    (prompt.querySelector('#anywhere') as HTMLElement).onclick = () => {
-      const sim = this.game.sim;
-      for (let k = 0; k < 200; k++) {
-        const x = Math.round(sim.world.w * (0.3 + Math.random() * 0.4));
-        if (sim.canFound(x)) {
-          this.land(x);
-          return;
-        }
-      }
-    };
+    (prompt.querySelector('#anywhere') as HTMLElement).onclick = () => this.beginLanding();
     const toasts = h('div');
     toasts.id = 'toasts';
     r.appendChild(toasts);
@@ -469,6 +487,17 @@ export class UI {
     const review = h('div', 'panel');
     review.id = 'review';
     r.appendChild(review);
+    // Captions and the skip button of the landing sequence and the founding montage.
+    const cineline = h('div');
+    cineline.id = 'cineline';
+    r.appendChild(cineline);
+    const cinedate = h('div');
+    cinedate.id = 'cinedate';
+    r.appendChild(cinedate);
+    const skip = h('button', 'btn ghost', t('cineSkip'));
+    skip.id = 'cineskip';
+    skip.onclick = () => this.game.cine.skip();
+    r.appendChild(skip);
     const keys = h('div', 'panel');
     keys.id = 'keys';
     keys.hidden = true;
@@ -540,7 +569,7 @@ export class UI {
     scale.id = 'scale';
     r.appendChild(scale);
 
-    for (const id of ['season', 'review', 'cname', 'title', 'colony', 'scale', 'skyico', 'year', 'winter', 'crooms', 'cb-e', 'cb-l', 'cb-p', 'cb-t', 'cb-a', 'pop', 'maj', 'brood', 'food', 'fooddays', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark', 'notes', 'caption', 'watch', 'keys', 'broodtrend', 'majval', 's-pop', 's-brood', 's-food', 's-day', 'v-plan', 'v-trails']) {
+    for (const id of ['cinedate', 'cineline', 'cineskip', 'season', 'review', 'cname', 'title', 'colony', 'scale', 'skyico', 'year', 'winter', 'crooms', 'cb-e', 'cb-l', 'cb-p', 'cb-t', 'cb-a', 'pop', 'maj', 'brood', 'food', 'fooddays', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'here', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark', 'notes', 'caption', 'watch', 'keys', 'broodtrend', 'majval', 's-pop', 's-brood', 's-food', 's-day', 'v-plan', 'v-trails']) {
       this.els[id] = r.querySelector(`#${id}`) as HTMLElement;
     }
     this.syncCollapse();
@@ -626,7 +655,8 @@ export class UI {
     const titled = phase === 'choose' && !this.modeChosen;
     this.root.classList.toggle('titled', titled);
     this.els.title!.style.display = titled ? 'flex' : 'none';
-    this.els.prompt!.style.display = phase === 'choose' && this.modeChosen ? 'block' : 'none';
+    // (No more picking the landing spot: she chooses it herself, in the landing sequence.)
+    this.els.prompt!.style.display = 'none';
     this.root.classList.toggle('m-watch', this.mode === 'watch');
     this.root.classList.toggle('m-guide', this.mode === 'guide');
     // The brain only does something once there are workers to weigh it.
@@ -831,28 +861,46 @@ export class UI {
 
   // ------------------------------------------------------------------ actions
 
-  private land(x: number): void {
+  /**
+   * The colony begins: the nuptial swarm, and one queen coming down to a
+   * spot she picks herself. The panels stay out of the way until she lands.
+   */
+  private beginLanding(): void {
     const game = this.game;
-    const sim = game.sim;
-    // A saved colony would be replaced at the next autosave: ask first (a real second click).
-    if (savedMeta()) {
-      const now = performance.now();
-      if (!this.replaceArmedAt || now - this.replaceArmedAt > 6000) {
-        this.replaceArmedAt = now;
-        this.toast(t('replaceSave'), 6000);
-        return;
-      }
-      if (now - this.replaceArmedAt < CONFIRM_DELAY_MS) return;
-    }
-    sim.found(x);
+    this.root.classList.add('cine');
+    game.cine.onCaption = (title, sub, line) => this.cineCaption(title, sub, line);
+    game.cine.onEnd = () => this.cineEnded();
+    game.cine.startLanding();
+  }
+
+  /** A sequence has finished: back to the game at a working speed. */
+  private cineEnded(): void {
+    const game = this.game;
+    const montage = this.root.classList.contains('montage');
+    this.root.classList.remove('cine');
+    this.root.classList.remove('montage');
     this.markerMode = false;
-    // Founding is slow at 1×: start at 4× (the player can slow down).
+    // Founding is slow at 1×: carry on at 4× (the player can slow down).
     game.setSpeed(2);
     this.syncBar();
     this.syncBrain();
-    game.cam.tzoom = Math.max(game.cam.tzoom, game.cam.fitZoom() * 2.4);
-    game.cam.tx = x;
-    game.cam.ty = sim.world.ground[Math.round(x)]! + 10;
+    if (montage) setTimeout(() => this.cineCaption('', '', ''), 5000);
+  }
+
+  /** Titles and captions of the sequences (empty strings clear them). */
+  private cineCaption(title: string, sub: string, line: string): void {
+    if (title) {
+      const el = this.els.season!;
+      el.innerHTML = `<div class="s1">${title}</div><div class="s2">${sub}</div>`;
+      el.classList.remove('on');
+      void el.offsetWidth;
+      el.classList.add('on');
+      clearTimeout(this.seasonTimer);
+      this.seasonTimer = window.setTimeout(() => el.classList.remove('on'), 4200);
+    }
+    const c = this.els.cineline!;
+    c.innerHTML = line;
+    c.classList.toggle('on', !!line);
   }
 
   /** Order a room: placed at once (and drawn) when there is room, otherwise queued. */
@@ -981,7 +1029,6 @@ export class UI {
     });
     canvas.addEventListener('pointermove', (e) => {
       this.pointer = { x: e.clientX, y: e.clientY, inside: true };
-      if (game.sim.phase === 'choose') game.renderer.flightGoal(game.cam.toWorld(e.clientX, e.clientY).x);
       const p = pointers.get(e.pointerId);
       if (!p) return;
       const dx = e.clientX - p.x;
@@ -997,7 +1044,7 @@ export class UI {
         return;
       }
       dragDist += Math.abs(dx) + Math.abs(dy);
-      if (dragDist > 5) {
+      if (dragDist > 5 && !game.cine.busy) {
         game.cam.pan(dx, dy);
         if (game.selected) game.selected = null;
       }
@@ -1022,6 +1069,12 @@ export class UI {
     );
     addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
+      // A sequence running: Space, Esc or Enter skip it.
+      if ((game.cine.busy || game.cine.montage) && (e.key === ' ' || e.key === 'Escape' || e.key === 'Enter')) {
+        game.cine.skip();
+        e.preventDefault();
+        return;
+      }
       if (e.key === ' ') {
         game.paused = !game.paused;
         this.syncBar();
@@ -1032,7 +1085,7 @@ export class UI {
       } else if (e.key === 'f' || e.key === 'F') {
         if (game.director.active) game.director.stop();
         game.selected = null;
-        game.cam.fit();
+        game.fitKnown();
       } else if (e.key === 't' || e.key === 'T') {
         this.toggleTrails();
       } else if (e.key === 'p' || e.key === 'P') {
@@ -1061,10 +1114,7 @@ export class UI {
     const game = this.game;
     const sim = game.sim;
     const p = game.cam.toWorld(sx, sy);
-    if (sim.phase === 'choose') {
-      if (sim.canFound(p.x)) this.land(p.x);
-      return;
-    }
+    if (sim.phase === 'choose' || game.cine.busy) return;
     if (this.markerMode) {
       const x = Math.round(p.x);
       const y = Math.round(p.y);
@@ -1149,9 +1199,17 @@ export class UI {
         vars.queen = sim.names.queen;
         const loc = e.x !== undefined && e.y !== undefined ? { x: e.x, y: e.y } : undefined;
         if (e.key.startsWith('season_')) this.seasonCard(e.key.slice(7));
+        if (e.key === 'sealedIn' && !sim.colony.hadWorkers) {
+          this.root.classList.add('montage');
+          game.cine.onCaption = (title, sub, line) => this.cineCaption(title, sub, line);
+          game.cine.onEnd = () => this.cineEnded();
+          game.cine.startMontage();
+        }
         if (e.key === 'dormancy' && sim.colony.hadWorkers) this.yearReview();
         this.note(`ev_${e.key}`, vars, { toast: true, merge: !e.kind, loc });
         if (loc) dir.notice(loc.x, loc.y, t(`ev_${e.key}`, vars), e.key);
+        // Big news gets a ring on the spot, so the eye finds it.
+        if (loc && ['neighbourMetL', 'neighbourMetR', 'youngColony', 'youngColonyGone', 'war', 'raid'].includes(e.key)) game.renderer.mark(loc.x, loc.y);
       }
     }
     // The ant being followed died: show its life card for a moment.
@@ -1161,6 +1219,7 @@ export class UI {
       this.followed = null;
     } else this.followed = null;
     this.tooltip();
+    this.readout();
     this.scaleBar();
     this.refresh -= dt;
     if (this.refresh > 0) return;
@@ -1170,6 +1229,8 @@ export class UI {
     const days = (col.stored + col.reserve) / Math.max(1, this.dailyNeed());
     const foodText = days >= 10 ? t('foodDays', { n: '10+' }) : days >= 1 ? t('foodDays', { n: num(days) }) : t('foodHours', { n: Math.floor(days * 24) });
     this.els.pop!.textContent = String(col.adults);
+    // The time-lapse shows the weeks going by.
+    if (game.cine.montage) this.els.cinedate!.textContent = dateText(sim);
     if (sim.names.queen && !this.els.cname!.textContent) this.els.cname!.textContent = `${t('queenTitle', { name: sim.names.queen })} · ${t(sim.names.colony)}`;
     this.els.maj!.textContent = String(col.majors);
     this.els.brood!.textContent = String(e + l + p);
@@ -1360,6 +1421,18 @@ export class UI {
       tip.style.display = 'none';
       return;
     }
+    const place = (): void => {
+      tip.style.display = 'block';
+      tip.style.left = `${Math.min(this.pointer.x + 14, innerWidth - 260)}px`;
+      tip.style.top = `${this.pointer.y + 14}px`;
+    };
+    // An ant under the pointer: who she is and what she is doing.
+    const ant = game.sim.phase === 'choose' ? null : this.antAt(p.x, p.y);
+    if (ant) {
+      tip.innerHTML = this.antTip(ant);
+      place();
+      return;
+    }
     const c = game.sim.nest.chamberAt(y * w.w + x);
     if (!c || !c.ready) {
       // Out of the nest: who or what is this?
@@ -1433,6 +1506,99 @@ export class UI {
     if (this.mode === 'watch') setTimeout(close, 16000);
     this.note('j_yearReview', { y: y.year, n: col.adults, b: y.born, l: lostN });
   }
+
+  /** The ant nearest the pointer (ours, a stranger in sight, or another young queen), if any is close. */
+  private antAt(px: number, py: number): Ant | null {
+    const game = this.game;
+    const sim = game.sim;
+    const col = sim.colony;
+    const list: Ant[] = col.queen ? [col.queen, ...col.ants, ...col.alates] : [...col.ants, ...col.alates];
+    for (const nb of sim.neighbours) for (const a of nb.ants) if (game.renderer.inSight(sim, a.x, a.y)) list.push(a);
+    for (const q of sim.foreigners) if (q.phase < 2) list.push(q);
+    let best: Ant | null = null;
+    let bd = (8 / game.cam.zoom) ** 2 + 6;
+    for (const a of list) {
+      if (!a.alive || a.away > 0) continue;
+      const d = (a.x - px) ** 2 + (a.y - 2 - py) ** 2;
+      if (d < bd) {
+        bd = d;
+        best = a;
+      }
+    }
+    return best;
+  }
+
+  /** The hover card for an ant. */
+  private antTip(a: Ant): string {
+    const sim = this.game.sim;
+    if (a.rival) {
+      const nb = a.rivalOf;
+      const whose = t(nb?.young ? 'tipYoungColony' : nb && nb.side < 0 ? 'tipNeighbourL' : 'tipNeighbourR');
+      const doing = t(a.fight > 0 ? 'dc_boxing' : a.carry ? 'tipRivalCarry' : a.rstate === 3 ? 'tipRivalRaid' : a.rstate === 4 ? 'tipRivalWar' : a.rstate === 2 ? 'tipRivalBack' : 'tipRivalForage');
+      return `<b>${t(a.caste === 'soldier' ? 'tipStrangerMajor' : 'tipStranger')}</b> · ${whose}<br>${doing}<div class="fact">${t(nb?.young ? 'tipYoungFact' : 'tipStrangerFact')}</div>`;
+    }
+    if (a.foreign) return `<b>${t('dc_gyne')}</b><div class="fact">${t('tipForeignQueen')}</div>`;
+    const [head, ...rest] = this.game.director.describe(a).split(' · ');
+    const name = a.caste === 'queen' ? t('queenTitle', { name: sim.names.queen }) : head;
+    const body = rest;
+    const age = a.caste === 'queen' ? '' : t('tipAge', { n: num(a.age / DAY_TICKS) });
+    return `<b>${name}</b>${body.length ? `<br>${body.join(' · ')}` : ''}${age ? `<br><span class="dim">${age}</span>` : ''}<div class="fact">${t('tipFollow')}</div>`;
+  }
+
+  /**
+   * The corner readout, RimWorld-style: what the cell under the pointer is,
+   * how deep, how damp and how warm, and what lives there. Where the colony
+   * has not been yet, only that it is unexplored.
+   */
+  private readout(): void {
+    const el = this.els.here!;
+    const game = this.game;
+    const sim = game.sim;
+    const w = sim.world;
+    const p = game.cam.toWorld(this.pointer.x, this.pointer.y);
+    const x = Math.round(p.x);
+    const y = Math.round(p.y);
+    if (!this.pointer.inside || sim.phase === 'choose' || !w.inside(x, y)) {
+      if (this.hereHtml) el.style.display = 'none';
+      this.hereHtml = '';
+      return;
+    }
+    const i = y * w.w + x;
+    const g = w.ground[x]!;
+    let title: string;
+    const facts: string[] = [];
+    if (sim.nest.founded && sim.fog.at(x, y, g) < 0.35) {
+      title = t('hereUnknown');
+      facts.push(t('hereUnknownSub'));
+    } else {
+      const m = w.mat[i]!;
+      const n = this.natureAt(x, y);
+      const under = w.bg[i] === 1;
+      const ch = sim.nest.chamberAt(i);
+      const self = !!n && (CELL_THINGS.has(n.key) || n.key.startsWith('seed_'));
+      if (m === EMPTY && under) title = ch && ch.ready ? t(`ch_${ch.kind}`) : t('mt_tunnel');
+      else if (m === EMPTY) title = n ? t(`nm_${n.key}`) : t('mt_air');
+      else title = self ? t(`nm_${n!.key}`) : t(`mt_${matKey(m, w.tint[i]!)}`);
+      const depth = y - g;
+      if (under || m !== EMPTY) {
+        facts.push(depth > 2 ? t('cmDown', { d: num(depth / 10) }) : t('hereSurface'));
+        facts.push(t(`moist${Math.min(4, Math.floor(w.moist[i]! / 52))}`));
+        facts.push(t('tempNow', { t: Math.round(depth > 2 ? sim.soilT(depth) : sim.surfaceT) }));
+      } else {
+        facts.push(t('hereAbove', { d: num(-depth / 10) }));
+        facts.push(t('tempNow', { t: Math.round(sim.surfaceT) }));
+      }
+      if (n && !self && !(m === EMPTY && !under)) facts.push(t(`nm_${n.key}`));
+    }
+    const html = `<b>${title}</b><span>${facts.join(' · ')}</span>`;
+    if (html !== this.hereHtml) {
+      el.innerHTML = html;
+      el.style.display = 'block';
+      this.hereHtml = html;
+    }
+  }
+
+  private hereHtml = '';
 
   /** The plant, animal or thing at a point of the slice, for the hover card. */
   private natureAt(x: number, y: number): { key: string; state?: string } | null {

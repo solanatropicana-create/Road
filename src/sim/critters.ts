@@ -127,7 +127,7 @@ export class Critters {
     }
     // Phorid flies, May to mid-July, by day over the foragers.
     // (The smell of a battle draws them in: Delgado, Disney & Palma 2020.)
-    const battle = (sim.neighbour?.war ?? 0) > 0;
+    const battle = sim.neighbours.some((nb) => nb.war > 0);
     if (nest.founded && doy > 125 && doy < 200 && day && dry && air > 15 && this.count('phorid') < (battle ? 5 : 1) && rng.chance(battle ? 0.3 : 0.015)) {
       const x = clamp(nest.foundX + rng.int(-150, 150), 10, w.w - 11);
       this.add({ kind: 'phorid', x, y: this.top(sim, x) - rng.int(20, 50), dir: 1, life: rng.int(TICK_HZ * 40, TICK_HZ * 120), air: true });

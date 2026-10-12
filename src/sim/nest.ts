@@ -395,11 +395,18 @@ export class Nest {
   /** A player's order that could not be placed anywhere (read and cleared by the sim). */
   droppedOrder: ChamberKind | null = null;
 
+  /**
+   * Room size for the colony's age: a young colony's first chambers are small
+   * (a few centimetres across in real casts), a big one's are wide.
+   */
+  private roomScale = 1;
+
   /** Pick the next project, if the colony needs one. Returns what was started. */
   grow(needs: NestNeeds, wanted: number): string | null {
     // Don't stack up more unfinished work than the colony can dig.
     const maxPending = 160 + needs.adults * 4;
     if (this.pendingCells > maxPending) return null;
+    this.roomScale = needs.adults < 30 ? 0.6 : needs.adults < 100 ? 0.8 : 1;
 
     const order = needs.orders[0];
     if (order) {
@@ -418,8 +425,10 @@ export class Nest {
     const nursery = this.capacityOf('nursery');
     const granary = this.capacityOf('granary');
     let kind: ChamberKind | null = null;
-    // A harvester colony's first big project is somewhere to keep the harvest.
-    if (granary.count === 0 && needs.adults >= 5) kind = 'granary';
+    // The first workers dig a nursery for the queen's growing heap of brood
+    // (until then seed is kept in the royal chamber), then a granary.
+    if (nursery.count === 0 && needs.adults >= 4 && needs.brood >= 10) kind = 'nursery';
+    else if (granary.count === 0 && needs.adults >= 5) kind = 'granary';
     else if (nursery.building === 0 && needs.brood > nursery.cap * 0.7 && needs.adults > 6) kind = 'nursery';
     else if (granary.building === 0 && needs.seeds > granary.cap * 0.6) kind = 'granary';
     // Rooms the colony is short of are built whatever the nest's size; only
@@ -531,8 +540,9 @@ export class Nest {
       const ax = a % w.w;
       const ay = (a / w.w) | 0;
       const side = this.rng.chance(0.5) ? -1 : 1;
-      const cw = this.rng.int(spec.w[0], spec.w[1]);
-      const ch = this.rng.int(spec.h[0], spec.h[1]);
+      const scale = kind === 'queen' ? 1 : this.roomScale;
+      const cw = Math.round(this.rng.int(spec.w[0], spec.w[1]) * scale);
+      const ch = Math.max(7, Math.round(this.rng.int(spec.h[0], spec.h[1]) * Math.sqrt(scale)));
       const gap = this.rng.int(3, 14);
       const cx = Math.round(ax + side * (cw / 2 + gap));
       const cy = Math.round(ay + this.rng.int(-4, 9));

@@ -18,6 +18,7 @@ import { smoothstep, clamp } from '../util/math';
 import { Noise } from '../util/noise';
 import { SPROUT } from '../world/moisture';
 import { DRY_SHIFT } from '../world/plants';
+import { FOG } from '../sim/fog';
 
 const BACKWALL_DARK = hex('#120b07');
 
@@ -400,6 +401,12 @@ export class Renderer {
   }
 
   /** Steer the nuptial flight toward the spot the player is pointing at. */
+  /** The landing sequence: the queen's place in the air (or null) and the swarm. */
+  setFlight(pos: { x: number; y: number; face: number } | null, swarm: { x: number; y: number; vx: number; caste: string; t: number }[]): void {
+    this.painter.flightOverride = pos;
+    this.painter.swarm = swarm;
+  }
+
   flightGoal(x: number): void {
     this.painter.flightGoal = x;
   }
@@ -599,40 +606,101 @@ export class Renderer {
    * Beyond the colony's known world the slice fades into shadow, like the
    * edge of a lamp's pool of light, so the eye stays on what the ants know.
    */
+  /** The fog image (one pixel per fog cell, upscaled soft), and how far the fog has closed in. */
+  private fogCanvas: HTMLCanvasElement | null = null;
+  private fogImg: ImageData | null = null;
+  private fogIn = 0;
+  private lastDt = 0;
+  private skyTop: RGB = [120, 140, 160];
+
+  /**
+   * What the colony doesn't know yet lies in the dark: underground, plain
+   * darkness; above ground, a mist the colour of the sky. While the queen is
+   * still in the air the meadow is open below her; once she lands the mist
+   * closes in to the few centimetres around her.
+   */
   private unknown(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }): void {
-    const v = sim.view;
-    const ctx = this.ctx;
+    void view;
+    const fog = sim.fog;
     const w = this.world;
-    const fade = 60;
-    const dark = 'rgba(10,7,5,0.9)';
-    const clear = 'rgba(10,7,5,0)';
-    if (v.x0 > 0.5 && view.x0 < v.x0 + fade) {
-      const g = ctx.createLinearGradient(v.x0 + fade, 0, v.x0, 0);
-      g.addColorStop(0, clear);
-      g.addColorStop(1, dark);
-      ctx.fillStyle = g;
-      ctx.fillRect(v.x0, 0, fade, w.h);
-      ctx.fillStyle = dark;
-      ctx.fillRect(0, 0, v.x0, w.h);
+    const ctx = this.ctx;
+    const target = sim.nest.founded ? 1 : 0;
+    this.fogIn += (target - this.fogIn) * Math.min(1, this.lastDt * 0.9);
+    if (!this.fogCanvas || this.fogCanvas.width !== fog.gw) {
+      this.fogCanvas = document.createElement('canvas');
+      this.fogCanvas.width = fog.gw;
+      this.fogCanvas.height = fog.gh;
+      this.fogImg = this.fogCanvas.getContext('2d')!.createImageData(fog.gw, fog.gh);
     }
-    if (v.x1 < w.w - 0.5 && view.x1 > v.x1 - fade) {
-      const g = ctx.createLinearGradient(v.x1 - fade, 0, v.x1, 0);
-      g.addColorStop(0, clear);
-      g.addColorStop(1, dark);
-      ctx.fillStyle = g;
-      ctx.fillRect(v.x1 - fade, 0, fade, w.h);
-      ctx.fillStyle = dark;
-      ctx.fillRect(v.x1, 0, w.w - v.x1, w.h);
+    const img = this.fogImg!;
+    const d = img.data;
+    const mist = mixRGB(this.skyTop, [70, 74, 78], 0.45);
+    for (let gy = 0; gy < fog.gh; gy++) {
+      for (let gx = 0; gx < fog.gw; gx++) {
+        const x = Math.min(w.w - 1, gx * FOG + FOG / 2);
+        const y = gy * FOG + FOG / 2;
+        const above = y < w.ground[x]! - 3;
+        const k = gy * fog.gw + gx;
+        const v = (above ? Math.max(fog.seen[k]!, fog.sky[gx]!) : fog.seen[k]!) / 255;
+        const a = (1 - v) * (above ? 0.88 * this.fogIn : 0.97);
+        const o = k * 4;
+        if (above) {
+          d[o] = mist[0];
+          d[o + 1] = mist[1];
+          d[o + 2] = mist[2];
+        } else {
+          d[o] = 9;
+          d[o + 1] = 6;
+          d[o + 2] = 4;
+        }
+        d[o + 3] = Math.round(a * 255);
+      }
     }
-    if (v.y1 < w.h - 0.5 && view.y1 > v.y1 - fade) {
-      const g = ctx.createLinearGradient(0, v.y1 - fade, 0, v.y1);
-      g.addColorStop(0, clear);
-      g.addColorStop(1, dark);
-      ctx.fillStyle = g;
-      ctx.fillRect(0, v.y1 - fade, w.w, fade);
-      ctx.fillStyle = dark;
-      ctx.fillRect(0, v.y1, w.w, w.h - v.y1);
+    this.fogCanvas.getContext('2d')!.putImageData(img, 0, 0);
+    ctx.save();
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(this.fogCanvas, 0, 0, fog.gw * FOG, fog.gh * FOG);
+    ctx.restore();
+  }
+
+  /** Is this point known to the colony (so things there may be drawn)? */
+  /** Rings that draw the eye to something that just happened (first contact, a battle). */
+  private marks: { x: number; y: number; t: number }[] = [];
+
+  mark(x: number, y: number): void {
+    this.marks.push({ x, y, t: 0 });
+  }
+
+  private drawMarks(ctx: CanvasRenderingContext2D, z: number): void {
+    if (!this.marks.length) return;
+    let j = 0;
+    for (const m of this.marks) {
+      m.t += this.lastDt;
+      if (m.t > 7) continue;
+      this.marks[j++] = m;
+      const fade = Math.min(1, m.t * 3, (7 - m.t) / 2);
+      ctx.lineWidth = 1.5 / z;
+      for (let k = 0; k < 2; k++) {
+        const p = ((m.t + k * 0.8) % 1.6) / 1.6;
+        ctx.strokeStyle = `rgba(255,232,182,${((1 - p) * 0.75 * fade).toFixed(3)})`;
+        ctx.beginPath();
+        ctx.arc(m.x + 0.5, m.y + 0.5, (5 + p * 38) / z + 1.5, 0, Math.PI * 2);
+        ctx.stroke();
+      }
     }
+    this.marks.length = j;
+  }
+
+  /** Is this point within the senses of one of our ants right now? */
+  inSight(sim: Sim, x: number, y: number): boolean {
+    return !sim.nest.founded || sim.fog.sees(x, y);
+  }
+
+  private known(sim: Sim, x: number, y: number): boolean {
+    if (!sim.nest.founded) return true;
+    const xi = clamp(Math.round(x), 0, this.world.w - 1);
+    return sim.fog.at(xi, y, this.world.ground[xi]!) > 0.35;
   }
 
   /** Dust, shed wings and rain at screen resolution, for close-ups. */
@@ -800,6 +868,7 @@ export class Renderer {
   /** speed: sim time per real time (0 when paused). */
   render(sim: Sim, cam: Camera, dt: number, speed = 1, selected: Ant | null = null): void {
     this.time += dt;
+    this.lastDt = dt;
     const w = this.world;
     this.zoneKinds = sim.nest.zoneKinds();
     if (sim.nest.zonesChanged) {
@@ -837,6 +906,7 @@ export class Renderer {
     const oy = H / 2 - cam.y * z;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const sky = skyAt(solar);
+    this.skyTop = sky.top;
     ctx.fillStyle = `rgb(${sky.top[0] | 0},${sky.top[1] | 0},${sky.top[2] | 0})`;
     ctx.fillRect(0, 0, W, H);
     // Background: smooth scaling keeps it soft (shallow depth of field).
@@ -857,8 +927,9 @@ export class Renderer {
     const col = sim.colony;
     // (Foragers out in the meadow beyond the slice are out of view.)
     const out = col.ants.filter((a) => a.away === 0);
-    if (sim.neighbour?.ants.length) out.push(...sim.neighbour.ants);
-    if (sim.foreigners.length) out.push(...sim.foreigners.filter((q) => q.phase < 2));
+    // Strangers show only while one of ours is near enough to sense them.
+    for (const nb of sim.neighbours) for (const a of nb.ants) if (this.inSight(sim, a.x, a.y)) out.push(a);
+    if (sim.foreigners.length) out.push(...sim.foreigners.filter((q) => q.phase < 2 && this.known(sim, q.x, q.y)));
     const base = col.alates.length ? [...out, ...col.alates] : out;
     const ants = col.queen && col.queen.alive ? [...base, col.queen] : base;
     this.painter.update(ants, dt, speed);
@@ -868,12 +939,13 @@ export class Renderer {
     if (this.trails) this.drawTrails(sim, view);
     this.painter.drawCorpses(ctx, col.corpses, z, this.lightAt, view);
     this.painter.drawBrood(ctx, col.brood, z, this.lightAt, view, TUNING.pupaTicks);
-    if (sim.critters.list.length) drawCritters(ctx, sim.critters.list, w, this.lightAt, view);
+    if (sim.critters.list.length) drawCritters(ctx, sim.critters.list.filter((c) => (c.kind === 'worm' ? this.known(sim, c.body[0]! % w.w, (c.body[0]! / w.w) | 0) : this.known(sim, c.x, c.kind === 'lark' ? c.y - 30 : c.y))), w, this.lightAt, view);
     this.painter.draw(ctx, ants, z, this.lightAt, view, selected);
     if (sim.flyers.length) this.painter.drawFlyers(ctx, sim.flyers, z, this.lightAt);
     if (sim.eco.fallers.length) this.drawFallers(sim, view);
     if (this.closeUp) this.specks(sim, view, z);
     this.unknown(sim, view);
+    this.drawMarks(ctx, z);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
     // Lightning: the whole frame flashes white for a moment.

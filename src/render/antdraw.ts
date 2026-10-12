@@ -497,17 +497,30 @@ export class AntPainter {
    * Before the player chooses, the mated queen drifts over the meadow on her
    * nuptial flight, high and slow, in and out of the lens's focus.
    */
+  /** During the landing sequence: where the queen is in the air, and the swarm around her. */
+  flightOverride: { x: number; y: number; face: number } | null = null;
+  swarm: { x: number; y: number; vx: number; caste: string; t: number }[] = [];
+
   drawFlight(ctx: CanvasRenderingContext2D, z: number, light: Light, worldW: number, dt: number): void {
+    if (this.swarm.length) this.drawFlyers(ctx, this.swarm, z, light);
     const f = this.flight;
     const t = this.time;
+    const o = this.flightOverride;
+    if (o) {
+      f.face += (o.face - f.face) * Math.min(1, dt * 4);
+      f.x = o.x;
+      f.y = o.y;
+    }
     // She drifts over the meadow, or hovers over the spot the pointer is considering.
-    const goal = this.flightGoal ?? worldW / 2 + Math.sin(t * 0.11) * worldW * 0.3;
-    const nx = f.x + (goal + Math.sin(t * 0.37) * 14 - f.x) * Math.min(1, dt * 0.8);
-    const ny = 38 + Math.sin(t * 0.29) * 10 + Math.sin(t * 1.3) * 1.5;
-    const dx = nx - f.x;
-    if (Math.abs(dx) > 0.01) f.face += ((dx > 0 ? 1 : -1) - f.face) * Math.min(1, dt * 3);
-    f.x = nx;
-    f.y = ny;
+    if (!o) {
+      const goal = this.flightGoal ?? worldW / 2 + Math.sin(t * 0.11) * worldW * 0.3;
+      const nx = f.x + (goal + Math.sin(t * 0.37) * 14 - f.x) * Math.min(1, dt * 0.8);
+      const ny = 38 + Math.sin(t * 0.29) * 10 + Math.sin(t * 1.3) * 1.5;
+      const dx = nx - f.x;
+      if (Math.abs(dx) > 0.01) f.face += ((dx > 0 ? 1 : -1) - f.face) * Math.min(1, dt * 3);
+      f.x = nx;
+      f.y = ny;
+    }
     ctx.save();
     ctx.translate(f.x, f.y);
     ctx.rotate(-0.15 * Math.sign(f.face));

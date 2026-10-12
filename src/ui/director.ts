@@ -56,8 +56,8 @@ export class Director {
    */
   notice(x: number, y: number, caption: string, key: string): void {
     if (!this.active) return;
-    const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds'];
-    const wide = ['war', 'raid', 'flight', 'lark', 'leafFall', 'otherQueens', 'wormsUp'];
+    const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds', 'neighbourMetL', 'neighbourMetR', 'youngColony'];
+    const wide = ['war', 'raid', 'flight', 'lark', 'leafFall', 'otherQueens', 'wormsUp', 'youngColonyGone'];
     const zoom = close.includes(key) ? 11 : wide.includes(key) ? 3.4 : 6;
     this.story = { x, y, caption, zoom };
     // Don't cut away from a shot that has barely started, unless it's big news.
@@ -183,7 +183,8 @@ export class Director {
     this.left = 3;
   }
 
-  private describe(a: Ant): string {
+  /** One line on what an ant is doing and where (the caption, and the hover card). */
+  describe(a: Ant): string {
     const sim = this.game.sim;
     const w = sim.world;
     const depth = (a.y - w.ground[a.x]!) / 10;

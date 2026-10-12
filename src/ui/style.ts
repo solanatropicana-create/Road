@@ -158,13 +158,20 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #keys .langrow { grid-template-columns: 80px 1fr; margin: 0 0 10px; }
 #keys .btn { display: block; width: 100%; text-align: center; }
 
-#inspect { left: 14px; bottom: 14px; width: 252px; display: none; }
+#inspect { left: 14px; bottom: 74px; width: 252px; display: none; }
 #inspect .name { font-family: var(--mono); font-size: 15px; margin: 4px 0 8px; }
 #inspect dl { display: grid; grid-template-columns: 74px 1fr; gap: 4px 8px; margin: 0; }
 #inspect dt { color: var(--ink-faint); font-size: 12px; }
 #inspect dd { margin: 0; font-size: 12px; }
 /* Where the time bar reaches the left edge, the inspector sits above it. */
-@media (max-width: 1400px) { #inspect { bottom: 74px; } }
+@media (max-width: 1400px) { #inspect { bottom: 134px; } }
+/* The corner readout: what is under the pointer (the inspector sits above it). */
+#here { position: absolute; left: 14px; bottom: 14px; min-width: 200px; max-width: 340px; display: none; pointer-events: none; padding: 7px 11px 8px; background: var(--panel); border: 1px solid var(--line); border-radius: 7px; font-size: 12px; line-height: 1.45; color: var(--ink-dim); }
+#here b { display: block; font-family: var(--mono); font-weight: 500; font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink); }
+#here span { display: block; }
+@media (max-width: 1400px) { #here { bottom: 74px; } }
+@media (hover: none), (max-width: 760px), (max-height: 500px) { #here { display: none !important; } }
+#ui.cine #here, #ui.montage #here, #ui.cinema #here { display: none !important; }
 #inspect.lifecard { border-color: rgba(232,138,110,0.55); }
 #inspect.lifecard p { margin: 0; color: var(--ink-dim); line-height: 1.45; font-size: 12px; }
 
@@ -181,6 +188,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
 #tip { position: absolute; pointer-events: none; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 6px; padding: 6px 9px; font-size: 12px; display: none; white-space: nowrap; }
 #tip b { font-family: var(--mono); color: var(--accent); font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; font-size: 11px; }
+#tip .dim { color: var(--ink-faint); }
 #tip .fact { margin-top: 4px; max-width: 240px; white-space: normal; color: var(--ink-faint); font-style: italic; line-height: 1.35; }
 
 #over { left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; padding: 22px 28px; display: none; width: max-content; max-width: min(440px, calc(100vw - 24px)); }
@@ -191,6 +199,19 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #season .s2 { font-family: var(--serif); font-style: italic; font-size: 15px; color: #e3d6bc; margin-top: 4px; text-shadow: 0 1px 10px rgba(0,0,0,0.6); }
 @keyframes seasonCard { 0% { opacity: 0; transform: translateX(-50%) translateY(6px); } 18% { opacity: 1; transform: translateX(-50%); } 78% { opacity: 1; } 100% { opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { #season.on { animation-duration: 3s; } }
+/* The landing sequence and the founding montage: panels out of the way, letterbox for the time-lapse. */
+#ui.cine .panel, #ui.cine #bar, #ui.cine #toasts, #ui.cine #tip, #ui.cine #caption, #ui.cine #strip, #ui.cine #scale { display: none !important; }
+#ui.montage::before, #ui.montage::after { content: ''; position: fixed; left: 0; right: 0; height: 9vh; background: #050302; z-index: 20; pointer-events: none; }
+#ui.montage::before { top: 0; }
+#ui.montage::after { bottom: 0; }
+#ui.montage .panel, #ui.montage #toasts, #ui.montage #tip, #ui.montage #caption, #ui.montage #strip { display: none !important; }
+#ui.montage #bar { display: none !important; }
+#cineline { position: fixed; left: 50%; bottom: 12vh; transform: translateX(-50%); max-width: min(620px, calc(100vw - 40px)); text-align: center; font-family: var(--serif); font-style: italic; font-size: 17px; line-height: 1.45; color: #efe4cc; text-shadow: 0 1px 10px rgba(0,0,0,0.8); opacity: 0; transition: opacity 0.8s ease; pointer-events: none; z-index: 22; }
+#cineline.on { opacity: 1; }
+#cinedate { position: fixed; left: 50%; top: calc(9vh + 18px); transform: translateX(-50%); font-family: var(--mono); font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: #d9c9a8; text-shadow: 0 1px 8px rgba(0,0,0,0.8); display: none; z-index: 22; pointer-events: none; }
+#ui.montage #cinedate { display: block; }
+#cineskip { position: fixed; right: 22px; bottom: 11vh; display: none; z-index: 23; }
+#ui.cine #cineskip, #ui.montage #cineskip { display: inline-flex; }
 #review { left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 20px 26px; display: none; width: max-content; max-width: min(460px, calc(100vw - 24px)); z-index: 25; }
 #review h2 { margin: 4px 0 10px; font-weight: 500; font-family: var(--serif); }
 #review dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; margin: 0 0 12px; font-size: 13px; }

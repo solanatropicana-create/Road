@@ -15,6 +15,7 @@ import { Calendar } from './calendar';
 import { Ecology } from './ecology';
 import { Critters } from './critters';
 import { Neighbour } from './rivals';
+import { Fog, FOG } from './fog';
 
 /**
  * Saving a colony: the whole simulation object graph, written generically.
@@ -25,7 +26,7 @@ import { Neighbour } from './rivals';
  */
 
 const CLASSES: Record<string, { prototype: object }> = {
-  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar, Ecology, Critters, Neighbour,
+  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar, Ecology, Critters, Neighbour, Fog,
 };
 
 const TYPED: Record<string, new (b: ArrayBuffer) => ArrayBufferView> = {
@@ -183,6 +184,35 @@ export async function saveSim(sim: Sim, extra: unknown = null): Promise<{ meta: 
   return { meta: { seed: sim.seed, day: sim.day, adults: sim.colony.adults, savedAt: Date.now() }, blob };
 }
 
+/** Saves from before the fog and the list of neighbours: fill them in from what they had. */
+function upgrade(sim: Sim): void {
+  const o = sim as unknown as { fog?: Fog; neighbours?: Neighbour[]; neighbour?: Neighbour | null };
+  const w = sim.world;
+  if (!o.fog) {
+    // What the old growing view showed counts as known.
+    const fog = new Fog(w.w, w.h);
+    const v = sim.view;
+    for (let gy = 0; gy < fog.gh; gy++) {
+      for (let gx = 0; gx < fog.gw; gx++) {
+        const x = gx * FOG;
+        if (x >= v.x0 && x < v.x1 && gy * FOG < v.y1) fog.seen[gy * fog.gw + gx] = 255;
+      }
+    }
+    for (let gx = 0; gx < fog.gw; gx++) if (gx * FOG >= v.x0 && gx * FOG < v.x1) fog.sky[gx] = 255;
+    Object.assign(fog.box, { x0: v.x0, x1: v.x1, y1: v.y1 });
+    o.fog = fog;
+  }
+  if (!o.neighbours) {
+    const list = o.neighbour ? [o.neighbour] : [];
+    for (const nb of list) {
+      Object.assign(nb, { homeX: 0, queen: null, arriveWeek: 0, reach: 650, found: true, dead: false, lastWeek: -1 });
+      for (const a of nb.ants) a.rivalOf = nb;
+    }
+    o.neighbours = list;
+    delete o.neighbour;
+  }
+}
+
 export async function loadSim(blob: string): Promise<{ sim: Sim; extra: unknown }> {
   const raw = await gunzip(b64ToBytes(blob));
   const view = new DataView(raw.buffer, raw.byteOffset, raw.byteLength);
@@ -207,6 +237,7 @@ export async function loadSim(blob: string): Promise<{ sim: Sim; extra: unknown 
   s.flyers = [];
   (sim.physics as unknown as { stamp: Uint8Array }).stamp = new Uint8Array(w.size);
   (sim.colony as unknown as { occ: Int32Array | null }).occ = null;
+  upgrade(sim);
   for (let f = 0; f < FIELD_COUNT; f++) (sim as unknown as { buildField(f: number): void }).buildField(f);
   w.dirtyAll = true;
   return { sim, extra: json.extra };

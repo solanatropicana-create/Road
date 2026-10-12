@@ -2,6 +2,8 @@ import type { Sim } from './sim';
 import { F, FAR } from './fields';
 import { Carry, CarryKind, Task, TaskKind, Caste } from './types';
 import type { Brood } from './brood';
+import type { Neighbour } from './rivals';
+import { clamp } from '../util/math';
 import { Nest } from './nest';
 import {
   EMPTY, SOLID, HARDNESS, REFUSE, SEED, SEEDHEAD, FRUIT, SAND, WATER, LITTER, PREY, HUMUS,
@@ -69,6 +71,10 @@ export class Ant {
   private actCell = -1;
   private dropDist = 0;
   private dumpDir = 1;
+  /** Times a nurse got to a larva with food and found it already fed. */
+  private feedMiss = 0;
+  /** This load of spoil goes off the slice (out of view), so only to just past the rim. */
+  private offLoad = false;
   private search = 0;
   private lastDir = -1;
   private stuck = 0;
@@ -78,6 +84,8 @@ export class Ant {
   away = 0;
   /** A worker of the neighbouring colony, or another founding queen: not one of ours. */
   rival = false;
+  /** Which colony a rival worker belongs to. */
+  rivalOf: Neighbour | null = null;
   foreign = false;
   /** Rival: 0 foraging, 1 carrying home, 2 backing off home, 3 raiding our stores, 4 off to the battle front. */
   rstate = 0;
@@ -155,7 +163,7 @@ export class Ant {
     }
     if (this.fight > 0) {
       // Boxing with forelegs (or fighting in earnest): the rival's side settles it.
-      if (--this.fight === 0 && this.rival) sim.neighbour?.resolve(sim, this);
+      if (--this.fight === 0 && this.rival) this.rivalOf?.resolve(sim, this);
       return;
     }
     if (this.parasite > 0) {
@@ -236,9 +244,9 @@ export class Ant {
       return;
     }
     // Neighbours attacking: foragers, idlers and majors turn out to defend.
-    const alarm = sim.neighbour ? sim.neighbour.alarmX(sim) : NaN;
-    if (alarm === alarm && this.carry === Carry.None && (this.caste === 'soldier' || this.task === Task.Forage || this.task === Task.Idle) && this.age > DAY_TICKS * 2) {
-      this.defend(sim, alarm);
+    const trouble = sim.trouble();
+    if (trouble && this.carry === Carry.None && (this.caste === 'soldier' || this.task === Task.Forage || this.task === Task.Idle) && this.age > DAY_TICKS * 2) {
+      this.defend(sim, trouble);
       return;
     }
     // Rain, cold or midday heat: anyone outside empty-handed heads for shelter.
@@ -251,6 +259,14 @@ export class Ant {
     if (this.carry === Carry.None && ((home && sim.tick >= this.reevalAt) || this.lost > 120)) {
       this.lost = 0;
       sim.colony.assign(this, sim);
+    }
+    // A load in hand but no job for it (startled, or beaten off, halfway
+    // through a trip): see the trip through first.
+    if (this.task === Task.Idle && this.carry !== Carry.None) {
+      if (this.carryBrood) this.task = Task.Nurse;
+      else if (this.carry === Carry.Soil || this.carry === Carry.Refuse) this.task = Task.Dig;
+      else if (this.carry === Carry.Corpse) this.task = Task.Clean;
+      else if (isFood(this.carry)) this.task = Task.Forage;
     }
     switch (this.task) {
       case Task.Dig: this.doDig(sim); break;
@@ -655,7 +671,10 @@ export class Ant {
     const ex = sim.nest.foundX;
     if (this.dropDist === 0) {
       // Spoil lands past the crater rim, thinning out over a hand's width: a low, wide ring.
-      this.dropDist = refuse ? sim.rng.int(34, 70) : Math.round(12 + Math.pow(sim.rng.next(), 1.5) * 110);
+      // Most of that ring lies in front of or behind the slice: those loads are
+      // set down just past the rim, out of view, not carried along the slice.
+      this.offLoad = !refuse && sim.rng.next() < TUNING.spoilOffSlice;
+      this.dropDist = refuse ? sim.rng.int(34, 70) : this.offLoad ? sim.rng.int(9, 22) : Math.round(12 + Math.pow(sim.rng.next(), 1.5) * 110);
       // Spoil goes down whichever side of the crater the ant came up on
       // (crossing the pit with a load is not worth it).
       const side = Math.sign(this.x - ex) || (sim.rng.chance(0.5) ? -1 : 1);
@@ -683,7 +702,7 @@ export class Ant {
     const maxHeap = Math.max(1.5, rim - away * 0.12);
     // The chaff pile stays a low drift too (wind takes most of it; see Sim.settleSpoil).
     const cap = refuse ? Math.min(maxHeap, TUNING.middenMax) : maxHeap;
-    if (heap > cap && away >= this.dropDist && this.stuck < 200 && this.x > 4 && this.x < w.w - 5) this.dropDist = away + 3;
+    if (!this.offLoad && heap > cap && away >= this.dropDist && this.stuck < 200 && this.x > 4 && this.x < w.w - 5) this.dropDist = away + 3;
     const canDrop = !w.plan[i] && this.grounded(sim, i) && Math.sign(this.x - ex) !== -this.dumpDir;
     if ((canDrop && (away >= this.dropDist || this.stuck > 90)) || (!w.plan[i] && this.stuck > 200)) {
       // Let go: the load becomes a grain on the ground here.
@@ -693,7 +712,7 @@ export class Ant {
         const sprout = this.carry === Carry.Refuse && this.carryTint === SPROUT;
         if (this.carry !== Carry.Corpse && !sprout && sim.rng.next() < TUNING.spoilOffSlice) sim.chaffPuff(i);
         else w.set(i, REFUSE, this.carry === Carry.Corpse ? sim.rng.int(0, 25) : sim.rng.int(140, 255), sprout ? SPROUT : 0);
-      } else if (sim.rng.next() < TUNING.spoilOffSlice) {
+      } else if (this.offLoad) {
         // Spread off the slice (out of view): only a puff of dust shows here.
         sim.dust(i, this.carryTint & 0x3f);
       } else {
@@ -948,10 +967,10 @@ export class Ant {
   }
 
   /** Turn out against the neighbours: to the granary when they raid it, to the front in a battle. */
-  private defend(sim: Sim, x: number): void {
+  private defend(sim: Sim, nb: Neighbour): void {
     const w = sim.world;
     const i = this.y * w.w + this.x;
-    const nb = sim.neighbour!;
+    const x = nb.alarmX(sim);
     if (nb.raid > 0) {
       if (w.bg[i] === 0 && sim.fields.dist[F.Entr]![i]! > 12) this.descend(sim, F.Entr);
       else if (this.descend(sim, sim.fields.sourceCount[F.Store]! > 0 ? F.Store : F.Royal) !== Step.Moved) this.wander(sim, true);
@@ -1000,14 +1019,14 @@ export class Ant {
    * glean seed, home again with it; or raiding our granary; or off to battle.
    */
   private rivalThink(sim: Sim): void {
-    const nb = sim.neighbour;
-    if (!nb) {
+    const nb = this.rivalOf;
+    if (!nb || nb.dead) {
       this.alive = false;
       return;
     }
     const w = sim.world;
     const i = this.y * w.w + this.x;
-    const edge = nb.edgeX(sim);
+    const edge = nb.home(sim);
     const inNest = w.bg[i] === 1 && w.mat[i - w.w] !== EMPTY;
     if (this.carry !== Carry.None) this.rstate = 1;
     switch (this.rstate) {
@@ -1020,7 +1039,10 @@ export class Ant {
           this.startAct(Act.Pick, food, 10 + sim.rng.int(0, 8));
           return;
         }
-        if (this.fdist === 0) this.fdist = sim.rng.int(60, 650);
+        if (this.fdist === 0) {
+          this.fdist = sim.rng.int(Math.min(30, nb.reach), Math.max(31, nb.reach));
+          this.fdir = nb.young ? (this.hx < 0 ? -1 : 1) : -nb.side;
+        }
         const k = sim.tick >= this.noSniffUntil ? this.sniff(sim, i) : -1;
         if (k >= 0) {
           if (++this.sniffSteps > 25) {
@@ -1028,7 +1050,7 @@ export class Ant {
             this.noSniffUntil = sim.tick + TICK_HZ * 20;
           }
           this.moveTo(sim, k);
-        } else if (Math.abs(this.x - edge) < this.fdist) this.toward(sim, w.w - 1 - edge, false);
+        } else if (Math.abs(this.x - edge) < this.fdist) this.toward(sim, clamp(edge + this.fdir * 1000, 1, w.w - 2), false);
         else this.toward(sim, this.x + (sim.rng.chance(0.5) ? -30 : 30), false);
         if (++this.search > TICK_HZ * 70) this.rstate = 2;
         return;
@@ -1075,7 +1097,7 @@ export class Ant {
           this.descend(sim, F.Out);
           return;
         }
-        if (Math.abs(this.x - edge) <= 2) {
+        if (Math.abs(this.x - edge) <= (nb.young ? 3 : 2)) {
           nb.arrive(this);
           return;
         }
@@ -1282,7 +1304,15 @@ export class Ant {
       const r = this.descend(sim, F.Larva);
       if (r === Step.Arrived) {
         // Insect is what larvae grow on: a piece counts as a double meal.
-        if (col.feedLarvaNear(this.x, this.y, this.carry === Carry.Prey ? 2 : 1)) this.carry = Carry.None;
+        if (col.feedLarvaNear(this.x, this.y, this.carry === Carry.Prey ? 2 : 1)) {
+          this.carry = Carry.None;
+          this.feedMiss = 0;
+        } else if (++this.feedMiss > 30) {
+          // Whoever was hungry here has been fed by now: share it out mouth to mouth.
+          col.reserve++;
+          this.carry = Carry.None;
+          this.feedMiss = 0;
+        } else this.wander(sim, true);
       } else if (r === Step.Failed && sim.fields.sourceCount[F.Larva] === 0) {
         // No one hungry any more: share it out mouth to mouth (it was already
         // harvested once, so it doesn't count as a new delivery).
@@ -1304,7 +1334,8 @@ export class Ant {
       return;
     }
     // Fetch food only while the hungry outnumber the meals already on their way.
-    const feedMore = col.hungryLarvae > col.mealsCarried;
+    // (When stores run low the workers eat first; the larvae wait.)
+    const feedMore = col.hungryLarvae > col.mealsCarried && col.foodForBrood;
     if (feedMore && f[F.Larva]! > 0 && f[F.Store]! === 0 && col.reserve > 0) {
       // No stores yet: take food from the shared crops by the queen.
       if (this.descend(sim, F.Royal) === Step.Arrived) {
