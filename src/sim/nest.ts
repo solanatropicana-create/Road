@@ -127,7 +127,8 @@ export class Nest {
   chimney(x: number): void {
     const w = this.world;
     const g = w.ground[x]!;
-    for (let y = 1; y < g - 1; y++) {
+    // Deep enough to hold back the spoil heaps; open sky above that.
+    for (let y = Math.max(1, g - 22); y < g - 1; y++) {
       const half = 3 + (g - 1 - y);
       for (let xx = x - half; xx <= x + half; xx++) {
         if (xx < 1 || xx >= w.w - 1) continue;

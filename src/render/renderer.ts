@@ -145,23 +145,29 @@ export class Renderer {
     return pack(clamp(c[0], 0, 255), clamp(c[1], 0, 255), clamp(c[2], 0, 255));
   }
 
-  /** The soil face behind an open tunnel: darker, with contact shadow near walls. */
+  /**
+   * The soil face behind an open tunnel, seen through the glass: the same soil
+   * in shade, its texture still faintly there, with a contact shadow under
+   * ceilings and along walls.
+   */
   private backwall(i: number, x: number, y: number): RGB {
     const w = this.world;
     const src = w.tint[i]! & 0x7f || this.guessSoil(x, y);
-    let c = mixRGB(sampleRamp(soilRamp(src), w.tone[i]! / 255), BACKWALL_DARK, 0.6);
+    const tone = w.tone[i]! / 255;
+    let c = mixRGB(sampleRamp(soilRamp(src), 0.25 + tone * 0.5), BACKWALL_DARK, 0.5);
     const z = w.zone[i]!;
     if (z) {
       const kind = this.zoneKinds[z - 1];
       const tint = kind ? ZONE_TINT[kind] : undefined;
-      if (tint) c = mixRGB(c, tint, 0.38);
+      if (tint) c = mixRGB(c, tint, 0.22);
     }
+    // Shadow falls from the ceiling: darker near the top of a tunnel.
+    let up = 0;
+    for (let k = 1; k <= 3; k++) if (SOLID[w.mat[i - w.w * k]!]) { up = 4 - k; break; }
     let solids = 0;
     if (SOLID[w.mat[i - 1]!]) solids++;
     if (SOLID[w.mat[i + 1]!]) solids++;
-    if (SOLID[w.mat[i - w.w]!]) solids += 1.5;
-    if (SOLID[w.mat[i + w.w]!]) solids += 0.5;
-    const f = 1 - solids * 0.085;
+    const f = 1 - solids * 0.06 - up * 0.07 + (SOLID[w.mat[i + w.w]!] ? 0.05 : 0);
     return [c[0] * f, c[1] * f, c[2] * f];
   }
 
@@ -198,7 +204,7 @@ export class Renderer {
       256 * (1 - nightK * 0.4) * (1 - golden * 0.2),
     ];
     // Keepers watch nests at night under red light, which ants cannot see.
-    const under: RGB = [256 * (0.96 - nightK * 0.12), 256 * (0.93 - nightK * 0.28), 256 * (0.9 - nightK * 0.3)];
+    const under: RGB = [256 * (0.97 - nightK * 0.08), 256 * (0.94 - nightK * 0.18), 256 * (0.9 - nightK * 0.2)];
     for (let k = 0; k < 512; k++) {
       const d = k - 128;
       let r: number;

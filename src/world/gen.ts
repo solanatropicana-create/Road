@@ -54,9 +54,10 @@ export function generate(seed: number): { world: World; plants: Plants; horizons
       else if (j >= hz.clay[x]!) m = CLAY;
       else if (j >= hz.loam[x]!) m = LOAM;
       world.mat[i] = m;
-      // Tone: soft blotches plus grain.
+      // Tone: soft blotches, crumb-sized aggregates (peds), and a little grain.
       const blotch = noise.fbm2(x / 9 + 50, y / 7, 3);
-      world.tone[i] = clamp(Math.round(128 + blotch * 110 + rng.range(-40, 40)), 0, 255);
+      const crumb = noise.n2(x / 2.2 + 9, y / 1.8 + 3);
+      world.tone[i] = clamp(Math.round(128 + blotch * 95 + crumb * 42 + rng.range(-10, 10)), 0, 255);
       // Gravel grows more common with depth.
       const gravelP = m === SUBSOIL ? 0.05 : m === CLAY ? 0.018 : m === LOAM ? 0.006 : 0;
       if (rng.chance(gravelP)) {

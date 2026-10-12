@@ -3,7 +3,7 @@ import { EMPTY } from '../world/mat';
 
 /** Distance fields the ants descend. Each is a multi-source BFS over walkable cells. */
 export const F = {
-  Out: 0, // open air just outside the entrances
+  Out: 0, // the crater rim: open ground just beyond the entrance's crater
   Entr: 1, // nest entrances; floods the whole surface ("which way is home")
   Dig: 2, // next to soil the plan wants removed
   Gran: 3, // free spots on granary floors
@@ -69,8 +69,8 @@ export class Fields {
     const pc = this.touchedCount[f]!;
     for (let k = 0; k < pc; k++) d[prev[k]!] = FAR;
 
-    // Every field but "entrance" stays inside the nest (plus the mouth area).
-    const inside = f !== F.Entr;
+    // Every field but "entrance" and "out" stays inside the nest (plus the mouth).
+    const inside = f !== F.Entr && f !== F.Out;
     const entr = this.dist[F.Entr]!;
     const q = this.queue;
     let tail = 0;

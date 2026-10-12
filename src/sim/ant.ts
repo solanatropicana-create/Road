@@ -398,9 +398,15 @@ export class Ant {
       if (this.lost > 90) this.discard(sim);
       return;
     }
+    // Hopelessly stuck on the surface with a load: drop it and go back to work.
+    if (++this.stuck > 600) {
+      this.discard(sim);
+      return;
+    }
     const ex = sim.nest.foundX;
     if (this.dropDist === 0) {
-      this.dropDist = refuse ? sim.rng.int(34, 70) : sim.rng.int(12, 34);
+      // Most spoil lands close, some is carried far: a low, wide crater mound.
+      this.dropDist = refuse ? sim.rng.int(34, 70) : Math.round(10 + Math.pow(sim.rng.next(), 1.6) * 70);
       // Spoil goes down whichever side of the crater the ant came up on.
       const side = Math.sign(this.x - ex) || (sim.rng.chance(0.5) ? -1 : 1);
       this.dumpDir = refuse ? sim.colony.middenSide : side;

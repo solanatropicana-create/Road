@@ -117,12 +117,13 @@ export class Sim {
   spoil(tint: number, tone: number): void {
     const w = this.world;
     const x0 = this.nest.foundX;
-    for (let t = 0; t < 6; t++) {
-      const x = x0 + (this.rng.chance(0.5) ? -1 : 1) * this.rng.int(8, 16);
+    for (let t = 0; t < 8; t++) {
+      // Thrown clear of the crater's open air.
+      const x = x0 + (this.rng.chance(0.5) ? -1 : 1) * this.rng.int(10, 22);
       let y = 1;
       while (y < w.h - 1 && !SOLID[w.mat[(y + 1) * w.w + x]!]) y++;
       const i = y * w.w + x;
-      if (w.mat[i] === EMPTY && w.bg[i] === 0) {
+      if (w.mat[i] === EMPTY && w.bg[i] === 0 && !w.plan[i]) {
         w.set(i, SAND, tone, tint || LOAM);
         return;
       }
@@ -163,15 +164,21 @@ export class Sim {
     };
     switch (f) {
       case F.Out: {
-        // Open air just outside each entrance; ants already outside never use this field.
+        // The crater rim: open ground near an entrance but outside the crater's
+        // reserved air. Leaving ants climb here before setting off.
         for (const e of nest.entrances) {
           const ex = e % w.w;
           const ey = (e / w.w) | 0;
-          for (let dy = -10; dy <= 2; dy++)
-            for (let dx = -10; dx <= 10; dx++) {
-              const i = (ey + dy) * w.w + ex + dx;
-              if (w.walk[i] && w.bg[i] === 0) push(i);
+          for (let dy = -45; dy <= 2; dy++) {
+            const y = ey + dy;
+            if (y < 2) continue;
+            for (let dx = -50; dx <= 50; dx++) {
+              const x = ex + dx;
+              if (x < 1 || x >= w.w - 1) continue;
+              const i = y * w.w + x;
+              if (w.walk[i] && w.bg[i] === 0 && !w.plan[i]) push(i);
             }
+          }
         }
         break;
       }
@@ -342,7 +349,7 @@ export class Sim {
     if (this.looseSeeds < 260 && this.rng.next() < this.seedRain / TICK_HZ) {
       const x = this.rng.int(12, w.w - 13);
       const i = 2 * w.w + x;
-      if (w.mat[i] === EMPTY && !w.plan[i]) w.set(i, SEED, this.rng.int(0, 255), 0);
+      if (w.mat[i] === EMPTY) w.set(i, SEED, this.rng.int(0, 255), 0);
     }
     if (this.rng.next() < 1 / (TICK_HZ * 240)) {
       const cx = this.rng.int(30, w.w - 31);
@@ -350,7 +357,7 @@ export class Sim {
         for (let dx = -2; dx <= 2; dx++) {
           if (dx * dx + (dy - 1.5) * (dy - 1.5) > 5) continue;
           const i = (3 + dy) * w.w + cx + dx;
-          if (w.mat[i] === EMPTY && !w.plan[i]) w.set(i, FRUIT, this.rng.int(0, 255), 0);
+          if (w.mat[i] === EMPTY) w.set(i, FRUIT, this.rng.int(0, 255), 0);
         }
     }
   }

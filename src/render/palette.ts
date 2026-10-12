@@ -45,7 +45,7 @@ export const PAL = {
     ramp('#4a3a28', '#655238', '#826c4a', '#9e875f', '#bba479', '#d6c299'),
     ramp('#6b6862', '#8a877f', '#a9a59c', '#c6c2b8', '#dedad0', '#f0ede5'),
   ],
-  root: ramp('#7a5c3e', '#937252', '#a98868', '#bf9f7e', '#d0b392'),
+  root: ramp('#5e4430', '#6d5139', '#7c5e44', '#8c6c51', '#9c7b5f'),
   bedrock: ramp('#2f2c29', '#3a3632', '#45403b'),
   water: ramp('#2c5873', '#3a6c8a', '#4a80a0'),
   stem: ramp('#3f5a22', '#4b6a28', '#587a2f', '#668a37'),
@@ -62,12 +62,10 @@ export const PAL = {
 
 /** Chamber floor tints so rooms read at a glance (applied to the back wall). */
 export const ZONE_TINT: Record<string, RGB> = {
-  queen: hex('#4a2a3f'),
-  nursery: hex('#5b4a3a'),
-  granary: hex('#5a4422'),
-  barracks: hex('#3c2a24'),
-  midden: hex('#3a3428'),
-  tunnel: hex('#000000'),
+  queen: hex('#5a3350'),
+  nursery: hex('#7a6248'),
+  granary: hex('#7a5a26'),
+  rest: hex('#3e3328'),
 };
 
 export const ANT_COLORS: Record<string, RGB> = {

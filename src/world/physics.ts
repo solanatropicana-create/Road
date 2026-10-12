@@ -1,5 +1,5 @@
 import { World, CHUNK } from './world';
-import { EMPTY, WATER, POWDER, SAND } from './mat';
+import { EMPTY, WATER, POWDER, SAND, REFUSE } from './mat';
 import { Rng } from '../util/rng';
 
 /** Flag in `tint` for loose soil that has settled and holds its shape. */
@@ -56,10 +56,13 @@ export class Physics {
     const W = w.w;
     const below = i + W;
     const bm = w.mat[below]!;
-    // The crater holds: nothing loose spills from outside into the nest or the
-    // open air column over its mouth (the ants keep both clear).
-    const outside = !w.plan[i];
-    if ((bm === EMPTY || bm === WATER) && !(outside && w.plan[below])) {
+    // The crater holds: spoil and refuse never spill from outside into the nest
+    // or the open air over its mouth (the ants keep both clear). Seeds may fall
+    // in; foragers and diggers carry them on to the granary.
+    const outside = !w.plan[i] && (m === SAND || m === REFUSE);
+    // Stores stay in their room: grains never spill out through a chamber's doorway.
+    const room = w.zone[i]!;
+    if ((bm === EMPTY || bm === WATER) && !(outside && w.plan[below]) && (!room || w.zone[below] === room)) {
       this.move(i, below);
       return;
     }
@@ -67,7 +70,7 @@ export class Physics {
     // but only once it rests on a stable bed, so slopes never get steeper than 45°.
     if (m === SAND) {
       if (w.tint[i]! & PACKED) return;
-      if (w.mat[below - 1] !== EMPTY && w.mat[below + 1] !== EMPTY && this.rng.next() < 0.06) {
+      if (w.mat[below - 1] !== EMPTY && w.mat[below + 1] !== EMPTY && this.rng.next() < 0.025) {
         w.tint[i] = w.tint[i]! | PACKED;
         return;
       }
@@ -82,19 +85,20 @@ export class Physics {
       const sm = w.mat[side]!;
       const dm = w.mat[diag]!;
       if (outside && (w.plan[side] || w.plan[diag])) continue;
+      if (room && (w.zone[side] !== room || w.zone[diag] !== room)) continue;
       if ((sm === EMPTY || sm === WATER) && (dm === EMPTY || dm === WATER)) {
         this.move(i, diag);
         return;
       }
     }
     // Loose soil spreads a little further, giving low mounds instead of 45-degree cones.
-    if (m === SAND && this.rng.next() < 0.35) {
+    if (m === SAND && this.rng.next() < 0.6) {
       const d = dir;
       if (x + 2 * d < 1 || x + 2 * d >= W - 1) return;
       if (
         w.mat[i + d] === EMPTY && w.mat[i + 2 * d] === EMPTY &&
         w.mat[below + 2 * d] === EMPTY && w.mat[below + d] !== EMPTY &&
-        !w.plan[i + d] && !w.plan[i + 2 * d] && !w.plan[below + 2 * d]
+        !w.plan[i + d] && !w.plan[i + 2 * d] && !w.plan[below + 2 * d] && !room
       ) {
         this.move(i, below + 2 * d);
       }
