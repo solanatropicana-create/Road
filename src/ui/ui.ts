@@ -1209,7 +1209,7 @@ export class UI {
         this.note(`ev_${e.key}`, vars, { toast: true, merge: !e.kind, loc });
         if (loc) dir.notice(loc.x, loc.y, t(`ev_${e.key}`, vars), e.key);
         // Big news gets a ring on the spot, so the eye finds it.
-        if (loc && ['neighbourMetL', 'neighbourMetR', 'youngColony', 'youngColonyGone', 'war', 'raid', 'secondGate', 'raidYoung', 'warYoung'].includes(e.key)) game.renderer.mark(loc.x, loc.y);
+        if (loc && ['neighbourMetL', 'neighbourMetR', 'youngColony', 'youngColonyGone', 'war', 'raid', 'secondGate', 'raidYoung', 'warYoung', 'tugOfWar'].includes(e.key)) game.renderer.mark(loc.x, loc.y);
       }
     }
     // The ant being followed died: show its life card for a moment.
@@ -1433,6 +1433,25 @@ export class UI {
       place();
       return;
     }
+    // A carcass: how heavy, and who has hold of it.
+    const cc = game.sim.carcasses.at(x, y);
+    if (cc && game.renderer.inSight(game.sim, cc.x, cc.y)) {
+      const key = cc.kind === 'beetle' ? 'deadBeetle' : cc.kind === 'hopper' ? 'deadHopper' : 'deadWorm';
+      const ours = cc.carriers.filter((a) => !a.rival).length;
+      const theirs = cc.carriers.length - ours;
+      const state = cc.atGate
+        ? t('cdCut')
+        : ours && theirs
+          ? t('cdTug', { n: ours, m: theirs })
+          : ours + theirs
+            ? ours + theirs >= cc.weight
+              ? t('cdHauled', { n: ours + theirs })
+              : t('cdWaiting', { n: ours + theirs })
+            : t('cdHeavy', { n: Math.ceil(cc.weight) });
+      tip.innerHTML = `<b>${t(`nm_${key}`)}</b> · ${t('cdPieces', { n: cc.pieces })}<br>${state}<div class="fact">${t(`nf_${key}`)}</div>`;
+      place();
+      return;
+    }
     const c = game.sim.nest.chamberAt(y * w.w + x);
     if (!c || !c.ready) {
       // Out of the nest: who or what is this?
@@ -1534,7 +1553,7 @@ export class UI {
     if (a.rival) {
       const nb = a.rivalOf;
       const whose = t(nb?.young ? 'tipYoungColony' : nb && nb.side < 0 ? 'tipNeighbourL' : 'tipNeighbourR');
-      const doing = t(a.fight > 0 ? 'dc_boxing' : a.carry ? 'tipRivalCarry' : a.rstate === 3 ? 'tipRivalRaid' : a.rstate === 4 ? 'tipRivalWar' : a.rstate === 2 ? 'tipRivalBack' : 'tipRivalForage');
+      const doing = t(a.fight > 0 ? 'dc_boxing' : a.haul ? 'tipRivalHaul' : a.carry ? 'tipRivalCarry' : a.rstate === 3 ? 'tipRivalRaid' : a.rstate === 4 ? 'tipRivalWar' : a.rstate === 2 ? 'tipRivalBack' : 'tipRivalForage');
       return `<b>${t(a.caste === 'soldier' ? 'tipStrangerMajor' : 'tipStranger')}</b> · ${whose}<br>${doing}<div class="fact">${t(nb?.young ? 'tipYoungFact' : 'tipStrangerFact')}</div>`;
     }
     if (a.foreign) return `<b>${t('dc_gyne')}</b><div class="fact">${t('tipForeignQueen')}</div>`;
@@ -1605,6 +1624,8 @@ export class UI {
   private natureAt(x: number, y: number): { key: string; state?: string } | null {
     const sim = this.game.sim;
     const w = sim.world;
+    const cc = sim.carcasses.at(x, y);
+    if (cc) return { key: cc.kind === 'beetle' ? 'deadBeetle' : cc.kind === 'hopper' ? 'deadHopper' : 'deadWorm' };
     for (const c of sim.critters.list) {
       if (c.kind === 'lark' && Math.abs(x - c.x) < 75 && y > c.y - 110 && y <= c.y + 2) return { key: 'lark' };
       if (c.kind === 'hopper' && Math.abs(x - c.x) < 14 && Math.abs(y - c.y + 4) < 8) return { key: 'hopper' };

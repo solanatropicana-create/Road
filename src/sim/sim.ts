@@ -20,6 +20,7 @@ import { Ecology } from './ecology';
 import { Critters } from './critters';
 import { Neighbour } from './rivals';
 import { Fog } from './fog';
+import { Carcasses } from './carcass';
 
 /** An event for the player; `key` names a message in the UI's string table. */
 export interface SimEvent {
@@ -107,6 +108,8 @@ export class Sim {
   names = { queen: '', colony: '' };
   /** Other Messor colonies: an old one beyond an edge (most maps), a young one on our slice (sometimes). */
   readonly neighbours: Neighbour[] = [];
+  /** Dead insects and worms lying whole on the ground (too heavy for one worker). */
+  readonly carcasses = new Carcasses();
   /** Other young queens that came down after the same flight, and how many landed. */
   readonly foreigners: Ant[] = [];
   foreignLanded = 0;
@@ -741,6 +744,7 @@ export class Sim {
       if (f >= 0) this.buildField(f);
       if (this.tick % (TICK_HZ * 3) === 0 && this.colony.hadWorkers) this.growNest();
       for (const nb of this.neighbours) nb.step(this);
+      this.carcasses.step(this);
       if (this.foreigners.length) this.foundresses();
     }
     if ((this.tick & 3) === 0) this.decayPheromone();

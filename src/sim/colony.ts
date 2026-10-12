@@ -1,6 +1,7 @@
 import type { Sim } from './sim';
 import { Ant } from './ant';
 import { Brood, Corpse } from './brood';
+import type { Carcass } from './carcass';
 import { Carry, Task, TaskKind, Work, WORK, ChamberKind } from './types';
 import { F } from './fields';
 import { TUNING, TICK_HZ, DAY_TICKS } from '../config';
@@ -101,19 +102,25 @@ export class Colony {
    * A forager comes in through the gate with a load and taps the foragers
    * waiting there: up to n of them go out.
    */
-  forageReturn(sim: Sim, a: Ant, n: number): void {
+  forageReturn(sim: Sim, a: Ant, n: number, carcass: Carcass | null = null): void {
     this.returns += 1;
     const occ = this.occ;
     if (!occ) return;
     const W = sim.world.w;
+    // News of a carcass stirs a wider circle, idlers too.
+    const r = carcass ? 8 : 4;
     let sent = 0;
-    for (let dy = -4; dy <= 4 && sent < n; dy++) {
-      for (let dx = -4; dx <= 4 && sent < n; dx++) {
+    for (let dy = -r; dy <= r && sent < n; dy++) {
+      for (let dx = -r; dx <= r && sent < n; dx++) {
         const k = occ[(a.y + dy) * W + a.x + dx];
         if (!k) continue;
         const o = this.ants[k - 1];
-        if (!o || o === a || !o.waiting || o.sent) continue;
+        if (!o || o === a || o.carry !== Carry.None || o.haul) continue;
+        const idle = carcass && o.task === Task.Idle && o.age > DAY_TICKS * 2;
+        if (!(o.waiting && !o.sent) && !idle) continue;
+        if (idle) o.task = Task.Forage;
         o.sent = true;
+        o.bound = carcass;
         sent++;
       }
     }

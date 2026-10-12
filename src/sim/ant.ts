@@ -3,6 +3,7 @@ import { F, FAR } from './fields';
 import { Carry, CarryKind, Task, TaskKind, Caste } from './types';
 import type { Brood } from './brood';
 import type { Neighbour } from './rivals';
+import type { Carcass } from './carcass';
 import { clamp } from '../util/math';
 import { Nest } from './nest';
 import {
@@ -71,6 +72,14 @@ export class Ant {
   private actCell = -1;
   private dropDist = 0;
   private dumpDir = 1;
+  /** The carcass this worker is helping to drag, and one it found and is fetching help for. */
+  haul: Carcass | null = null;
+  recruiting: Carcass | null = null;
+  /** Called out to a carcass (or leading the others back to the one it found). */
+  bound: Carcass | null = null;
+  /** Ticks spent heading for a carcass, and when to notice carcasses again after giving up on one. */
+  private chase = 0;
+  private noCarcassUntil = 0;
   /**
    * Temperament, 0..1. In real colonies a good share of the workers are
    * mostly inactive: a reserve that steps in when the colony is short-handed.
@@ -198,6 +207,8 @@ export class Ant {
       }
     }
     if ((this.spores > 0 || this.sick > 0) && this.fungus(sim)) return;
+    // Gripping a carcass with the others: it moves them (see Carcasses).
+    if (this.haul) return;
     if (this.cpose > 0) {
       this.cpose--;
       return;
@@ -922,10 +933,53 @@ export class Ant {
       return;
     }
     this.waiting = false;
+    // Found something too heavy: back to the gate for help, laying a strong trail.
+    if (this.recruiting) {
+      const d = sim.fields.dist[F.Entr]![i]!;
+      sim.layTrail(i, 3);
+      if (d <= 3 || d === FAR || !this.recruiting.pieces) {
+        // Stir up the foragers at the gate (and idlers near it), then lead them back.
+        sim.colony.forageReturn(sim, this, 6, this.recruiting);
+        sim.noteOnce('recruitHeavy', this);
+        this.bound = this.recruiting;
+        this.recruiting = null;
+        this.sent = true;
+        this.fdist = 0;
+      } else this.descend(sim, F.Entr);
+      return;
+    }
+    // Called out to a carcass: straight there.
+    if (this.bound && (this.bound.pieces <= 0 || !sim.carcasses.list.includes(this.bound))) this.bound = null;
+    // A carcass close by (or the one we were called to): go and take hold.
+    // (One it cannot get at, up on a heap or past a clod, it gives up on for a while.)
+    const cc = sim.tick < this.noCarcassUntil ? null : this.bound && !this.bound.full ? this.bound : sim.carcasses.near(this.x, this.y, 14);
+    if (cc && ++this.chase > TICK_HZ * 20) {
+      this.chase = 0;
+      this.bound = null;
+      this.noCarcassUntil = sim.tick + TICK_HZ * 40;
+    } else if (cc) {
+      if (cc.reach(this)) {
+        // Too heavy for the finder alone: most go back for help first.
+        // (A small colony has nobody to spare at the gate: the finder cuts it up instead.)
+        if (cc.carriers.length === 0 && cc.weight > 1.5 && !cc.atGate && sim.colony.adults >= 18 && sim.rng.chance(0.65)) {
+          this.recruiting = cc;
+          return;
+        }
+        sim.carcasses.join(this, cc);
+        this.bound = null;
+        this.chase = 0;
+        return;
+      }
+      this.toward(sim, Math.round(cc.x), false);
+      return;
+    }
+    this.chase = 0;
+    this.bound = null;
     // A bird on the ground nearby: the ground shakes with its hops, and foragers run for home.
     const bird = sim.critters.birdX;
     if (bird === bird && Math.abs(this.x - bird) < 110) {
       this.sent = false;
+      this.bound = null;
       this.task = Task.Idle;
       this.reevalAt = sim.tick + TICK_HZ * 10;
       this.fdist = 0;
@@ -1099,6 +1153,18 @@ export class Ant {
         if (nb.war > 0) this.rstate = 4;
         else if (nb.raid > 0) this.rstate = 3;
         if (this.rstate !== 0) return;
+        // A carcass: take hold and pull it toward home.
+        const cc = sim.tick < this.noCarcassUntil ? null : sim.carcasses.near(this.x, this.y, 12);
+        if (cc && !cc.atGate) {
+          if (cc.reach(this)) {
+            sim.carcasses.join(this, cc);
+            this.chase = 0;
+          } else if (++this.chase > TICK_HZ * 20) {
+            this.chase = 0;
+            this.noCarcassUntil = sim.tick + TICK_HZ * 40;
+          } else this.toward(sim, Math.round(cc.x), false);
+          return;
+        }
         const food = this.findAdjacent(sim, (n) => w.bg[n] === 0 && this.isForageFood(sim, n));
         if (food >= 0) {
           this.startAct(Act.Pick, food, 10 + sim.rng.int(0, 8));

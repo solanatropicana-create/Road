@@ -16,6 +16,7 @@ import { Ecology } from './ecology';
 import { Critters } from './critters';
 import { Neighbour } from './rivals';
 import { Fog, FOG } from './fog';
+import { Carcass, Carcasses } from './carcass';
 
 /**
  * Saving a colony: the whole simulation object graph, written generically.
@@ -26,7 +27,7 @@ import { Fog, FOG } from './fog';
  */
 
 const CLASSES: Record<string, { prototype: object }> = {
-  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar, Ecology, Critters, Neighbour, Fog,
+  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar, Ecology, Critters, Neighbour, Fog, Carcass, Carcasses,
 };
 
 const TYPED: Record<string, new (b: ArrayBuffer) => ArrayBufferView> = {
@@ -221,6 +222,8 @@ function upgrade(sim: Sim): void {
     nest.gateX = -1;
     nest.gateShaft = [];
   }
+  const oc = sim as unknown as { carcasses?: Carcasses };
+  oc.carcasses ??= new Carcasses();
   if (!o.neighbours) {
     const list = o.neighbour ? [o.neighbour] : [];
     for (const nb of list) {
