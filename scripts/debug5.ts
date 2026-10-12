@@ -34,3 +34,10 @@ console.log('chambers', sim.nest.chambers.map(c => `${c.kind}@${c.cx},${c.cy} re
 const fo = sim.colony.ants.filter(a => a.task === 2);
 for (const a of fo) { const i = a.y * w.w + a.x; console.log('forager', a.name, a.x, a.y, 'carry', a.carry, 'bg', w.bg[i], 'gran', sim.fields.dist[F.Gran]![i], 'entr', sim.fields.dist[F.Entr]![i], 'royal', sim.fields.dist[F.Royal]![i], 'lost', (a as any).lost, 'search', (a as any).search); }
 console.log('gran src', sim.fields.sourceCount[F.Gran], 'royal src', sim.fields.sourceCount[F.Royal], 'entr src', sim.fields.sourceCount[F.Entr], 'entrances', sim.nest.entrances.map(e => `${e % w.w},${(e / w.w) | 0}`));
+{
+  const dd = sim.fields.dist[F.Dig]!;
+  const q = sim.colony.queen!;
+  console.log('dig dist at queen', dd[q.y * w.w + q.x], 'at entrance', sim.nest.entrances.map(e => dd[e]), 'dig src', sim.fields.sourceCount[F.Dig], 'frontier sample', sim.nest.frontier.slice(0, 8).map(i => `${i % w.w},${(i / w.w) | 0}`).join(' '));
+  const tasks: Record<number, number> = {}; for (const a of sim.colony.ants) tasks[a.task] = (tasks[a.task] ?? 0) + 1;
+  console.log('tasks', tasks, 'shares', JSON.stringify(sim.colony.share));
+}

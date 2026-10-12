@@ -179,8 +179,8 @@ export class Sim {
         for (const e of nest.entrances) {
           const ex = e % w.w;
           const ey = (e / w.w) | 0;
-          for (let dy = -4; dy <= 3; dy++)
-            for (let dx = -4; dx <= 4; dx++) {
+          for (let dy = -3; dy <= 1; dy++)
+            for (let dx = -2; dx <= 2; dx++) {
               const i = (ey + dy) * w.w + ex + dx;
               if (w.walk[i]) push(i);
             }
@@ -191,18 +191,14 @@ export class Sim {
         for (const i of nest.digSpots) push(i);
         break;
       case F.Gran: {
-        let any = false;
+        // Only granaries hold physical stores; without one, food goes into the
+        // colony's shared crops at the royal chamber (see Ant.doForage).
         for (const c of nest.chambers) {
           if (c.kind !== 'granary' || !c.ready || c.seeds >= c.capacity) continue;
-          any = true;
           const lim = c.floorY - Math.round(c.h * 0.45);
           for (const i of c.floor) if (((i / w.w) | 0) >= lim) push(i);
         }
-        if (!any) {
-          // No granary yet: pile seeds at the far end of the queen's chamber.
-          const qc = nest.queenChamber();
-          if (qc) for (const i of qc.floor) if (Math.abs((i % w.w) - qc.cx) > qc.w * 0.2) push(i);
-        }
+
         break;
       }
       case F.Store:
@@ -231,6 +227,9 @@ export class Sim {
       case F.Trash: {
         for (const c of col.corpses) if (!c.carried) push(c.y * w.w + c.x);
         for (const c of nest.chambers) {
+          // Husks wait on the floor of whichever room holds the stores.
+          const store = col.husks > 0 && c.ready && (c.kind === 'granary' || c.kind === 'queen');
+          if (store) for (const i of c.floor) push(i);
           for (const i of c.cells) {
             if (w.mat[i] !== REFUSE) continue;
             for (const d of [-w.w, -1, 1]) if (w.walk[i + d]) push(i + d);

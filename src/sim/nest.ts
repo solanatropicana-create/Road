@@ -2,7 +2,7 @@ import { World } from '../world/world';
 import { Rng } from '../util/rng';
 import { Noise } from '../util/noise';
 import {
-  EMPTY, STONE, BEDROCK, ROOT, CLAY, GRAVEL, SEED, REFUSE, HARDNESS, SOLID, LITTER,
+  EMPTY, STONE, BEDROCK, ROOT, CLAY, GRAVEL, SEED, REFUSE, FRUIT, HARDNESS, SOLID, LITTER,
 } from '../world/mat';
 import type { ChamberKind } from './types';
 
@@ -59,6 +59,7 @@ export class Nest {
   /** Player's expansion marker (mode B): grow toward this point. */
   marker: { x: number; y: number } | null = null;
   lastPlanFailed = 0;
+  private cutOff = 0;
 
   private world: World;
   private rng: Rng;
@@ -119,16 +120,21 @@ export class Nest {
   }
 
   /**
-   * Reserve the open air over an entrance. Loose grains can't fall or slide into
-   * it, so spoil, seeds and litter never cap the hole: the crater keeps its rim.
+   * Reserve a V of open air over an entrance, opening at 45 degrees. Loose
+   * grains can't fall or slide into it, so spoil heaps up along its sides into
+   * a crater with the mouth at the bottom, and nothing caps the hole.
    */
   chimney(x: number): void {
     const w = this.world;
     const g = w.ground[x]!;
     for (let y = 1; y < g - 1; y++) {
-      for (let xx = x - 3; xx <= x + 3; xx++) {
+      const half = 3 + (g - 1 - y);
+      for (let xx = x - half; xx <= x + half; xx++) {
+        if (xx < 1 || xx >= w.w - 1) continue;
         const i = y * w.w + xx;
         if (w.mat[i] === EMPTY) w.plan[i] = 1;
+        // Whatever grew here ends up under the spoil.
+        if (w.plant[i]) w.setPlant(i, 0);
       }
     }
   }
@@ -213,6 +219,17 @@ export class Nest {
 
   // ------------------------------------------------------------ scanning
 
+  /**
+   * Should a worker dig out this planned cell? Soil, and anything that has
+   * spilled into a tunnel (seeds, husks). Stores inside chambers stay put.
+   */
+  static diggable(w: World, i: number): boolean {
+    if (!w.plan[i]) return false;
+    const m = w.mat[i]!;
+    if (m === SEED || m === FRUIT || m === REFUSE) return w.zone[i] === 0 && w.bg[i] === 1;
+    return HARDNESS[m]! > 0;
+  }
+
   /** Recount what's dug, find the digging frontier, refresh chamber floors and stores. */
   scan(): void {
     const w = this.world;
@@ -236,7 +253,7 @@ export class Nest {
         open++;
         continue;
       }
-      if (!HARDNESS[m] || m === REFUSE) continue;
+      if (!Nest.diggable(w, i)) continue;
       pending++;
       // Diggable if an ant can stand right beside it.
       const n4 = [i - 1, i + 1, i - W, i + W];
@@ -249,6 +266,13 @@ export class Nest {
     }
     this.openCells = open;
     this.pendingCells = pending;
+    // Planned work that nobody can reach (cut off by a slump, a pile of stores):
+    // after a while, dig a fresh link to it from the nearest open tunnel.
+    this.cutOff = this.frontier.length === 0 && pending > 0 ? this.cutOff + 1 : 0;
+    if (this.cutOff >= 4) {
+      this.cutOff = 0;
+      this.relink();
+    }
 
     for (const c of this.chambers) {
       let dug = 0;
@@ -273,6 +297,33 @@ export class Nest {
         this.zonesChanged = true;
       }
     }
+  }
+
+  private relink(): void {
+    const w = this.world;
+    const pend: number[] = [];
+    const open: number[] = [];
+    for (const i of this.planCells) {
+      if (w.bg[i] !== 1) continue;
+      if (w.mat[i] === EMPTY && !w.zone[i]) open.push(i);
+      else if (Nest.diggable(w, i)) pend.push(i);
+    }
+    if (!open.length || !pend.length) return;
+    let best: [number, number] | null = null;
+    let bd = Infinity;
+    for (let t = 0; t < 400; t++) {
+      const p = pend[this.rng.int(0, pend.length - 1)]!;
+      const o = open[this.rng.int(0, open.length - 1)]!;
+      const d = Math.abs((p % w.w) - (o % w.w)) + Math.abs(((p / w.w) | 0) - ((o / w.w) | 0));
+      if (d < bd) {
+        bd = d;
+        best = [o, p];
+      }
+    }
+    if (!best) return;
+    const [o, p] = best;
+    const path = this.astar(o % w.w, (o / w.w) | 0, p % w.w, (p / w.w) | 0, true);
+    if (path) for (const i of path) this.stampDisc(i % w.w, (i / w.w) | 0, 1.8, null);
   }
 
   // ------------------------------------------------------------ growth
@@ -325,8 +376,10 @@ export class Nest {
     const nursery = this.capacityOf('nursery');
     const granary = this.capacityOf('granary');
     let kind: ChamberKind = 'rest';
-    if (nursery.building === 0 && needs.brood > nursery.cap * 0.7 && needs.adults > 6) kind = 'nursery';
-    else if (granary.building === 0 && (granary.count === 0 ? needs.adults > 12 : needs.seeds > granary.cap * 0.6)) kind = 'granary';
+    // A harvester colony's first big project is somewhere to keep the harvest.
+    if (granary.count === 0 && needs.adults >= 5) kind = 'granary';
+    else if (nursery.building === 0 && needs.brood > nursery.cap * 0.7 && needs.adults > 6) kind = 'nursery';
+    else if (granary.building === 0 && needs.seeds > granary.cap * 0.6) kind = 'granary';
     else if (needs.adults > 120 && this.rng.chance(0.35)) return this.deepen() ? 'deeper' : null;
 
     if (this.placeChamber(kind)) return kind;
@@ -460,11 +513,13 @@ export class Nest {
 
   // ------------------------------------------------------------ pathing
 
-  private cost(i: number): number {
+  private cost(i: number, avoidRooms = false): number {
     const w = this.world;
     const m = w.mat[i]!;
     if (m === STONE || m === BEDROCK) return Infinity;
     if (w.bg[i] !== 1) return Infinity;
+    // Route around rooms full of stores rather than through them.
+    if (avoidRooms && w.zone[i] && m !== EMPTY) return Infinity;
     if (w.plan[i]) return 0.3;
     const x = i % w.w;
     const y = (i / w.w) | 0;
@@ -477,7 +532,7 @@ export class Nest {
   }
 
   /** A* between two cells through diggable soil, preferring existing tunnels. */
-  astar(sx: number, sy: number, tx: number, ty: number): number[] | null {
+  astar(sx: number, sy: number, tx: number, ty: number, avoidRooms = false): number[] | null {
     const w = this.world;
     const margin = 30;
     const bx0 = Math.max(2, Math.min(sx, tx) - margin);
@@ -559,10 +614,10 @@ export class Nest {
           const ny = y + dy;
           if (nx < bx0 || nx > bx1 || ny < by0 || ny > by1) continue;
           const n = ny * w.w + nx;
-          const c = this.cost(n);
+          const c = this.cost(n, avoidRooms);
           if (c === Infinity) continue;
           // No cutting corners past rock: ants can't squeeze through a diagonal gap.
-          if (dx && dy && (this.cost(y * w.w + nx) === Infinity || this.cost(ny * w.w + x) === Infinity)) continue;
+          if (dx && dy && (this.cost(y * w.w + nx, avoidRooms) === Infinity || this.cost(ny * w.w + x, avoidRooms) === Infinity)) continue;
           const ng = g[i]! + c * (dx && dy ? 1.41 : 1);
           if (seen[n] === gen && g[n]! <= ng) continue;
           seen[n] = gen;

@@ -206,8 +206,8 @@ export class Plants {
   private growStep(p: Plant): void {
     const w = this.world;
     const part = p.parts[p.grown++]!;
-    // Plants don't grow into the nest's entrance.
-    if (w.mat[part.i] === EMPTY && !w.plant[part.i]) w.setPlant(part.i, part.m, part.tone);
+    // Plants don't grow into the nest's crater.
+    if (w.mat[part.i] === EMPTY && !w.plant[part.i] && !w.plan[part.i]) w.setPlant(part.i, part.m, part.tone);
   }
 
   tick(): void {
@@ -221,7 +221,7 @@ export class Plants {
         p.timer = p.regrow;
         // Ripen one empty slot that still hangs off the plant.
         const s = p.slots[this.rng.int(0, p.slots.length - 1)];
-        if (s !== undefined && w.mat[s] === EMPTY && !w.plant[s] && this.attached(s)) {
+        if (s !== undefined && w.mat[s] === EMPTY && !w.plant[s] && !w.plan[s] && this.attached(s)) {
           w.setPlant(s, SEEDHEAD, this.rng.int(0, 255));
           this.ripened++;
         }

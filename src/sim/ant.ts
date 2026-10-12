@@ -2,6 +2,7 @@ import type { Sim } from './sim';
 import { F, FAR } from './fields';
 import { Carry, CarryKind, Task, TaskKind } from './types';
 import type { Brood } from './brood';
+import { Nest } from './nest';
 import type { Caste } from '../render/sprites';
 import {
   EMPTY, SOLID, HARDNESS, REFUSE, SEED, SEEDHEAD, FRUIT, SAND, WATER, LITTER,
@@ -60,6 +61,9 @@ export class Ant {
   /** Steps spent unable to find a way to the current target. */
   private lost = 0;
   private buried = 0;
+  /** Forager's chosen heading and how far to go before searching in earnest. */
+  private fdir = 1;
+  private fdist = 0;
   reevalAt = 0;
   alive = true;
   wings = false;
@@ -125,7 +129,9 @@ export class Ant {
     }
     // Hopelessly lost with a load: let it go and rethink.
     if (this.lost > 240) this.discard(sim);
-    if (this.carry === Carry.None && (sim.tick >= this.reevalAt || this.lost > 120)) {
+    // New jobs are taken up at home, never halfway through a trip outside.
+    const home = sim.world.bg[this.y * sim.world.w + this.x] === 1;
+    if (this.carry === Carry.None && ((home && sim.tick >= this.reevalAt) || this.lost > 120)) {
       this.lost = 0;
       sim.colony.assign(this, sim);
     }
@@ -312,7 +318,20 @@ export class Ant {
     this.act = Act.None;
     if (a === Act.Dig) {
       const m = w.mat[n]!;
-      if (!w.plan[n] || !HARDNESS[m] || m === REFUSE) return;
+      if (!Nest.diggable(w, n)) return;
+      if (m === SEED || m === FRUIT || m === REFUSE) {
+        // Clutter in a tunnel: seed goes to the granary, husks to the midden.
+        this.carryTone = w.tone[n]!;
+        w.set(n, EMPTY, w.tone[n], w.tint[n]);
+        if (m === REFUSE) {
+          this.carry = Carry.Refuse;
+          this.dropDist = 0;
+        } else {
+          this.carry = m === FRUIT ? Carry.Fruit : Carry.Seed;
+          this.task = Task.Forage;
+        }
+        return;
+      }
       const src = m === SAND ? w.tint[n]! & 0x7f : m;
       this.carryTone = w.tone[n]!;
       this.carryTint = src;
@@ -381,8 +400,10 @@ export class Ant {
     }
     const ex = sim.nest.foundX;
     if (this.dropDist === 0) {
-      this.dropDist = refuse ? sim.rng.int(30, 64) : sim.rng.int(7, 26);
-      this.dumpDir = refuse ? sim.colony.middenSide : sim.rng.chance(0.5) ? -1 : 1;
+      this.dropDist = refuse ? sim.rng.int(34, 70) : sim.rng.int(12, 34);
+      // Spoil goes down whichever side of the crater the ant came up on.
+      const side = Math.sign(this.x - ex) || (sim.rng.chance(0.5) ? -1 : 1);
+      this.dumpDir = refuse ? sim.colony.middenSide : side;
       this.stuck = 0;
     }
     const away = Math.abs(this.x - ex);
@@ -404,13 +425,17 @@ export class Ant {
     const fields = sim.fields;
     let bestK = -1;
     let bestS = -Infinity;
+    let anyGround = false;
+    for (let k = 0; k < 8; k++) {
+      if (fields.canStep(i, k) && w.bg[i + fields.off[k]!] === 0 && this.grounded(sim, i + fields.off[k]!)) anyGround = true;
+    }
     for (let k = 0; k < 8; k++) {
       if (!fields.canStep(i, k)) continue;
       const n = i + fields.off[k]!;
       if (w.bg[n] === 1) continue;
+      // Loaded ants keep to the ground; plants only if there's no other way.
+      if (anyGround && !this.grounded(sim, n)) continue;
       let s = DX[k]! * this.dumpDir * 2 + sim.rng.next() * 0.8;
-      // Prefer walking on soil; leaves and stems only to get past an obstacle.
-      if (!this.grounded(sim, n)) s -= this.stuck > 20 ? 0.5 : 2.5;
       if (k === this.lastDir) s += 0.6;
       // Don't step back down into the entrance pit.
       if (w.plan[n] && DY[k]! > 0) s -= 2;
@@ -450,13 +475,9 @@ export class Ant {
     }
     const r = this.descend(sim, F.Dig);
     if (r === Step.Arrived) {
-      const cell = this.findAdjacent(sim, (n) => {
-        const w = sim.world;
-        const m = w.mat[n]!;
-        return w.plan[n] === 1 && HARDNESS[m]! > 0 && m !== REFUSE;
-      }, true);
+      const cell = this.findAdjacent(sim, (n) => Nest.diggable(sim.world, n), true);
       if (cell >= 0) {
-        const h = HARDNESS[sim.world.mat[cell]!]!;
+        const h = HARDNESS[sim.world.mat[cell]!]! || 1;
         const mult = this.caste === 'soldier' ? 0.75 : 1;
         this.startAct(Act.Dig, cell, TUNING.digTicks[h]! * mult * sim.rng.range(0.8, 1.25));
       } else {
@@ -495,22 +516,25 @@ export class Ant {
     const i = this.y * w.w + this.x;
     if (this.carry === Carry.Seed || this.carry === Carry.Fruit) {
       if (w.bg[i] === 0) sim.layTrail(i, this.carry === Carry.Fruit ? 2.5 : 1);
-      const r = this.descend(sim, F.Gran);
-      if (r === Step.Arrived) {
-        w.set(i, this.carry === Carry.Fruit ? FRUIT : SEED, this.carryTone, 0);
+      this.fdist = 0;
+      // Into a granary if one has room; otherwise straight into the shared crops
+      // of the workers by the queen (trophallaxis), no pile.
+      const gran = sim.fields.dist[F.Gran]!;
+      const useGran = sim.fields.sourceCount[F.Gran]! > 0 && (gran[i] !== FAR || w.bg[i] === 0);
+      const r = this.descend(sim, useGran ? F.Gran : F.Royal);
+      if (r === Step.Arrived && (!useGran || SOLID[w.mat[i + w.w]!])) {
+        if (useGran) {
+          w.set(i, this.carry === Carry.Fruit ? FRUIT : SEED, this.carryTone, 0);
+          this.stepAside(sim);
+        } else {
+          sim.colony.reserve += this.carry === Carry.Fruit ? 2 : 1;
+        }
         this.carry = Carry.None;
         this.delivered++;
         sim.colony.delivered++;
-        this.stepAside(sim);
         this.reevalAt = Math.min(this.reevalAt, sim.tick + TICK_HZ * 4);
-      } else if (r === Step.Failed && sim.fields.sourceCount[F.Gran] === 0) {
-        // Nowhere to store it yet: take it to the queen and leave it by her.
-        if (this.descend(sim, F.Royal) === Step.Arrived && w.mat[i + w.w] !== EMPTY) {
-          w.set(i, this.carry === Carry.Fruit ? FRUIT : SEED, this.carryTone, 0);
-          this.carry = Carry.None;
-          sim.colony.delivered++;
-          this.stepAside(sim);
-        }
+      } else if (this.lost > 150) {
+        this.discard(sim);
       }
       return;
     }
@@ -520,7 +544,13 @@ export class Ant {
     }
     if (w.bg[i] === 1) {
       this.descend(sim, F.Out);
+      this.fdist = 0;
       return;
+    }
+    if (this.fdist === 0) {
+      // Just out of the nest: pick a heading and how far to walk before searching.
+      this.fdir = sim.rng.chance(0.5) ? -1 : 1;
+      this.fdist = sim.rng.int(30, 220);
     }
     const food = this.findAdjacent(sim, (n) => this.isForageFood(sim, n));
     if (food >= 0) {
@@ -565,7 +595,7 @@ export class Ant {
     let bk = -1;
     let bdist = Math.abs(tx - x0) + Math.abs(ty - y0);
     for (let k = 0; k < 8; k++) {
-      if (!fields.canStep(i, k)) continue;
+      if (!fields.canStep(i, k) || w.bg[i + fields.off[k]!] === 1) continue;
       const d = Math.abs(tx - x0 - DX[k]!) + Math.abs(ty - y0 - DY[k]!);
       if (d < bdist) {
         bdist = d;
@@ -586,16 +616,37 @@ export class Ant {
     const fields = sim.fields;
     const entr = fields.dist[F.Entr]!;
     const here = entr[i]!;
+    // Heading out: walk away from home (along a trail if there is one) until far
+    // enough, then search the area. Trails are followed by direction, not by peak:
+    // all trails meet at the mouth, so their strongest scent is right at home.
+    const outbound = here !== FAR && here < this.fdist;
+    let trailOut = false;
+    if (outbound) {
+      for (let k = 0; k < 8; k++) {
+        const n = i + fields.off[k]!;
+        if (entr[n]! > here && entr[n] !== FAR && sim.pher[n]! > 0.3) trailOut = true;
+      }
+    }
     let total = 0;
     const weights = [0, 0, 0, 0, 0, 0, 0, 0];
     for (let k = 0; k < 8; k++) {
       if (!fields.canStep(i, k)) continue;
       const n = i + fields.off[k]!;
       if (w.bg[n] === 1) continue;
-      let s = 0.12 + sim.pher[n]! * 2.5;
       const v = entr[n]!;
-      if (v !== FAR && here !== FAR) s *= v > here ? 1.5 : v < here ? 0.6 : 1;
-      if (k === this.lastDir) s *= 2.2;
+      const outward = v !== FAR && here !== FAR && v > here;
+      const inward = v !== FAR && here !== FAR && v < here;
+      const p = sim.pher[n]!;
+      let s = 0.15;
+      if (outbound) {
+        s *= outward ? 2 : inward ? 0.08 : 0.6;
+        if (outward) s += p * 3;
+        if (!trailOut) s *= DX[k] === this.fdir ? 3 : DX[k] === -this.fdir ? 0.3 : 1;
+      } else {
+        s *= outward ? 1.1 : inward ? 0.75 : 1;
+        s += p * (outward ? 1.5 : 0.4);
+      }
+      if (k === this.lastDir) s *= 2;
       // Harvesters mostly glean fallen seed; climbing stems is the exception.
       if (!SOLID[w.mat[n + w.w]!]) s *= DY[k]! < 0 ? 0.25 : 0.6;
       weights[k] = s;
@@ -657,6 +708,15 @@ export class Ant {
       }
       return;
     }
+    if (f[F.Larva]! > 0 && f[F.Store]! === 0 && col.reserve > 0) {
+      // No stores yet: take food from the shared crops by the queen.
+      if (this.descend(sim, F.Royal) === Step.Arrived) {
+        col.reserve--;
+        this.carry = Carry.Seed;
+        this.carryTone = sim.rng.int(0, 255);
+      }
+      return;
+    }
     if (f[F.Larva]! > 0 && f[F.Store]! > 0) {
       if (this.descend(sim, F.Store) === Step.Arrived) {
         const cell = this.findAdjacent(sim, (n) => {
@@ -697,10 +757,16 @@ export class Ant {
         return;
       }
       const cell = this.findAdjacent(sim, (n) => w.mat[n] === REFUSE && w.bg[n] === 1);
+      const room = sim.nest.chamberAt(i);
       if (cell >= 0) {
         this.carry = Carry.Refuse;
         this.carryTone = w.tone[cell]!;
         w.set(cell, EMPTY, w.tone[cell], w.tint[cell]);
+        this.dropDist = 0;
+      } else if (col.husks > 0 && room && (room.kind === 'granary' || room.kind === 'queen')) {
+        col.husks--;
+        this.carry = Carry.Refuse;
+        this.carryTone = sim.rng.int(150, 255);
         this.dropDist = 0;
       } else this.wander(sim, w.bg[i] === 1);
     } else if (r === Step.Failed && sim.fields.sourceCount[F.Trash] === 0) {
@@ -739,8 +805,8 @@ export class Ant {
       }
       const r = this.descend(sim, F.Dig);
       if (r === Step.Arrived) {
-        const cell = this.findAdjacent(sim, (n) => w.plan[n] === 1 && HARDNESS[w.mat[n]!]! > 0 && w.mat[n] !== REFUSE, true);
-        if (cell >= 0) this.startAct(Act.Dig, cell, TUNING.digTicks[HARDNESS[w.mat[cell]!]!]! * 0.3);
+        const cell = this.findAdjacent(sim, (n) => Nest.diggable(w, n), true);
+        if (cell >= 0) this.startAct(Act.Dig, cell, TUNING.digTicks[HARDNESS[w.mat[cell]!]! || 1]! * 0.3);
         else this.wander(sim, true);
       } else if (r === Step.Failed && sim.fields.sourceCount[F.Dig] === 0) {
         this.descend(sim, F.Royal);

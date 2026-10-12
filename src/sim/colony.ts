@@ -2,9 +2,9 @@ import type { Sim } from './sim';
 import { Ant } from './ant';
 import { Brood, Corpse } from './brood';
 import { Carry, Task, TaskKind, Work, WORK, ChamberKind } from './types';
-import { F, FAR } from './fields';
+import { F } from './fields';
 import { TUNING, TICK_HZ, W } from '../config';
-import { EMPTY, SEED, FRUIT, REFUSE, SOLID } from '../world/mat';
+import { EMPTY, SEED, FRUIT, SOLID } from '../world/mat';
 import { clamp } from '../util/math';
 
 /** Multipliers for the colony brain's priority levels: off, low, normal, high. */
@@ -46,7 +46,10 @@ export class Colony {
   deaths: Record<string, number> = {};
   stored = 0;
   storeCells: number[] = [];
-  reserve = 60;
+  /** Seed husks piled by the stores, waiting to go out to the midden. */
+  husks = 0;
+  /** The queen's body reserves (and food shared mouth to mouth), in seeds. */
+  reserve = 120;
   failed = false;
   hadWorkers = false;
   readonly history: Sample[] = [];
@@ -225,8 +228,9 @@ export class Colony {
     const foodFactor = adults < 6 ? 0.8 : this.stored < adults * 0.25 ? 2.6 : this.stored < adults * 0.8 ? 1.4 : 1;
     this.eggTimer = Math.round(TUNING.eggInterval * [1.8, 1, 0.6][this.breeding]! * foodFactor * sim.rng.range(0.8, 1.2));
     if (this.brood.length >= cap) return;
-    // Don't lay into a famine: larvae already waiting for food come first.
-    if (adults > 0 && this.stored + this.reserve < this.hungryLarvae * 2 + 2) return;
+    // Don't lay into a famine: the larvae already hatched need feeding first.
+    const larvae = this.brood.filter((b) => b.stage === 1).length;
+    if (adults > 0 && this.stored + this.reserve * 0.5 < larvae * 1.5 + 3) return;
     if (adults === 0 && this.born === 0 && this.brood.length >= 8) return;
     const spot = this.freeFloorNear(sim, q.x, q.y, 6);
     if (spot < 0) return;
@@ -281,8 +285,9 @@ export class Colony {
       this.storeCells.pop();
       const m = w.mat[i]!;
       if (m === SEED) {
-        // Messor eat the kernel and leave the husk, which cleaners carry out.
-        w.set(i, REFUSE, sim.rng.int(150, 255), 0);
+        // Messor eat the kernel; the husk is set aside for the cleaners to carry out.
+        w.set(i, EMPTY, w.tone[i], w.tint[i]);
+        this.husks++;
       } else if (m === FRUIT) {
         w.set(i, EMPTY, w.tone[i], w.tint[i]);
       } else continue;
@@ -324,12 +329,17 @@ export class Colony {
     const nest = sim.nest;
     const f = sim.fields.sourceCount;
     const need: Record<number, number> = {};
-    // Only count digging work the colony can actually reach.
-    const dd = sim.fields.dist[F.Dig]!;
-    const q = this.queen;
-    const reach = (q && dd[q.y * W + q.x] !== FAR) || nest.entrances.some((e) => dd[e] !== FAR || dd[e - W] !== FAR);
-    need[Task.Dig] = nest.frontier.length > 0 && reach ? 0.3 + Math.min(1, nest.pendingCells / (adults * 5 + 40)) : 0;
-    need[Task.Forage] = 0.3 + 0.9 * clamp(1 - this.stored / (adults * 2 + 12), 0, 1);
+    need[Task.Dig] = nest.frontier.length > 0 ? 0.3 + Math.min(1, nest.pendingCells / (adults * 5 + 40)) : 0;
+    // Hunger reorganises the colony: empty stores pull workers out to forage
+    // and leave digging for later.
+    const shortage = clamp(1 - this.stored / (adults * 2 + 12), 0, 1);
+    need[Task.Forage] = 0.3 + 0.9 * shortage + (this.starving ? 0.8 : 0);
+    if (this.starving || this.stored < adults * 0.3) need[Task.Dig] = need[Task.Dig]! * 0.35;
+    // Nowhere left to put seed: fewer foragers, more diggers (the granary needs finishing).
+    if (f[F.Gran] === 0 && this.adults > 4) {
+      need[Task.Forage] = need[Task.Forage]! * 0.3;
+      if (nest.frontier.length > 0) need[Task.Dig] = need[Task.Dig]! + 0.6;
+    }
     need[Task.Nurse] = this.brood.length > 0 ? 0.12 + Math.min(1.2, (this.looseEggs + this.hungryLarvae * 1.5) / (adults * 0.15 + 2)) : 0;
     need[Task.Clean] = f[F.Trash]! > 0 ? 0.12 + Math.min(0.8, f[F.Trash]! / 12) : 0;
     need[Task.Idle] = 0.28;

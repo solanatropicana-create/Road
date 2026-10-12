@@ -184,7 +184,10 @@ export class World {
     if (this.mat[i] === EMPTY && x > 0 && y > 0 && x < this.w - 1 && y < this.h - 1) {
       const w = this.w;
       const p = this.plant;
-      if (
+      // Underground the colony lives between the glass and the soil face behind it:
+      // an ant can cling anywhere in an open tunnel or chamber.
+      if (this.bg[i] === 1) v = 1;
+      else if (
         SOLID[this.mat[i + 1]!] || SOLID[this.mat[i - 1]!] || SOLID[this.mat[i + w]!] ||
         SOLID[this.mat[i - w]!] || SOLID[this.mat[i + w + 1]!] || SOLID[this.mat[i + w - 1]!] ||
         SOLID[this.mat[i - w + 1]!] || SOLID[this.mat[i - w - 1]!] ||
