@@ -8,9 +8,11 @@ Gerçek ölçekte bir toprak kesitinde, bir *Messor structor* (hasatçı karınc
 
 ## 2. Bu gece ne yapıldı
 
+- **Oynanabilir link:** https://claude.ai/artifact/Ja2FVX7Gs5UHxjRM7yPXha (özel; yalnızca sen açabilirsin, istersen Share menüsünden paylaşırsın).
 - Tarayıcıda oynanabilir prototip var: kraliçe iner, kanatlarını koparır, yuvasını kazar, ilk işçileri büyütür. Sonra koloni kendi başına büyür: kazar, tohum toplar, ambar doldurur, yavru besler, çöp atar. Yağmur ve fırtınada su basar, ıslak tavanlar çöker.
 - Koloni beyni arayüzü (Mod B) çalışıyor.
-- Simülasyon sağlam. 8 farklı haritada 30 dakikalık (5 oyun günü) otomatik testte 8 koloninin 8'i de büyüdü: 118–186 işçi, 2000–3300 hücrelik yuva, hiç açlık ölümü yok.
+- Simülasyon sağlam. 8 farklı haritada 30 dakikalık (5 oyun günü) otomatik testte 8 koloninin 8'i de büyüdü: 118–180 işçi, 2200–3250 hücrelik yuva, hiç açlık ölümü yok. 60 dakikalık testte de hepsi hayatta.
+- Gecenin ikinci yarısında eklenenler: anatomik makro karıncalar, zengin toprak dokusu, *Messor* krateri, saha defteri, belgesel kamera, kazı planı ve koku izi görünümleri, evlilik uçuşu açılışı, otomatik kayıt, tohum türleri, çimlenen tohum, antenleşme.
 - Gece boyunca bulunan ve düzeltilen önemli hatalar: krater kenarında sapı kesilip havada kalan bitkiler toplayıcıları kilitliyordu (iki haritada koloni açlıktan ölüyordu); kraliçe yüzeydeki bir çakılın üstüne inince kazamıyordu.
 - Çalıştırmak için: `npm install` ve ardından `npm run dev`. Tek dosyalık sürüm için `npm run build:artifact`.
 
@@ -91,7 +93,6 @@ Karıncalar toprak gibi piksel olarak değil, ekran çözünürlüğünde çizil
   3. Paslı kırmızı kil (demir oksit).
   4. Soluk alt toprak ve çakıl.
 - Her katmanın sertliği farklı. Kil en zor kazılanı ama tavanı en iyi o tutuyor.
-- Kazılan toprak dışarı taşınıyor ve yuva ağzının çevresinde gerçek *Messor* yuvaları gibi bir toprak höyüğü oluşturuyor.
 - Tünelin arka duvarı, kazılan toprağın tonunu "hatırlıyor". Böylece kazılmış yer, kazılmamış yerden ayrı görünüyor.
 - Toprak dokusu:
   - Çimenlerin saçak kökleri ve yoncanın kazık kökü, içinden geçtiği toprağın açık tonunda iplikler olarak görünüyor.
@@ -150,7 +151,7 @@ Oyuncu tek bir karıncaya emir vermez. Koloninin önceliklerini belirler. Her i�
 |---|---|
 | İş öncelikleri: Kaz / Topla / Bak / Temizle (Kapalı · Düşük · Normal · Yüksek) | Koloninin o işe ayırmak istediği payı değiştirir. Altındaki çubuk gerçekte kaç karıncanın o işte olduğunu gösterir. |
 | Kraliçe: Üreme (Düşük · Normal · Yüksek) | Yumurta hızını belirler. Yüksek üreme hızlı büyütür ama yiyecek yetmezse açlık riski doğar. |
-| Majör oranı | Yavruların ne kadarının iri kafalı majör olacağını belirler. Majörler tohum kırar ve yavaştır. İleride savaşacaklar. |
+| Majör oranı | Yavruların ne kadarının iri kafalı majör olacağını belirler. Majörler iri ve yavaş. Gerçekte tohum kırarlar; bu davranış henüz simde yok (8. bölüm). Rakip koloni gelirse savaşta işe yarayacaklar. |
 | Yuva: + Kreş / + Ambar / + Dinlenme odası / Daha derine kaz | Planlayıcının sırasına oda ekler. |
 | Büyüme işareti | Yeraltında bir noktaya tıklarsın, koloni o yöne doğru genişler. |
 | Sandbox: Yağmur / Fırtına | Hava zaten kendiliğinden geliyor. Bu butonlar yuva tasarımını hemen test etmek için var. |
@@ -165,8 +166,8 @@ Ayrıca:
 - **Açılış:** Oyuncu iniş yeri seçerken kanatlı kraliçe odak dışı çayırın üstünde uçuyor ve imlecin gösterdiği yerin üstünde süzülüyor. Tıklayınca oraya iniyor, bir an duruyor, sonra kanatlarını koparıyor.
 - **Kayıt:** Koloni yaklaşık dakikada bir ve sekme kapanınca tarayıcıya kaydediliyor (sıkıştırılmış, ~0,5 MB). Tekrar açınca iniş ekranında "Continue colony · Day N · X workers" çıkıyor; saha defteri de geri geliyor. Steam sürümünde aynı kayıt dosyaya yazılacak.
 - **Kazı planı (P):** Koloninin kazmayı planladığı toprak kehribar noktalarla görünüyor. Büyüme işareti bir nişangâh olarak çiziliyor. Bir oda sipariş edince ya da işaret koyunca birkaç saniye kendiliğinden görünüyor. Böylece oyuncu, koloni beyninin kararını görüyor.
-- Bir odanın üstüne gelirsen içindeki tohum ya da yavru sayısı çıkar.
-- Kısayollar: Boşluk duraklatır, 1–5 hız seçer, F tüm kesiti gösterir, tekerlek zoom yapar, sürükleme kaydırır.
+- Bir odanın üstüne gelirsen derinliği, içindeki tohum ya da yavru sayısı ve kısa bir doğa notu çıkar ("Messor tohumu kuru tutar; ıslanırsa filizlenir ve dışarı atılır").
+- Kısayollar: Boşluk duraklatır, 1–5 hız seçer, F tüm kesiti gösterir, tekerlek zoom yapar, sürükleme kaydırır. **?** tuşu (ya da alt çubuktaki ? düğmesi) bütün tuşları gösteriyor; oradan yeni koloni de başlatılabiliyor.
 
 ## 5. Simülasyon: şu an çalışan sistemler
 
@@ -326,7 +327,9 @@ Aşağıdakiler benim önerilerim. Senin "benle konuşmadan tasarımı komple ya
 - **Tek giriş, yoğun trafik.** Büyük kolonide 60'tan fazla karınca aynı şafttan geçiyor: toprak taşıyanlar, kabuk atanlar, toplayıcılar. Gerçekçi ama görsel olarak kalabalık.
   - Önerim: koloni 120 işçiyi geçince ikinci bir giriş açılsın (gerçek büyük *Messor* yuvalarında birden çok giriş olur).
   - Bu bir mimari kararı olduğu için sormadan yapmadım.
-- Yağmur suyu derine pek inmiyor, bu yüzden çökmeler nadir.
+- Yağmur suyu kök ve solucan yollarından iniyor ama sağlam toprakta yine sığ kalıyor; tavan çökmeleri hâlâ nadir. Sel asıl olarak yuva ağzından giriyor.
+- **Majörler tohum kırmıyor.** Gerçek *Messor*'da majörler tohumu kırıp "karınca ekmeği" yaparlar. Şu an tüketim soyut: tohum ambardan eksiliyor, kabuk kalıyor. Görünür bir "değirmen" davranışı yiyecek akışını değiştireceği için ayrı ele alınmalı.
+- **Ambarlar küçük kalıyor.** Kraliçe fazla yiyeceği hemen yavruya çeviriyor. Bu bilinçli: oyuncu üremeyi Düşük'e alınca ambar doluyor. Yani büyüme mi, stok mu kararı oyuncuda.
 - Ses yok.
 - Klavye dışında erişilebilirlik ayarı yok.
 
