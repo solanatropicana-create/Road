@@ -198,7 +198,6 @@ function shapes(b: Body): Shapes {
   return S;
 }
 
-
 const css = (c: RGB, l: RGB, a = 1): string =>
   `rgba(${Math.min(255, (c[0] * l[0]) | 0)},${Math.min(255, (c[1] * l[1]) | 0)},${Math.min(255, (c[2] * l[2]) | 0)},${a})`;
 

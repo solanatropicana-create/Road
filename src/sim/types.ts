@@ -34,4 +34,7 @@ export const TASK_LABEL: Record<TaskKind, string> = {
   [Task.Found]: 'founding',
 };
 
+/** Minor worker, major ("soldier", the big-headed seed crusher) or queen. */
+export type Caste = 'worker' | 'soldier' | 'queen';
+
 export type ChamberKind = 'queen' | 'nursery' | 'granary' | 'rest';

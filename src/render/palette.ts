@@ -9,15 +9,11 @@ export const hex = (s: string): RGB => {
 export const pack = (r: number, g: number, b: number, a = 255): number =>
   ((a << 24) | ((b & 255) << 16) | ((g & 255) << 8) | (r & 255)) >>> 0;
 
-export const packRGB = (c: RGB, a = 255): number => pack(c[0], c[1], c[2], a);
-
 export const mixRGB = (a: RGB, b: RGB, t: number): RGB => [
   a[0] + (b[0] - a[0]) * t,
   a[1] + (b[1] - a[1]) * t,
   a[2] + (b[2] - a[2]) * t,
 ];
-
-export const scaleRGB = (c: RGB, f: number): RGB => [c[0] * f, c[1] * f, c[2] * f];
 
 const ramp = (...cs: string[]): RGB[] => cs.map(hex);
 
@@ -68,17 +64,3 @@ export const ZONE_TINT: Record<string, RGB> = {
   rest: hex('#3e3328'),
 };
 
-export const ANT_COLORS: Record<string, RGB> = {
-  g: hex('#140e0b'), // gaster
-  h: hex('#3e2f27'), // gloss highlight
-  p: hex('#1d1511'), // petiole
-  t: hex('#1b1410'), // thorax
-  k: hex('#110c0a'), // head
-  r: hex('#5c2414'), // major's rusty head
-  s: hex('#7a3a20'), // major head highlight
-  m: hex('#4d3121'), // mandibles
-  l: hex('#2c211a'), // legs
-  a: hex('#33271f'), // antennae
-  w: hex('#cfd6dc'), // queen wings
-  x: hex('#a9b4bd'), // wing veins
-};

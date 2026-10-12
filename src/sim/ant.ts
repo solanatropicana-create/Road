@@ -1,9 +1,8 @@
 import type { Sim } from './sim';
 import { F, FAR } from './fields';
-import { Carry, CarryKind, Task, TaskKind } from './types';
+import { Carry, CarryKind, Task, TaskKind, Caste } from './types';
 import type { Brood } from './brood';
 import { Nest } from './nest';
-import type { Caste } from '../render/sprites';
 import {
   EMPTY, SOLID, HARDNESS, REFUSE, SEED, SEEDHEAD, FRUIT, SAND, WATER, LITTER,
 } from '../world/mat';
