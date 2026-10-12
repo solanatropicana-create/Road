@@ -1,6 +1,6 @@
 # Görsel inceleme: sanat paneli ve öneri
 
-*12 Ekim 2026. Oyunda denemek için: `L` tuşu ya da `?art=new`. Varsayılan görünüm değişmedi.*
+*12 Ekim 2026. Oyunda denemek için: `L` tuşu ya da `?art=new`. Varsayılan görünüm değişmedi. Kaydırmalı önce/sonra sayfası ve oynanabilir prototip (özel link): https://claude.ai/artifact/2DCm4JE4DcLWVYGPztyLk5*
 
 İki soru vardı:
 
