@@ -11,7 +11,8 @@ Gerçek ölçekte bir toprak kesitinde, bir *Messor structor* (hasatçı karınc
 - **Oynanabilir link:** https://claude.ai/artifact/Ja2FVX7Gs5UHxjRM7yPXha (özel; yalnızca sen açabilirsin, istersen Share menüsünden paylaşırsın).
 - Tarayıcıda oynanabilir prototip var: kraliçe iner, kanatlarını koparır, yuvasını kazar, ilk işçileri büyütür. Sonra koloni kendi başına büyür: kazar, tohum toplar, ambar doldurur, yavru besler, çöp atar. Yağmur ve fırtınada su basar, ıslak tavanlar çöker.
 - Koloni beyni arayüzü (Mod B) çalışıyor.
-- Simülasyon sağlam. 8 farklı haritada 30 dakikalık (5 oyun günü) otomatik testte 8 koloninin 8'i de büyüdü: 118–180 işçi, 2200–3250 hücrelik yuva, hiç açlık ölümü yok. 60 dakikalık testte de hepsi hayatta.
+- Simülasyon sağlam. 8 farklı haritada 30 dakikalık (5 oyun günü) otomatik testte 8 koloninin 8'i de büyüdü: 109–168 işçi, 1700–2250 hücrelik yuva, hiç açlık ölümü yok. 60 dakikalık testte de hepsi hayatta ve büyümeye devam ediyor.
+- Gece sonunda kodu ayrı bir gözden geçirmeden geçirdim; 10 hata bulundu ve düzeltildi. En önemlisi: bir kez zaman aşımına uğrayan taşıyıcı karıncalar, sonraki bütün yüklerini sessizce yok ediyordu. Kazılan toprağın çoğu ortadan kayboluyordu. Artık her tane gerçekten höyüğe taşınıyor. Yuvalar biraz daha küçük ama dürüst.
 - Gecenin ikinci yarısında eklenenler: anatomik makro karıncalar, zengin toprak dokusu, *Messor* krateri, saha defteri, belgesel kamera, kazı planı ve koku izi görünümleri, evlilik uçuşu açılışı, otomatik kayıt, tohum türleri, çimlenen tohum, antenleşme.
 - Gece boyunca bulunan ve düzeltilen önemli hatalar: krater kenarında sapı kesilip havada kalan bitkiler toplayıcıları kilitliyordu (iki haritada koloni açlıktan ölüyordu); kraliçe yüzeydeki bir çakılın üstüne inince kazamıyordu.
 - Çalıştırmak için: `npm install` ve ardından `npm run dev`. Tek dosyalık sürüm için `npm run build:artifact`.
@@ -100,7 +101,7 @@ Karıncalar toprak gibi piksel olarak değil, ekran çözünürlüğünde çizil
   - Kilin içinde gri ve pas rengi lekeler var; suyun durduğu ve demirin paslandığı yerler.
   - Alt toprakta ince tabakalanma var.
   - Üst toprakta kömür parçacıkları var.
-- Höyük gerçek bir *Messor* krateri gibi alçak ve geniş: girişin iki yanında bir sırt, çayıra doğru incelen bir döküntü. Koloni büyüdükçe höyük de büyüyor.
+- Höyük gerçek bir *Messor* yuvası gibi alçak ve geniş: girişin yanında çayıra doğru incelen bir döküntü tepesi. Kazılan her tane gerçekten oraya taşınıyor, koloni büyüdükçe höyük de büyüyor.
 - Yuva mimarisi kendiliğinden "Noel ağacı" şeklini alıyor: tek dikey şaft ve iki yanında yassı odalar. Bu, Tschinkel'in gerçek hasatçı karınca yuvalarına alüminyum dökerek çıkardığı kalıplarla aynı.
 
 **Neden:** Toprak bu oyunun asıl tuvali. Katmanlar hem güzel görünüyor hem de oyuna anlam katıyor: derin kazmak pahalı ama güvenli.
@@ -238,7 +239,7 @@ Ayrıca:
 **Performans**
 
 - 150 karıncada simülasyon adımı yaklaşık 0,3 ms. 16x hızda bile tarayıcıda rahat çalışıyor.
-- 60 dakikalık (10 oyun günü) testte 8 haritanın hepsinde koloni hayatta kaldı ve çayırın taşıma kapasitesinde (120–230 işçi) dengelendi. Ölümlerin hepsi yaşlılıktan; açlık yok.
+- 60 dakikalık (10 oyun günü) testte 8 haritanın hepsinde koloni hayatta kaldı. 110–180 işçide çayırın taşıma kapasitesine yaklaşıyorlar, yuva büyümeye devam ediyor. Ölümler yaşlılıktan ya da selde boğulan yavrudan; açlık yok.
 - Görüntüsüz test aracı var: `npm run headless` ve `scripts/batch.sh`.
 
 ## 6. Formicarium'dan aldıklarımız ve geçtiğimiz yerler
