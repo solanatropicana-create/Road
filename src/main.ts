@@ -194,6 +194,8 @@ export class Game {
 const WINTER_SPEED = 96;
 
 const params = new URLSearchParams(location.search);
+// ?art=new starts with the art proposal on (L toggles it).
+if (params.get('art') === 'new') Renderer.proposal = true;
 const seed = Number(params.get('seed') ?? Math.floor(Math.random() * 1e6));
 const siteParam = params.get('site') as SiteId | null;
 const site = siteParam && SITE_IDS.includes(siteParam) ? siteParam : siteForSeed(seed);

@@ -232,6 +232,8 @@ export class AntPainter {
   private flight = { x: 320, y: 40, face: 1 };
   /** World x the pointer is over while the player is choosing a landing spot. */
   flightGoal: number | null = null;
+  /** Stronger rim light and sheen on ants in the nest (the art proposal). */
+  strongRim = false;
   private world: World;
   private time = 0;
 
@@ -402,13 +404,15 @@ export class AntPainter {
         ctx.stroke(S.wings);
       }
     }
-    const rim = full && !dead ? css(SHEEN_COL, l, 0.3) : '';
+    // In the nest a black ant sits on dark soil: the proposal gives it a stronger rim there.
+    const strong = this.strongRim && wall;
+    const rim = full && !dead ? css(SHEEN_COL, l, strong ? 0.5 : 0.3) : '';
     ctx.fillStyle = css(dead ? DEAD_COL : BODY_COL, l);
     ctx.fill(S.body);
     if (rim) {
       // Rim light: one screen pixel of warm edge so overlapping ants stay separate.
       ctx.strokeStyle = rim;
-      ctx.lineWidth = px;
+      ctx.lineWidth = strong ? px * 1.5 : px;
       ctx.stroke(S.body);
     }
     if (busy) ctx.translate(busy, 0);
@@ -430,7 +434,7 @@ export class AntPainter {
     if (busy) ctx.translate(-busy, 0);
     if (full) {
       // A specular streak near the top edge of each segment, as on a glossy cuticle under a lamp.
-      ctx.fillStyle = css(SHEEN_COL, l, dead ? 0.12 : 0.45);
+      ctx.fillStyle = css(SHEEN_COL, l, dead ? 0.12 : strong ? 0.62 : 0.45);
       ctx.fill(S.sheen);
     }
     if (mid) {

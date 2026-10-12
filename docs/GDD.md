@@ -354,6 +354,7 @@ Aşağıdakiler benim önerilerim. Senin "benle konuşmadan tasarımı komple ya
 4. **İlk eklenecek ikinci tür hangisi?** Benim önerim *Solenopsis* (sal kurma) ya da *Lasius* (yaprak biti çiftliği).
 5. **Görsel dil.** Makro lens + gerçek ölçek + laboratuvar arayüzü yönü sana uyuyor mu? Değiştirmek istediğin bir şey var mı?
    - Özellikle: toprak piksel, karıncalar pürüzsüz (3.3). Bu karışımı beğendin mi, yoksa her şey piksel mi olsun?
+   - Bu soru için beş kişilik bir sanat paneli kuruldu. Önerisi: uzakta piksel kalsın, yakında (zoom 5→8) toprak malzemeye çözülsün. Ayrıntılar, önce/sonra görüntüler ve prototip (`L` tuşu): [art-review/](art-review/README.md).
 6. **Oyuncu müdahalesi.** Koloni beyni dışında doğrudan dünya müdahalesi (tohum bırakma, su dökme, taş koyma) olsun mu? Şu an yalnızca sandbox'ta yağmur var.
 7. **Ses.** Ambiyans tasarımı ne yönde olsun? Mikrofonla kaydedilmiş gerçek toprak sesleri, ya da minimal synth?
 8. **İkinci giriş.** Büyük kolonilerde ikinci bir giriş açılsın mı (8. bölüm)? Oyuncu bunu kendisi mi işaretlesin, yoksa koloni kendisi mi karar versin?

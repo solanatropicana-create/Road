@@ -4,6 +4,8 @@
 
 Tasarım belgesi, görsel dil kararları ve açık sorular: [docs/GDD.md](docs/GDD.md)
 
+Görsel inceleme (beş kişilik sanat paneli) ve yakın plan için öneri, önce/sonra görüntülerle: [docs/art-review/](docs/art-review/README.md)
+
 Oynanabilir sürüm (özel link): https://claude.ai/artifact/Ja2FVX7Gs5UHxjRM7yPXha
 
 ![Akşam ışığında kesit: tek şaft ve iki yanında yassı odalar](docs/img/hero.jpg)
@@ -46,6 +48,7 @@ Mod, tuşlar panelinden (?) her an değiştirilebilir. İzle'ye geçince bütün
 | P | Kazı planını göster/gizle (kehribar noktalar) |
 | T | Koku izlerini (feromon) göster/gizle |
 | H | Sinema modu: paneller gizlenir, belgesel alt yazısı kalır |
+| L | Görsel öneri: yakında makro lens, sıcak oda tonları, kırmızı gece lambası (karşılaştırmak için; `?art=new` ile açık başlar) |
 | ? | Tuşlar paneli (dil seçimi ve yeni koloni de burada) |
 | Esc | Takibi, işaretlemeyi ya da sinema modunu bırak |
 
@@ -64,6 +67,7 @@ P, T, H, C ve ? alt çubukta düğme olarak da var (dokunmatik ekranlar için). 
 | `node scripts/beauty.mjs` | Belgelerdeki seçilmiş görüntüler (paneller gizli) |
 | `node scripts/play.mjs ad 3 40` | Oyuncu gibi oynar: kraliçeyi indirir, 16× hızda bekler, ekran görüntüsü alır |
 | `scripts/playtest.mjs` | Oyun testi aracı: tarayıcıda oyunu sürer (`openGame()`), bkz. `docs/playtest/` |
+| `node scripts/artlab.mjs` | Aynı olgun koloniden önce/sonra görüntü çiftleri (`shots/art/`), bkz. `docs/art-review/` |
 
 ## Kod yapısı
 
@@ -72,7 +76,7 @@ src/
   config.ts        ölçek, zaman ve ayar sabitleri
   world/           hücre dünyası, toprak üretimi, bitkiler, düşen kum fiziği, su ve nem
   sim/             koloni, karınca davranışı, yuva planlayıcı, mesafe alanları, yavru
-  render/          piksel kesit, makro arka plan, ışık ve hava, kamera, vektör karıncalar (antdraw.ts)
+  render/          piksel kesit, makro arka plan, ışık ve hava, kamera, vektör karıncalar (antdraw.ts), yakın plan lensi (macro.ts)
   ui/              koloni beyni, saha defteri, belgesel kamera (director.ts), ipuçları, dil tablosu (i18n.ts)
 scripts/           görüntüsüz test, toplu test, ekran görüntüsü, tek dosya derleme
 ```

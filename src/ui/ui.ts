@@ -5,6 +5,7 @@ import type { Ant } from '../sim/ant';
 import type { Chamber } from '../sim/nest';
 import { SPEEDS, TICK_HZ, DAY_TICKS, TUNING } from '../config';
 import { ZONE_TINT } from '../render/palette';
+import { Renderer } from '../render/renderer';
 import { savedMeta } from '../sim/save';
 import { t, num, getLang, setLang, Lang, Vars } from './i18n';
 import { metabolism } from '../sim/calendar';
@@ -472,6 +473,7 @@ export class UI {
       <dt>P</dt><dd>${t('keyP')}</dd>
       <dt>T</dt><dd>${t('keyT')}</dd>
       <dt>H</dt><dd>${t('keyH')}</dd>
+      <dt>L</dt><dd>${t('keyL')}</dd>
       <dt>F</dt><dd>${t('keyF')}</dd></dl>
       <div class="row langrow"><label>${t('modeLabel')}</label><div class="seg" id="modeseg">
         <button data-mode="watch" class="${this.mode === 'watch' ? 'on' : ''}">${t('modeWatch')}</button><button data-mode="guide" class="${this.mode === 'guide' ? 'on' : ''}">${t('modeGuide')}</button></div></div>
@@ -896,6 +898,12 @@ export class UI {
     this.syncBar();
   }
 
+  /** The art proposal (L): macro lens close up, warm room tints, a red night lamp. */
+  private toggleLens(): void {
+    Renderer.proposal = !Renderer.proposal;
+    this.toast(t(Renderer.proposal ? 'lensOn' : 'lensOff'));
+  }
+
   private toggleTrails(): void {
     const r = this.game.renderer;
     r.trails = !r.trails;
@@ -1026,6 +1034,8 @@ export class UI {
         game.cam.fit();
       } else if (e.key === 't' || e.key === 'T') {
         this.toggleTrails();
+      } else if (e.key === 'l' || e.key === 'L') {
+        this.toggleLens();
       } else if (e.key === 'p' || e.key === 'P') {
         this.togglePlan();
       } else if (e.key === 'c' || e.key === 'C') {
