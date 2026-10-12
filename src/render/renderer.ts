@@ -159,8 +159,16 @@ export class Renderer {
       }
       case SEED:
       case REFUSE:
-        // Close up, grains are drawn as shapes over the slice (see grains()).
+        // Close up, grains are drawn as shapes over the slice (see grains()). The
+        // top layer of a heap is loose grains; inside a heap, under other grains,
+        // there is no gap to see through, so the cell keeps a solid shaded base.
         if (this.closeUp) {
+          const up = w.mat[i - w.w];
+          if (up === SEED || up === REFUSE) {
+            c = m === SEED ? seedLook(w.tone[i]!).col : sampleRamp(PAL.refuse, tone * 0.6 + 0.2);
+            c = [c[0] * 0.72, c[1] * 0.72, c[2] * 0.72];
+            break;
+          }
           if (w.bg[i] === 0) return 0;
           c = this.backwall(i, x, y);
           return pack(c[0], c[1], c[2]);
@@ -445,8 +453,10 @@ export class Renderer {
         }
         const hsh = Math.imul(i, 2654435761) >>> 0;
         const rot = ((hsh >>> 8) & 255) / 255 * Math.PI;
-        const jx = (((hsh >>> 16) & 15) / 15 - 0.5) * 0.25;
-        const jy = (((hsh >>> 20) & 15) / 15 - 0.5) * 0.2;
+        // Scatter each grain a little so heaps don't line up with the cell grid.
+        const jx = (((hsh >>> 16) & 15) / 15 - 0.5) * 0.55;
+        const jy = (((hsh >>> 20) & 15) / 15 - 0.5) * 0.35;
+        const sz = 0.8 + ((hsh >>> 24) & 15) / 15 * 0.45;
         const cx = x + 0.5 + jx;
         const cy = y + 0.55 + jy;
         const b = Math.min(B - 1, (w.tone[i]! * B) >> 8);
@@ -469,8 +479,8 @@ export class Renderer {
           L.shoots.quadraticCurveTo(cx + 0.5, cy - 1.0, cx + 0.2, cy - 1.5);
         } else {
           const p = L.husk[b]!;
-          p.moveTo(cx + 0.6 * Math.cos(rot), cy + 0.6 * Math.sin(rot));
-          p.ellipse(cx, cy, 0.6, 0.26, rot, 0, Math.PI * 2);
+          p.moveTo(cx + 0.6 * sz * Math.cos(rot), cy + 0.6 * sz * Math.sin(rot));
+          p.ellipse(cx, cy, 0.6 * sz, 0.26 * sz, rot, 0, Math.PI * 2);
         }
       }
     }
