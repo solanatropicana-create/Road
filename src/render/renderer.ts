@@ -302,7 +302,8 @@ export class Renderer {
   }
 
   private drawEntities(sim: Sim): void {
-    // Particles (dust, rain, wings).
+    // Far out, dust and rain are single pixels of the slice; close up they are drawn smooth (see specks()).
+    if (this.closeUp) return;
     for (const p of sim.particles.list) {
       this.px(Math.round(p.x), Math.round(p.y), p.color);
     }
@@ -313,6 +314,35 @@ export class Renderer {
       for (let k = 0; k < 4; k++) {
         this.px(Math.round(d.x - slant * k), Math.round(d.y) - k, dropCols[k]!);
       }
+    }
+  }
+
+  /** Whether the camera is close enough that loose specks are drawn smooth instead of as pixels. */
+  private closeUp = false;
+
+  /** Dust, shed wings and rain at screen resolution, for close-ups. */
+  private specks(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }, z: number): void {
+    const ctx = this.ctx;
+    for (const p of sim.particles.list) {
+      if (p.x < view.x0 || p.x > view.x1 || p.y < view.y0 || p.y > view.y1) continue;
+      const l = this.lightAt(p.x, p.y);
+      const c = p.color;
+      ctx.fillStyle = `rgb(${((c & 255) * l[0]) | 0},${(((c >>> 8) & 255) * l[1]) | 0},${(((c >>> 16) & 255) * l[2]) | 0})`;
+      const r = Math.max(0.3, 1.2 / z);
+      ctx.fillRect(p.x - r, p.y - r, r * 2, r * 2);
+    }
+    if (sim.drops.length) {
+      const slant = sim.weather.storm ? 0.35 : 0.12;
+      ctx.strokeStyle = 'rgba(206,220,232,0.6)';
+      ctx.lineWidth = Math.max(0.3, 1 / z);
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      for (const d of sim.drops) {
+        if (d.x < view.x0 - 2 || d.x > view.x1 + 2 || d.y < view.y0 - 4 || d.y > view.y1 + 4) continue;
+        ctx.moveTo(d.x + 0.5, d.y + 0.5);
+        ctx.lineTo(d.x + 0.5 - slant * 4, d.y + 0.5 - 4);
+      }
+      ctx.stroke();
     }
   }
 
@@ -362,6 +392,7 @@ export class Renderer {
       w.dirtyAll = true;
       sim.nest.zonesChanged = false;
     }
+    this.closeUp = cam.zoom * this.dpr >= 5;
     this.updateBase();
     this.buf.set(this.base);
     this.drawEntities(sim);
@@ -399,6 +430,7 @@ export class Renderer {
     this.painter.drawCorpses(ctx, col.corpses, z, this.lightAt, view);
     this.painter.drawBrood(ctx, col.brood, z, this.lightAt, view, TUNING.pupaTicks);
     this.painter.draw(ctx, ants, z, this.lightAt, view, selected);
+    if (this.closeUp) this.specks(sim, view, z);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
     // Lightning: the whole frame flashes white for a moment.

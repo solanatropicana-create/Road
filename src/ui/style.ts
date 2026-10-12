@@ -35,6 +35,9 @@ export const CSS = `
 #card .grid b { font-family: var(--mono); font-weight: 500; font-size: 15px; }
 #card .grid b.warn { color: var(--danger); }
 #card canvas { display: block; width: 100%; height: 38px; margin-top: 10px; }
+#card .legend { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 10px; color: var(--ink-faint); }
+#card .legend span { display: inline-flex; align-items: center; gap: 4px; }
+#card .legend i { width: 8px; height: 8px; border-radius: 2px; filter: brightness(1.5) saturate(1.2); }
 #card .clock { display: flex; justify-content: space-between; margin-top: 8px; font-family: var(--mono); font-size: 11px; color: var(--ink-dim); }
 
 #brain { top: 14px; right: 14px; width: 272px; max-height: calc(100vh - 100px); overflow: auto; }

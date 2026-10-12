@@ -4,6 +4,7 @@ import { PRIO_LABEL, BREED_LABEL } from '../sim/colony';
 import { WORK, Work, TASK_LABEL, Task, ChamberKind } from '../sim/types';
 import { Ant } from '../sim/ant';
 import { SPEEDS, TICK_HZ, DAY_TICKS } from '../config';
+import { ZONE_TINT } from '../render/palette';
 
 const WORK_LABEL: Record<Work, string> = { dig: 'Dig', forage: 'Forage', nurse: 'Nurse', clean: 'Clean' };
 const WORK_TASK: Record<Work, number> = { dig: Task.Dig, forage: Task.Forage, nurse: Task.Nurse, clean: Task.Clean };
@@ -61,6 +62,13 @@ export class UI {
     card.appendChild(this.spark);
     const clock = h('div', 'clock', `<span id="day">Day 1</span><span id="sky">Clear</span><span id="time">09:00</span>`);
     card.appendChild(clock);
+    // What the chamber tints mean (hover a chamber for its contents).
+    const legend = h('div', 'legend');
+    for (const [kind, label] of [['queen', 'Royal'], ['nursery', 'Nursery'], ['granary', 'Granary'], ['rest', 'Rest']] as const) {
+      const c = ZONE_TINT[kind]!;
+      legend.appendChild(h('span', '', `<i style="background:rgb(${c[0]},${c[1]},${c[2]})"></i>${label}`));
+    }
+    card.appendChild(legend);
     r.appendChild(card);
 
     // --- colony brain
@@ -221,10 +229,14 @@ export class UI {
     this.syncBar();
   }
 
-  toast(html: string): void {
+  toast(html: string, ms = 5200): void {
+    const box = this.els.toasts!;
+    // Keep it to a few lines; the oldest make way.
+    while (box.children.length >= 3) box.firstElementChild!.remove();
     const t = h('div', 'toast', html);
-    this.els.toasts!.appendChild(t);
-    setTimeout(() => t.remove(), 5200);
+    t.style.animationDuration = `${ms / 1000}s`;
+    box.appendChild(t);
+    setTimeout(() => t.remove(), ms);
   }
 
   private syncBrain(): void {
@@ -314,6 +326,9 @@ export class UI {
       } else if (e.key === 'f' || e.key === 'F') {
         game.selected = null;
         game.cam.fit();
+      } else if (e.key === 'h' || e.key === 'H') {
+        // Clean frame for screenshots and clips.
+        this.root.style.display = this.root.style.display === 'none' ? '' : 'none';
       } else if (e.key === 'Escape') {
         game.selected = null;
         this.markerMode = false;
@@ -334,6 +349,7 @@ export class UI {
       if (sim.canFound(p.x)) {
         sim.found(p.x);
         this.toast('The queen lands and <b>tears off her wings</b>');
+        setTimeout(() => this.toast('Drag to look around · scroll to zoom · click an ant to follow it · <b>H</b> hides the panels', 9000), 2500);
         game.cam.tzoom = Math.max(game.cam.tzoom, game.cam.fitZoom() * 2.4);
         game.cam.tx = p.x;
         game.cam.ty = sim.world.ground[Math.round(p.x)]! + 10;

@@ -110,8 +110,8 @@ const NODE_PTS = [
   [1.0, 0.6], [0.6, -0.6], [0.0, -1.0], [-0.6, -0.6], [-1.0, 0.6], [0.0, 0.9],
 ] as const;
 
-/** A closed curve through the midpoints of a polygon (rounded corners). */
-function smooth(ctx: CanvasRenderingContext2D, pts: readonly (readonly [number, number])[], cx: number, cy: number, rx: number, ry: number, rot: number): void {
+/** Add a closed curve through the midpoints of a polygon (rounded corners). */
+function addSmooth(path: Path2D, pts: readonly (readonly [number, number])[], cx: number, cy: number, rx: number, ry: number, rot: number): void {
   const c = Math.cos(rot);
   const s = Math.sin(rot);
   const P = (k: number): [number, number] => {
@@ -120,17 +120,82 @@ function smooth(ctx: CanvasRenderingContext2D, pts: readonly (readonly [number, 
     const y = p[1] * ry;
     return [cx + x * c - y * s, cy + x * s + y * c];
   };
-  ctx.beginPath();
   const a = P(0);
   const b = P(1);
-  ctx.moveTo((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+  path.moveTo((a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
   for (let k = 1; k <= pts.length; k++) {
     const p = P(k);
     const q = P(k + 1);
-    ctx.quadraticCurveTo(p[0], p[1], (p[0] + q[0]) / 2, (p[1] + q[1]) / 2);
+    path.quadraticCurveTo(p[0], p[1], (p[0] + q[0]) / 2, (p[1] + q[1]) / 2);
   }
-  ctx.closePath();
+  path.closePath();
 }
+
+function addEllipse(path: Path2D, cx: number, cy: number, rx: number, ry: number, rot: number): void {
+  path.moveTo(cx + rx * Math.cos(rot), cy + rx * Math.sin(rot));
+  path.ellipse(cx, cy, rx, ry, rot, 0, Math.PI * 2);
+  path.closePath();
+}
+
+interface Shapes {
+  body: Path2D;
+  head: Path2D;
+  sheen: Path2D;
+  eye: Path2D;
+  jaw: Path2D;
+  beard: Path2D;
+  wings: Path2D;
+  shadow: Path2D;
+  wallShadow: Path2D;
+}
+
+/** The static parts of each caste's outline, built once (only legs and antennae move). */
+const SHAPES = new Map<Body, Shapes>();
+function shapes(b: Body): Shapes {
+  let S = SHAPES.get(b);
+  if (S) return S;
+  const body = new Path2D();
+  const sheen = new Path2D();
+  const [gx, gy, grx, gry, grot] = b.gaster;
+  const [tx, ty, trx, tr_y, trot] = b.thorax;
+  const [hx, hy, hrx, hry] = b.head;
+  addSmooth(body, GASTER_PTS, gx, gy, grx, gry, grot);
+  addEllipse(sheen, gx + grx * 0.05, gy - gry * 0.58, grx * 0.55, gry * 0.14, grot);
+  for (const [nx, ny, nr] of b.nodes) {
+    addSmooth(body, NODE_PTS, nx, ny, nr, nr * 1.15, 0);
+    addEllipse(sheen, nx, ny - nr * 0.65, nr * 0.55, nr * 0.16, 0);
+  }
+  addSmooth(body, THORAX_PTS, tx, ty, trx, tr_y, trot);
+  addEllipse(sheen, tx + trx * 0.05, ty - tr_y * 0.58, trx * 0.55, tr_y * 0.14, trot);
+  const head = new Path2D();
+  addSmooth(head, HEAD_PTS, hx, hy, hrx, hry, 0.12);
+  addEllipse(sheen, hx + hrx * 0.05, hy - hry * 0.58, hrx * 0.55, hry * 0.14, 0.12);
+  const eye = new Path2D();
+  addEllipse(eye, hx + hrx * 0.25, hy - hry * 0.2, 0.17, 0.14, 0);
+  const jaw = new Path2D();
+  jaw.moveTo(hx + hrx * 0.7, hy + hry * 0.25);
+  jaw.lineTo(b.mouth[0] + 0.15, b.mouth[1] + 0.05);
+  jaw.lineTo(hx + hrx * 0.55, hy + hry * 0.7);
+  jaw.closePath();
+  const beard = new Path2D();
+  for (let k = 0; k < 4; k++) {
+    const x = hx - hrx * 0.4 + k * hrx * 0.28;
+    const y = hy + hry * 0.85;
+    beard.moveTo(x, y);
+    beard.quadraticCurveTo(x + 0.05, y + 0.3, x + 0.25, y + 0.42);
+  }
+  const wings = new Path2D();
+  addEllipse(wings, -2.0, -3.2, 4.6, 0.95, 0.1);
+  addEllipse(wings, -1.4, -2.75, 3.6, 0.7, 0.16);
+  const shadow = new Path2D();
+  addEllipse(shadow, 0, 0.05, 2.8 * (b === QUEEN ? 1.5 : 1), 0.3, 0);
+  const wallShadow = new Path2D();
+  addEllipse(wallShadow, tx - 0.4, ty + 0.55, 3.2 * (b === QUEEN ? 1.6 : 1), 1.0, 0);
+  S = { body, head, sheen, eye, jaw, beard, wings, shadow, wallShadow };
+  SHAPES.set(b, S);
+  return S;
+}
+
 
 const css = (c: RGB, l: RGB, a = 1): string =>
   `rgba(${Math.min(255, (c[0] * l[0]) | 0)},${Math.min(255, (c[1] * l[1]) | 0)},${Math.min(255, (c[2] * l[2]) | 0)},${a})`;
@@ -266,102 +331,70 @@ export class AntPainter {
   }
 
   private ant(ctx: CanvasRenderingContext2D, a: Ant | null, b: Body, gait: number, l: RGB, z: number, busy: number, dead: boolean, wall = false): void {
-    const px = 1 / (z * b.scale);
-    const detail = z * b.scale > 1.6;
-    const bodyCol = dead ? DEAD_COL : BODY_COL;
+    const S = shapes(b);
+    const s = z * b.scale;
+    const px = 1 / s;
+    // Level of detail by on-screen size: full anatomy close up, a clean silhouette further out.
+    const full = s >= 4;
+    const mid = s >= 1.6;
     const legCol = dead ? DEAD_COL : LEG_COL;
-    // In the nest the back wall is right behind the ant: a soft shadow lifts it off.
-    if (wall) {
+    if (wall && full) {
+      // In the nest the back wall is right behind the ant: a soft shadow lifts it off.
       ctx.fillStyle = 'rgba(8,4,2,0.3)';
-      ctx.beginPath();
-      ctx.ellipse(b.thorax[0] - 0.4, b.thorax[1] + 0.55, 3.2 * (b === QUEEN ? 1.6 : 1), 1.0, 0, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.fill(S.wallShadow);
     }
-    // Contact shadow.
-    if (!dead) {
-      ctx.fillStyle = `rgba(0,0,0,${0.22})`;
-      ctx.beginPath();
-      ctx.ellipse(0, 0.05, 2.8 * (b === QUEEN ? 1.5 : 1), 0.3, 0, 0, Math.PI * 2);
-      ctx.fill();
+    if (!dead && mid) {
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      ctx.fill(S.shadow);
     }
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
-    if (detail) {
-      // Far-side legs first, darker and half a stride out of phase.
-      this.legs(ctx, b, gait + Math.PI, mixRGB(legCol, [0, 0, 0], 0.45), l, px, dead);
-    }
+    // Far-side legs first, darker and half a stride out of phase.
+    if (full) this.legs(ctx, b, gait + Math.PI, mixRGB(legCol, [0, 0, 0], 0.45), l, px, dead);
     // Queen's wings lie over the back until she tears them off.
     if (a && a.wings) {
       ctx.fillStyle = css([215, 222, 232], l, 0.32);
-      ctx.strokeStyle = css([120, 110, 100], l, 0.55);
-      ctx.lineWidth = Math.max(px, 0.08);
-      for (const [cx, cy, rx, ry, rot] of [[-2.0, -3.2, 4.6, 0.95, 0.1], [-1.4, -2.75, 3.6, 0.7, 0.16]] as const) {
-        ctx.beginPath();
-        ctx.ellipse(cx, cy, rx, ry, rot, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
+      ctx.fill(S.wings);
+      if (full) {
+        ctx.strokeStyle = css([120, 110, 100], l, 0.55);
+        ctx.lineWidth = Math.max(px, 0.08);
+        ctx.stroke(S.wings);
       }
     }
-    // Gaster, nodes, mesosoma, head; each with a glossy highlight along the top.
-    const sheen = css(SHEEN_COL, l, dead ? 0.12 : 0.45);
-    const rim = css(SHEEN_COL, l, 0.3);
-    const shape = (pts: readonly (readonly [number, number])[], cx: number, cy: number, rx: number, ry: number, rot: number, col: RGB): void => {
-      ctx.fillStyle = css(col, l);
-      smooth(ctx, pts, cx, cy, rx, ry, rot);
-      ctx.fill();
-      if (detail && !dead) {
-        // Rim light: one screen pixel of warm edge so overlapping ants stay separate.
-        ctx.strokeStyle = rim;
-        ctx.lineWidth = px;
-        ctx.stroke();
-      }
-      if (detail) {
-        // A specular streak near the top edge, as on a glossy cuticle under a lamp.
-        ctx.fillStyle = sheen;
-        ctx.beginPath();
-        ctx.ellipse(cx + rx * 0.05, cy - ry * 0.58, rx * 0.55, ry * 0.14, rot, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    };
-    const [gx, gy, grx, gry, grot] = b.gaster;
-    shape(GASTER_PTS, gx, gy, grx, gry, grot, bodyCol);
-    for (const [nx, ny, nr] of b.nodes) shape(NODE_PTS, nx, ny, nr, nr * 1.15, 0, bodyCol);
-    const [tx, ty, trx, tr_y, trot] = b.thorax;
-    shape(THORAX_PTS, tx, ty, trx, tr_y, trot, bodyCol);
-    const [hx, hy, hrx, hry] = b.head;
-    const hb = busy;
-    shape(HEAD_PTS, hx + hb, hy, hrx, hry, 0.12, dead ? DEAD_COL : b.headCol);
-    if (detail && z * b.scale > 5 && !dead) {
-      // Psammophore: the beard of long hairs under a harvester's head, for carrying sand.
-      ctx.strokeStyle = css(hex('#8a6a50'), l, 0.45);
+    const rim = full && !dead ? css(SHEEN_COL, l, 0.3) : '';
+    ctx.fillStyle = css(dead ? DEAD_COL : BODY_COL, l);
+    ctx.fill(S.body);
+    if (rim) {
+      // Rim light: one screen pixel of warm edge so overlapping ants stay separate.
+      ctx.strokeStyle = rim;
       ctx.lineWidth = px;
-      ctx.beginPath();
-      for (let k = 0; k < 4; k++) {
-        const x = hx + hb - hrx * 0.4 + k * hrx * 0.28;
-        const y = hy + hry * 0.85;
-        ctx.moveTo(x, y);
-        ctx.quadraticCurveTo(x + 0.05, y + 0.3, x + 0.25, y + 0.42);
-      }
-      ctx.stroke();
+      ctx.stroke(S.body);
     }
-    if (detail) {
-      // Eye: a dull glint on the side of the head.
+    if (busy) ctx.translate(busy, 0);
+    ctx.fillStyle = css(dead ? DEAD_COL : b.headCol, l);
+    ctx.fill(S.head);
+    if (rim) ctx.stroke(S.head);
+    if (full) {
       ctx.fillStyle = css([90, 78, 66], l, 0.9);
-      ctx.beginPath();
-      ctx.ellipse(hx + hb + hrx * 0.25, hy - hry * 0.2, 0.17, 0.14, 0, 0, Math.PI * 2);
-      ctx.fill();
-      // Mandibles.
+      ctx.fill(S.eye);
       ctx.fillStyle = css(hex('#3d2516'), l);
-      ctx.beginPath();
-      ctx.moveTo(hx + hb + hrx * 0.7, hy + hry * 0.25);
-      ctx.lineTo(b.mouth[0] + hb + 0.15, b.mouth[1] + 0.05);
-      ctx.lineTo(hx + hb + hrx * 0.55, hy + hry * 0.7);
-      ctx.closePath();
-      ctx.fill();
+      ctx.fill(S.jaw);
+      if (s > 5 && !dead) {
+        // Psammophore: the beard of long hairs under a harvester's head, for carrying sand.
+        ctx.strokeStyle = css(hex('#8a6a50'), l, 0.45);
+        ctx.lineWidth = px;
+        ctx.stroke(S.beard);
+      }
     }
-    if (detail) {
+    if (busy) ctx.translate(-busy, 0);
+    if (full) {
+      // A specular streak near the top edge of each segment, as on a glossy cuticle under a lamp.
+      ctx.fillStyle = css(SHEEN_COL, l, dead ? 0.12 : 0.45);
+      ctx.fill(S.sheen);
+    }
+    if (mid) {
       this.legs(ctx, b, gait, legCol, l, px, dead);
-      this.antenna(ctx, b, hb, legCol, l, px, a ? a.id : 0, dead);
+      this.antenna(ctx, b, busy, legCol, l, px, a ? a.id : 0, dead);
     } else {
       // Far away: a hint of legs so the silhouette still reads as an ant.
       ctx.strokeStyle = css(legCol, l);
@@ -373,13 +406,16 @@ export class AntPainter {
       }
       ctx.stroke();
     }
-    if (a && a.carry !== Carry.None) this.load(ctx, a, b, hb, l);
+    if (a && a.carry !== Carry.None) this.load(ctx, a, b, busy, l);
   }
 
+  /** One side's three legs as a single stroked path (tripod gait). */
   private legs(ctx: CanvasRenderingContext2D, b: Body, gait: number, col: RGB, l: RGB, px: number, dead: boolean): void {
     ctx.strokeStyle = css(col, l);
+    ctx.lineWidth = Math.max(px, 0.22);
+    ctx.beginPath();
     for (let k = 0; k < 3; k++) {
-      // Tripod gait: front and hind legs of one side swing with the middle leg of the other.
+      // Front and hind legs of one side swing with the middle leg of the other.
       const q = gait + (k === 1 ? Math.PI : 0);
       const hipX = b.hips[k]!;
       const hipY = b.hipY;
@@ -392,17 +428,11 @@ export class AntPainter {
       }
       const kneeX = (hipX + footX) / 2 + (k === 2 ? -0.25 : 0.25);
       const kneeY = dead ? hipY + 0.85 : Math.min(hipY, footY) - 0.45;
-      ctx.lineWidth = Math.max(px, 0.26);
-      ctx.beginPath();
       ctx.moveTo(hipX, hipY);
       ctx.lineTo(kneeX, kneeY);
-      ctx.stroke();
-      ctx.lineWidth = Math.max(px, 0.18);
-      ctx.beginPath();
-      ctx.moveTo(kneeX, kneeY);
       ctx.lineTo(footX, footY);
-      ctx.stroke();
     }
+    ctx.stroke();
   }
 
   private antenna(ctx: CanvasRenderingContext2D, b: Body, hb: number, col: RGB, l: RGB, px: number, id: number, dead: boolean): void {
@@ -412,20 +442,12 @@ export class AntPainter {
     const sway = dead ? 0.6 : Math.sin(t * 3.1 + id * 1.7) * 0.35 + Math.sin(t * 7.3 + id) * 0.12;
     const ex = ax + hb + 0.55;
     const ey = ay - 0.75;
-    const tipX = ex + Math.cos(0.35 + sway) * 1.35;
-    const tipY = ey + Math.sin(0.35 + sway) * 1.35;
     ctx.strokeStyle = css(col, l);
-    ctx.lineWidth = Math.max(px, 0.14);
+    ctx.lineWidth = Math.max(px, 0.16);
     ctx.beginPath();
     ctx.moveTo(ax + hb, ay);
     ctx.lineTo(ex, ey);
-    ctx.lineTo(tipX, tipY);
-    ctx.stroke();
-    // Clubbed tip.
-    ctx.lineWidth = Math.max(px, 0.24);
-    ctx.beginPath();
-    ctx.moveTo(ex + (tipX - ex) * 0.7, ey + (tipY - ey) * 0.7);
-    ctx.lineTo(tipX, tipY);
+    ctx.lineTo(ex + Math.cos(0.35 + sway) * 1.35, ey + Math.sin(0.35 + sway) * 1.35);
     ctx.stroke();
   }
 
