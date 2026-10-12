@@ -10,7 +10,7 @@ const SEED_BUCKETS = 15;
 import { Backdrop, skyAt } from './backdrop';
 import { Camera } from './camera';
 import { AntPainter } from './antdraw';
-import { MacroLens } from './macro';
+import { MacroLens, fibreAlpha, isPiece, heapy } from './macro';
 import { drawCritters } from './critterdraw';
 import type { Sim } from '../sim/sim';
 import type { Ant } from '../sim/ant';
@@ -22,13 +22,6 @@ import { DRY_SHIFT } from '../world/plants';
 
 const BACKWALL_DARK = hex('#120b07');
 
-/** Warm room tints (the art proposal): the brood and the seed tell rooms apart, the tint only hints. */
-const ZONE_TINT_WARM: Record<string, RGB> = {
-  queen: hex('#7a4634'),
-  nursery: hex('#b49a76'),
-  granary: hex('#a27a32'),
-  rest: hex('#4a4036'),
-};
 
 /** Scrambles an integer well enough that neighbouring cells look unrelated (murmur3 finaliser). */
 function mix32(h: number): number {
@@ -70,22 +63,12 @@ export class Renderer {
   private grain: HTMLCanvasElement;
   private vignette: HTMLCanvasElement | null = null;
   private painter: AntPainter;
-  /** Made on first use: building its textures takes a moment, and only the proposal needs it. */
+  /** Made on first use: building its textures takes a moment, and only close-ups need it. */
   private lensObj: MacroLens | null = null;
   private get lens(): MacroLens {
     return (this.lensObj ??= new MacroLens(this.world, this.seed));
   }
   private seed: number;
-  /**
-   * The art proposal from the October art review (L to compare; docs/art-review/).
-   * Close up, the slice resolves into sub-millimetre material and plants into
-   * smooth shapes instead of enlarging its pixels (the macro lens, macro.ts);
-   * rooms get warm tints instead of the water-like teal; the night lamp is
-   * really red; ants keep a stronger rim in the nest.
-   * Shared by every renderer, so a resumed colony keeps the setting.
-   */
-  static proposal = false;
-  private propWas = false;
   /** Static soil features too fine for the sim to care about (mottles, flecks). */
   private detail: Uint8Array;
   dpr = 1;
@@ -108,6 +91,10 @@ export class Renderer {
     this.grain = this.makeGrain();
     this.painter = new AntPainter(world);
     this.seed = seed;
+    // Make the lens's textures while nothing is happening, so the first close-up doesn't stall.
+    const idle = (globalThis as { requestIdleCallback?: (f: () => void) => void }).requestIdleCallback;
+    if (idle) idle(() => void this.lens);
+    else setTimeout(() => void this.lens, 1500);
     this.detail = this.makeDetail(seed);
   }
 
@@ -155,8 +142,7 @@ export class Renderer {
     switch (m) {
       case EMPTY: {
         const pl = w.plant[i]!;
-        // Under the macro lens, plants are drawn as smooth shapes over the slice.
-        if (pl && !(this.closeUp && this.propWas)) {
+        if (pl) {
           const pt = w.ptone[i]! / 255;
           if (pl === STEM || pl === LEAF) {
             // Shade in the low bits, dryness (green, yellowing, straw, dead) in the top two.
@@ -210,13 +196,21 @@ export class Renderer {
       }
       case SEED:
       case REFUSE:
-        // Close up, grains are drawn as shapes over the slice (see grains()). The
-        // top layer of a heap is loose grains; inside a heap, under other grains,
-        // there is no gap to see through, so the cell keeps a solid shaded base.
-        if (this.closeUp) {
-          const up = w.mat[i - w.w];
-          if (up === SEED || up === REFUSE) {
-            c = m === SEED ? seedLook(w.tone[i]!).col : sampleRamp(PAL.refuse, tone * 0.6 + 0.2);
+      case FRUIT:
+      case PREY: {
+        // Close up, grains (and the pieces of fruit and prey stored with them) are drawn
+        // as shapes over the slice (see grains()). The top layer of a heap is loose
+        // grains; inside a heap, under other grains, there is no gap to see through,
+        // so the cell keeps a solid shaded base.
+        const piece = m === SEED || m === REFUSE || isPiece(w, i);
+        const own = (): RGB =>
+          m === SEED ? seedLook(w.tone[i]!).col
+          : m === REFUSE ? (w.tint[i] === SPROUT ? sampleRamp(PAL.leaf, 0.75) : sampleRamp(PAL.refuse, tone))
+          : m === FRUIT ? fruitColor(w.tone[i]!)
+          : w.tint[i] === 3 ? sampleRamp(PAL.nymph, (w.tone[i]! - 150) / 60) : preyColor(w.tone[i]!);
+        if (this.closeUp && piece) {
+          if (heapy(w, i - w.w)) {
+            c = m === REFUSE ? sampleRamp(PAL.refuse, tone * 0.6 + 0.2) : own();
             c = [c[0] * 0.72, c[1] * 0.72, c[2] * 0.72];
             break;
           }
@@ -224,11 +218,10 @@ export class Renderer {
           c = this.backwall(i, x, y);
           return pack(c[0], c[1], c[2]);
         }
-        c = m === SEED ? seedLook(w.tone[i]!).col : w.tint[i] === SPROUT ? sampleRamp(PAL.leaf, 0.75) : sampleRamp(PAL.refuse, tone);
+        c = own();
         break;
+      }
       case LITTER: c = w.tint[i] === 1 ? sampleRamp(PAL.twig, tone) : sampleRamp(PAL.leafLitter, tone); break;
-      case FRUIT: c = fruitColor(w.tone[i]!); break;
-      case PREY: c = w.tint[i] === 3 ? sampleRamp(PAL.nymph, (w.tone[i]! - 150) / 60) : preyColor(w.tone[i]!); break;
       default: c = [255, 0, 255];
     }
     // Relief: lit rims on floors and the ground surface, shadowed ceilings.
@@ -268,13 +261,12 @@ export class Renderer {
     const w = this.world;
     const src = w.tint[i]! & 0x3f || this.guessSoil(x, y);
     const tone = w.tone[i]! / 255;
-    const prop = this.propWas;
-    let c = mixRGB(sampleRamp(soilRamp(src), 0.25 + tone * 0.5), BACKWALL_DARK, prop ? 0.42 : 0.5);
+    let c = mixRGB(sampleRamp(soilRamp(src), 0.25 + tone * 0.5), BACKWALL_DARK, 0.42);
     const z = w.zone[i]!;
     if (z) {
       const kind = this.zoneKinds[z - 1];
-      const tint = kind ? (prop ? ZONE_TINT_WARM : ZONE_TINT)[kind] : undefined;
-      if (tint) c = mixRGB(c, tint, prop ? 0.2 : 0.38);
+      const tint = kind ? ZONE_TINT[kind] : undefined;
+      if (tint) c = mixRGB(c, tint, 0.2);
     }
     // Shadow falls from the ceiling: darker near the top of a tunnel.
     let up = 0;
@@ -319,11 +311,7 @@ export class Renderer {
       256 * (1 - nightK * 0.4) * (1 - golden * 0.2),
     ];
     // Keepers watch nests at night under red light, which ants cannot see.
-    const under: RGB = this.propWas
-      ? // A real red lamp: near-monochrome red, a little brighter in red to keep the luminance.
-        [256 * (0.97 + nightK * 0.2), 256 * (0.94 - nightK * 0.58), 256 * (0.9 - nightK * 0.66)]
-      : [256 * (0.97 - nightK * 0.08), 256 * (0.94 - nightK * 0.18), 256 * (0.9 - nightK * 0.2)];
-    this.nightK = nightK;
+    const under: RGB = [256 * (0.97 - nightK * 0.08), 256 * (0.94 - nightK * 0.18), 256 * (0.9 - nightK * 0.2)];
     for (let k = 0; k < 512; k++) {
       const d = k - 128;
       let r: number;
@@ -344,48 +332,16 @@ export class Renderer {
     }
   }
 
-  /** The region, sub-division and light the lens image was last composed for. */
-  private lensCache: { x0: number; y0: number; x1: number; y1: number; k: number; w: number; h: number } | null = null;
-  private lensStale = true;
+  /** The light the lens tiles were last drawn under. */
   private lensLut = new Uint16Array(1536);
 
-  /** Whether the light has changed enough since the lens image was made to show. */
+  /** Whether the light has changed enough since the lens tiles were drawn to show. */
   private lightMoved(): boolean {
     const L = this.lensLut;
     for (let k = 0; k < 512; k += 4) {
       if (Math.abs(L[k]! - this.lutR[k]!) > 3 || Math.abs(L[512 + k]! - this.lutG[k]!) > 3 || Math.abs(L[1024 + k]! - this.lutB[k]!) > 3) return true;
     }
     return false;
-  }
-
-  /** How far into the night it is (0 day, 1 night), from the last buildLight. */
-  private nightK = 0;
-
-  /**
-   * The red lamp lights a pool around the middle of the view and falls off to
-   * near-black, as in a keeper's photos of a nest at night. Underground only.
-   */
-  private lampPool(view: { x0: number; y0: number; x1: number; y1: number }): void {
-    const k = this.nightK;
-    if (k < 0.02) return;
-    const w = this.world;
-    const ctx = this.ctx;
-    const x0 = Math.max(0, Math.floor(view.x0) - 1);
-    const x1 = Math.min(w.w - 1, Math.ceil(view.x1) + 1);
-    const cx = (view.x0 + view.x1) / 2;
-    const cy = (view.y0 + view.y1) / 2;
-    const R = Math.max(view.x1 - view.x0, view.y1 - view.y0) * 0.62;
-    const p = new Path2D();
-    p.moveTo(x0, view.y1 + 2);
-    for (let x = x0; x <= x1; x++) p.lineTo(x, w.ground[x]! + 3);
-    p.lineTo(x1, view.y1 + 2);
-    p.closePath();
-    const g = ctx.createRadialGradient(cx, cy, R * 0.25, cx, cy, R);
-    g.addColorStop(0, 'rgba(6,1,1,0)');
-    g.addColorStop(0.55, `rgba(6,1,1,${0.3 * k})`);
-    g.addColorStop(1, `rgba(6,1,1,${0.66 * k})`);
-    ctx.fillStyle = g;
-    ctx.fill(p);
   }
 
   /** World cells on screen (a cell of margin), clamped to the world. */
@@ -558,11 +514,15 @@ export class Renderer {
       any: false,
     });
     const layers = [layer(), layer()];
+    const pieces: number[] = [];
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         const i = y * w.w + x;
         const m = w.mat[i];
-        if (m !== WATER && m !== SEED && m !== REFUSE) continue;
+        if (m !== WATER && m !== SEED && m !== REFUSE) {
+          if (isPiece(w, i)) pieces.push(i);
+          continue;
+        }
         const L = layers[w.bg[i]!]!;
         L.any = true;
         if (m === WATER) {
@@ -571,14 +531,13 @@ export class Renderer {
           continue;
         }
         const hsh = Math.imul(i, 2654435761) >>> 0;
-        const prop = this.propWas;
-        // In a heap, stored seed settles lying flat (the proposal); loose on the ground it lies any way.
-        const flat = prop && (w.mat[i + w.w] === SEED || w.mat[i - w.w] === SEED);
+        // In a heap, stored seed settles lying flat; loose on the ground it lies any way.
+        const flat = w.mat[i + w.w] === SEED || w.mat[i - w.w] === SEED;
         const rot = flat ? ((((hsh >>> 8) & 255) / 255) - 0.5) * 0.8 : ((hsh >>> 8) & 255) / 255 * Math.PI;
-        // Scatter each grain a little so heaps don't line up with the cell grid
-        // (the proposal also staggers alternate rows by half a cell).
-        const jx = (((hsh >>> 16) & 15) / 15 - 0.5) * (prop ? 0.9 : 0.55) + (prop && y & 1 ? 0.5 : 0);
-        const jy = (((hsh >>> 20) & 15) / 15 - 0.5) * (prop ? 0.5 : 0.35);
+        // Scatter each grain a little, and stagger alternate rows by half a cell, so heaps
+        // don't line up with the cell grid.
+        const jx = (((hsh >>> 16) & 15) / 15 - 0.5) * 0.9 + (y & 1 ? 0.5 : 0);
+        const jy = (((hsh >>> 20) & 15) / 15 - 0.5) * 0.5;
         const sz = 0.8 + ((hsh >>> 24) & 15) / 15 * 0.45;
         const cx = x + 0.5 + jx;
         const cy = y + 0.55 + jy;
@@ -630,6 +589,27 @@ export class Renderer {
       ctx.fillStyle = lit([205, 228, 242], 0.6);
       ctx.fill(L.meniscus);
     });
+    // Pieces of fruit and prey in the nest: soft, glossy crumbs.
+    if (pieces.length) {
+      const l = lights[1]!;
+      for (const i of pieces) {
+        const x = i % w.w;
+        const y = (i - x) / w.w;
+        const hsh = Math.imul(i, 2654435761) >>> 0;
+        const c = w.mat[i] === FRUIT ? fruitColor(w.tone[i]!) : preyColor(w.tone[i]!);
+        const rot = (((hsh >>> 8) & 255) / 255) * Math.PI;
+        const cx = x + 0.5 + (((hsh >>> 16) & 15) / 15 - 0.5) * 0.4;
+        const cy = y + 0.55;
+        ctx.fillStyle = `rgb(${(c[0] * l[0]) | 0},${(c[1] * l[1]) | 0},${(c[2] * l[2]) | 0})`;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, 0.62, 0.46, rot, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgba(${(255 * l[0]) | 0},${(236 * l[1]) | 0},${(214 * l[2]) | 0},0.3)`;
+        ctx.beginPath();
+        ctx.ellipse(cx - 0.15, cy - 0.18, 0.24, 0.13, rot, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
   }
 
   /**
@@ -731,14 +711,10 @@ export class Renderer {
       const c = p.color;
       ctx.fillStyle = `rgb(${((c & 255) * l[0]) | 0},${(((c >>> 8) & 255) * l[1]) | 0},${(((c >>> 16) & 255) * l[2]) | 0})`;
       const r = Math.max(0.3, 1.2 / z);
-      if (this.propWas) {
-        // A speck of dust is round, not a little square.
-        ctx.beginPath();
-        ctx.arc(p.x, p.y, r * 0.8, 0, Math.PI * 2);
-        ctx.fill();
-      } else {
-        ctx.fillRect(p.x - r, p.y - r, r * 2, r * 2);
-      }
+      // A speck of dust is round, not a little square.
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, r * 0.8, 0, Math.PI * 2);
+      ctx.fill();
     }
     if (sim.drops.length && sim.weather.snowing) {
       ctx.fillStyle = 'rgba(240,244,250,0.85)';
@@ -902,47 +878,28 @@ export class Renderer {
     }
     // Close-up is about how big a millimetre looks, not how many device pixels back it.
     const close = cam.zoom >= 5;
-    if (Renderer.proposal !== this.propWas) {
+    if (close !== this.closeUp) {
+      // Only grains (and stored pieces) look different close up: recolour just those, not the whole
+      // slice, so crossing zoom 5 doesn't hitch.
       this.closeUp = close;
-      this.propWas = Renderer.proposal;
-      w.dirtyAll = true;
-    } else if (close !== this.closeUp) {
-      // Only grains (and, in the proposal, plants) look different close up: recolour
-      // just those, not the whole slice, so crossing zoom 5 doesn't hitch.
-      this.closeUp = close;
-      this.lensStale = true;
       const mat = w.mat;
-      const plant = w.plant;
-      const prop = this.propWas;
       for (let i = 0; i < w.size; i++) {
         const m = mat[i]!;
-        if (m === SEED || m === REFUSE || (prop && plant[i])) {
-          this.base[i] = this.cellColor(i);
-        }
+        if (m === SEED || m === REFUSE || m === FRUIT || m === PREY) this.base[i] = this.cellColor(i);
       }
+      this.lensObj?.markAll();
     }
-    // The lens image is reused until something it shows changes.
-    const lc = this.lensCache;
-    if (lc && !this.lensStale) {
-      if (w.dirtyAll) this.lensStale = true;
-      else {
-        for (let k = 0; k < w.dirtyCount; k++) {
-          const i = w.dirtyList[k]!;
-          const x = i % w.w;
-          const y = (i - x) / w.w;
-          if (x >= lc.x0 && x <= lc.x1 && y >= lc.y0 && y <= lc.y1) {
-            this.lensStale = true;
-            break;
-          }
-        }
-      }
-    }
+    // The macro lens (macro.ts): from zoom 3.4 it fades in looking like the pixel slice,
+    // then comes into focus up to zoom 6.8, so zooming out loses detail gradually.
+    const lensA = smoothstep(3.4, 4.4, cam.zoom);
+    const focus = smoothstep(3.4, 6.8, cam.zoom);
+    // Tiles keep track of changes even while the lens is off, so none comes back stale.
+    this.lensObj?.markDirty();
     this.updateBase();
     // Only the part of the slice on screen is copied, lit and uploaded each frame
-    // (with a margin under the lens, so its image survives small pans).
+    // (under the lens, whole tiles of it).
     const vr = this.visibleRect(cam);
-    const lensA = this.propWas ? smoothstep(5, 8, cam.zoom) : 0;
-    const lr = lensA > 0 ? { x0: Math.max(0, vr.x0 - 6), y0: Math.max(0, vr.y0 - 6), x1: Math.min(w.w - 1, vr.x1 + 6), y1: Math.min(w.h - 1, vr.y1 + 6) } : vr;
+    const lr = lensA > 0 ? this.lens.region(vr) : vr;
     for (let y = lr.y0; y <= lr.y1; y++) {
       const a = y * w.w + lr.x0;
       this.buf.set(this.base.subarray(a, a + lr.x1 - lr.x0 + 1), a);
@@ -974,42 +931,33 @@ export class Renderer {
     const bs = 1 / this.backdrop.scale;
     ctx.setTransform(z * bs, 0, 0, z * bs, ox, oy);
     ctx.drawImage(this.backdrop.canvas, 0, 0);
-    // The slice itself: crisp pixels. Under the macro lens it comes into focus as
-    // material between zoom 5 and 8 (the pixels fade under it, then aren't drawn).
+    // The slice itself: crisp pixels, until the lens covers it.
     ctx.imageSmoothingEnabled = false;
     ctx.setTransform(z, 0, 0, z, ox, oy);
     if (lensA < 1) ctx.drawImage(this.wc, 0, 0);
     if (lensA > 0) {
-      const k = MacroLens.subdiv(z);
-      let m = this.lensCache;
-      if (!m || this.lensStale || m.k !== k || vr.x0 < m.x0 || vr.y0 < m.y0 || vr.x1 > m.x1 || vr.y1 > m.y1 || this.lightMoved()) {
-        m = { ...this.lens.compose(this.buf, lr, z), x1: lr.x1, y1: lr.y1 };
-        this.lensCache = m;
-        this.lensStale = false;
+      if (this.lightMoved()) {
+        this.lens.lightVersion++;
         this.lensLut.set(this.lutR, 0);
         this.lensLut.set(this.lutG, 512);
         this.lensLut.set(this.lutB, 1024);
       }
-      if (m.w > 0) {
-        ctx.imageSmoothingEnabled = true;
-        ctx.imageSmoothingQuality = 'low';
-        ctx.globalAlpha = lensA;
-        ctx.setTransform(z / m.k, 0, 0, z / m.k, ox + m.x0 * z, oy + m.y0 * z);
-        ctx.drawImage(this.lens.canvas, 0, 0, m.w, m.h, 0, 0, m.w, m.h);
-        ctx.globalAlpha = 1;
-        ctx.imageSmoothingEnabled = false;
-        ctx.setTransform(z, 0, 0, z, ox, oy);
-      }
+      this.lens.draw(ctx, this.buf, vr, z, focus, lensA, 6, this.wc);
     }
     const view = { x0: cam.x - cam.screenW / 2 / cam.zoom, y0: cam.y - cam.screenH / 2 / cam.zoom, x1: cam.x + cam.screenW / 2 / cam.zoom, y1: cam.y + cam.screenH / 2 / cam.zoom };
-    if (lensA > 0) {
-      ctx.globalAlpha = lensA;
+    if (lensA > 0 && focus > 0.05) {
+      // Fine roots become fibres as the lens comes into focus, fallen leaves and twigs thin flakes.
+      ctx.globalAlpha = lensA * fibreAlpha(focus);
       this.lens.drawRoots(ctx, view, this.lightAt, z);
+      ctx.globalAlpha = lensA * smoothstep(0.2, 0.6, focus);
+      this.lens.drawLitter(ctx, view, this.lightAt);
       ctx.globalAlpha = 1;
     }
-    if (this.propWas && cam.zoom >= 4.2) {
-      ctx.globalAlpha = smoothstep(4.2, 5, cam.zoom);
+    if (cam.zoom >= 3.6) {
+      // Plants are drawn smooth over the slice; the slice's pixel plants go with it under the lens.
+      ctx.globalAlpha = smoothstep(3.6, 4.4, cam.zoom);
       this.lens.drawPlants(ctx, sim.plants, this.lightAt, view);
+      if (sim.eco.shrub) this.lens.drawShrub(ctx, sim.eco.shrub, this.lightAt, view);
       ctx.globalAlpha = 1;
     }
     this.drawShade(sim, view, solar);
@@ -1026,7 +974,7 @@ export class Renderer {
     if (sim.phase === 'choose') this.painter.drawFlight(ctx, z, this.lightAt, w.w, dt);
     if (this.closeUp) {
       this.grains(view);
-    } else if (this.propWas && cam.zoom >= 4.3) {
+    } else if (cam.zoom >= 4.3) {
       // Fade the grains in over the pixel seeds before the switch at zoom 5, so it doesn't pop.
       ctx.globalAlpha = smoothstep(4.3, 5, cam.zoom);
       this.grains(view);
@@ -1037,12 +985,10 @@ export class Renderer {
     this.painter.drawCorpses(ctx, col.corpses, z, this.lightAt, view);
     this.painter.drawBrood(ctx, col.brood, z, this.lightAt, view, TUNING.pupaTicks);
     if (sim.critters.list.length) drawCritters(ctx, sim.critters.list, w, this.lightAt, view);
-    this.painter.strongRim = this.propWas;
     this.painter.draw(ctx, ants, z, this.lightAt, view, selected);
     if (sim.flyers.length) this.painter.drawFlyers(ctx, sim.flyers, z, this.lightAt);
     if (sim.eco.fallers.length) this.drawFallers(sim, view);
     if (this.closeUp) this.specks(sim, view, z);
-    if (this.propWas) this.lampPool(view);
     this.unknown(sim, view);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 

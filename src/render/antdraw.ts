@@ -248,8 +248,6 @@ export class AntPainter {
   private flight = { x: 320, y: 40, face: 1 };
   /** World x the pointer is over while the player is choosing a landing spot. */
   flightGoal: number | null = null;
-  /** Stronger rim light and sheen on ants in the nest (the art proposal). */
-  strongRim = false;
   private world: World;
   private time = 0;
 
@@ -421,7 +419,7 @@ export class AntPainter {
       }
     }
     // In the nest a black ant sits on dark soil: a stronger rim there keeps it off the wall.
-    const strong = this.strongRim && wall;
+    const strong = wall;
     const rim = full && !dead ? css(SHEEN_COL, l, strong ? 0.5 : 0.3) : '';
     // Curled into a "C" against a fly: body raised on the legs, gaster tucked under.
     const curled = !!a && a.cpose > 0;

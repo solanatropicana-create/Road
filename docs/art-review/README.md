@@ -1,6 +1,64 @@
 # Görsel inceleme: sanat paneli ve öneri
 
-*12 Ekim 2026. Oyunda denemek için: `L` tuşu ya da `?art=new`. Varsayılan görünüm değişmedi. Kaydırmalı önce/sonra sayfası ve oynanabilir prototip (özel link): https://claude.ai/artifact/2DCm4JE4DcLWVYGPztyLk5*
+*12 Ekim 2026. Öneri onaylandı ve oyunun varsayılan görünümü oldu; aşağıda önce uygulanan hali, sonra panelin ilk turu var. Görüntüler, ilk turun kaydırmalı önce/sonra karşılaştırması ve oynanabilir sürüm (özel link): https://claude.ai/artifact/2DCm4JE4DcLWVYGPztyLk5*
+
+## Uygulanan hali
+
+Onayla gelen üç not:
+
+- **Kırmızı ışık gereksiz.** Gece lambası eski haline döndü: kırmızı tek renk ve ışık havuzu yok.
+- **Yakın plan ayrıntıları kalsın, uzakta piksel olur.** Öyle kaldı.
+- **Yakından uzağa giderken ayrıntı birden kaybolmasın.** Geçiş genişletildi ve yeniden kuruldu (aşağıda).
+
+Bir de bu arada oyuna yeni içerik geldi (mevsimler, beş bitki türü, çalı, ölü böcekler, buluntular, örümcekler, komşu koloni). Onlar da lense uyduruldu.
+
+### Neler değişti
+
+- **Öneri varsayılan oldu.** `L` tuşu ve `?art=new` kaldırıldı. Sıcak oda tonları, yuvadaki güçlü kenar ışığı, yatık tohumlar ve yuvarlak toz artık her zaman açık.
+- **Kademeli odak.** Lens artık iki ayrı şeyi zoom ile ayarlıyor:
+  - Görünürlük: zoom 3,4'ten 4,4'e kadar belirir. Bu aralıkta hâlâ piksel kesit gibi görünür: her alt piksel kendi hücresinin rengini ve sınıfını alır.
+  - Odak: zoom 3,4'ten 6,8'e kadar artar. Renkler hücreler arasında karışır, kenarlar kavisleşir, doku, mineral taneler, duvar astarı ve gölgeler yavaş yavaş gelir.
+  - Böylece bir anda iki farklı görüntü üst üste binmiyor ve uzaklaşırken ayrıntı adım adım azalıyor.
+  - Kökler, lifler belirdikten sonra pikselden çözülüyor; geçişte kökler hiç kaybolmuyor.
+- **Bitkiler:** Mevsimle sararıp kuruyorlar, çizimleri de öyle. Yeni türler:
+  - Kılotu (stipa): ince yapraklar ve gümüş tüylü uzun kılçıklar.
+  - Dönbaba (erodium): beş taç yapraklı pembe çiçek.
+- **Çalı:** Gövdeler yuvarlak ve kabuklu. Yapraklar damarlı. Çiçekler beş taç yapraklı; çakal eriğinde beyaz, kuşburnunda pembe. Meyveler: buğulu çakal eriği ve parlak kuşburnu.
+- **Yere düşmüş yapraklar ve dallar:** Turuncu şeritler yerine ince, kıvrık kahverengi yapraklar ve kabuklu dallar.
+- **Ölü böcekler, düşen meyveler ve ağustos böceği nimfi:** Yuvarlak, kubbeli ve hafif parlak. Ambarda depolanan böcek ve meyve parçaları tohumların arasında kırıntı olarak görünüyor.
+- **İki toprağın sınırı:** Humus ile kum, tın ile kil arası artık hücre basamağı değil; dalgalı dillerle karışıyor.
+- **Performans:** Lens ekranı 32 × 32 mm'lik parçalar halinde tutuyor.
+  - Bir parça yalnızca toprağı, ışığı ya da odağı değişince yeniden çiziliyor.
+  - Bayat parçalar her karede ekranın ortasından başlayarak 6 ms'lik bir bütçeyle yenileniyor.
+  - Böylece kaydırmak, karınca takip etmek ya da günün ışığının değişmesi ekranı bir anda yeniden çizdirmiyor.
+  - Bu bulut makinesinde bir parça yakın planda (k=6) 3,8 ms, uzakta (k=2) 0,5 ms sürüyor.
+  - Lensin dokuları, açılıştan sonra boş bir anda hazırlanıyor.
+
+### Görüntüler
+
+Yeni oyun sürümüyle aynı iki kayıtlı koloniden (`node scripts/artlab.mjs`).
+
+| | |
+|---|---|
+| ![Akşam, yuva, zoom 8](img/applied-dusk-nest-z8.jpg) | ![Akşam, giriş, zoom 11](img/applied-dusk-entrance-z11.jpg) |
+| ![Ambar, zoom 14](img/applied-granary-z14.jpg) | ![Yüzey, zoom 13](img/applied-surface-z13.jpg) |
+| ![Gece, zoom 12: kırmızı ışık yok](img/applied-night-z12.jpg) | ![Sonbaharda çakal eriği, zoom 12](img/applied-shrub-autumn-z12.jpg) |
+| ![Kum bozkırı: humus ile kumun sınırı, zoom 10](img/applied-sand-z10.jpg) | |
+
+**Geçiş:** zoom 2,6 · 3,4 · 4 · 4,6 (üst sıra) ve 5,2 · 6 · 7 · 9 (alt sıra). Uzakta piksel, yaklaştıkça adım adım odak.
+
+![Zoom 2,6'dan 9'a aynı yuva girişi](img/applied-zoom-ladder.jpg)
+
+### Hâlâ açık
+
+- Yumurtaların paket halinde durması.
+- Yüzeydeki küçük su birikintilerinin kenarı.
+- 9:16 klip render'ı (klip aracıyla birlikte).
+- Yazılım render'ı kullanan bu makinede ekran kartı tarafının maliyetini ölçemedim. Gerçek bir dizüstünde bir kez bakmak iyi olur.
+
+---
+
+# İlk tur: panel ve öneri
 
 İki soru vardı:
 
@@ -19,7 +77,7 @@ Bu, oyunun "makro objektif" vaadinin tam yakınlaştığı yerde bozulmasını d
 
 ## Önce / sonra
 
-Aynı koloni, aynı kare, aynı an. Solda bugünkü görünüm, sağda öneri. Görüntüleri yeniden üretmek için: `node scripts/artlab.mjs`.
+Aynı koloni, aynı kare, aynı an. Solda o günkü görünüm, sağda öneri (ilk turun sürümüyle, `L` tuşuyla alındı).
 
 **Akşam, yuva, zoom 8.** Panelin "paylaşılacak kare" dediği yer.
 
@@ -91,7 +149,7 @@ Panel, oyun testindeki gibi beş "gerçek insan" personasıyla kuruldu. Hepsi ay
 
 ## Prototipte ne var
 
-`L` tuşu öneriyi açıp kapatıyor. Tuşlar panelinde de var. `?art=new` öneriyle başlatıyor.
+*İlk turda öneri `L` tuşuyla açılıp kapanıyordu; artık varsayılan görünüm.*
 
 - **Makro lens** (`src/render/macro.ts`):
   - Zoom 5'ten 8'e kadar kesit milimetre altına çözülüyor. Her milimetre 2–6 alt piksel oluyor.
@@ -157,7 +215,7 @@ Jin'in tahmini: işlemcide 1 ms'nin altında, ekran kartında 1–2 ms. Bu proto
 - Geçiş bandında (zoom 5–7) piksel ve lens bir an üst üste görünüyor. En çok köklerde fark ediliyor. Jin geometriyi saydamlıkla karıştırmak yerine parametreleri kaydırmayı öneriyor.
 - 9:16 klip render'ı (Defne). Klip aracıyla birlikte ele alınmalı.
 
-## Karar bekleyen sorular
+## İlk turdaki sorular (cevaplandı: yön onaylandı, kırmızı ışık kaldırıldı, oda tonları hafif kaldı, geçiş genişletildi)
 
 1. **Yön:** "Uzakta piksel, yakında malzeme" yönü uygun mu? Uygunsa öneriyi varsayılan yapıp lensin performans işine geçebilirim.
 2. **Gece lambası:** Bu kadar kırmızı mı olsun? Çok sinematik ama gece oyunu okumak biraz zorlaşıyor. Ara bir ton da olur.

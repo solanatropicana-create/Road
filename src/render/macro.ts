@@ -1,11 +1,13 @@
 import type { World } from '../world/world';
-import type { Plants } from '../world/plants';
+import { DRY_SHIFT, type Plants } from '../world/plants';
+import type { ShrubInfo } from '../world/gen';
 import {
   EMPTY, HUMUS, LOAM, CLAY, SUBSOIL, GRAVEL, STONE, ROOT, SAND, WATER, STEM, LEAF, FLOWER, SEEDHEAD,
-  SEED, REFUSE, LITTER, FRUIT, BEDROCK, SANDY, LIME, ROCK, WOOD,
+  SEED, REFUSE, LITTER, FRUIT, BEDROCK, SANDY, LIME, ROCK, WOOD, TWIG, BERRY, PREY,
 } from '../world/mat';
-import { PAL, RGB, sampleRamp, seedLook } from './palette';
+import { PAL, RGB, mixRGB, sampleRamp, seedLook } from './palette';
 import { Rng } from '../util/rng';
+import { smoothstep } from '../util/math';
 
 /**
  * The macro lens: what the slice looks like when the camera is close enough
@@ -37,8 +39,10 @@ const LOOSE = 5;
 const WATERC = 6;
 const HEAP = 7;
 const LITTERC = 8;
+/** Woody shrub stems in the plant layer: not ground for the ants, but drawn by the lens like a solid. */
+const TWIGC = 9;
 /** Classes that are solid ground (gain the wobble, get a packed skin against tunnels). */
-const SOLIDC = new Uint8Array([0, 0, 1, 1, 1, 1, 0, 1, 1]);
+const SOLIDC = new Uint8Array([0, 0, 1, 1, 1, 1, 0, 1, 1, 1]);
 
 // Micro-textures.
 const T_HUMUS = 0;
@@ -66,11 +70,35 @@ for (const [m, c, t] of [
   [HUMUS, SOILC, T_HUMUS], [LOAM, SOILC, T_LOAM], [CLAY, SOILC, T_CLAY], [SUBSOIL, SOILC, T_SAND],
   [SANDY, SOILC, T_SAND], [LIME, SOILC, T_LIME], [GRAVEL, STONEC, T_STONE], [STONE, STONEC, T_STONE],
   [ROCK, STONEC, T_STONE], [BEDROCK, STONEC, T_STONE], [ROOT, ROOTC, T_ROOT], [SAND, LOOSE, T_PELLET],
-  [WATER, WATERC, T_FLAT], [FRUIT, HEAP, T_FLAT], [LITTER, LITTERC, T_FIBER], [WOOD, LITTERC, T_FIBER],
+  [WATER, WATERC, T_FLAT], [LITTER, LITTERC, T_FIBER], [WOOD, LITTERC, T_FIBER],
+  // Fallen fruit, dead insects and the cicada nymph: smooth, domed and a little glossy.
+  [FRUIT, STONEC, T_FLAT], [PREY, STONEC, T_FLAT],
 ] as const) {
   CLASS_OF[m] = c;
   TEX_OF[m] = t;
 }
+
+type Rect = { x0: number; y0: number; x1: number; y1: number };
+
+/** A piece of the lens image (see MacroLens.draw). */
+interface Tile {
+  canvas: HTMLCanvasElement;
+  ctx: CanvasRenderingContext2D;
+  /** Sub-division and focus it was drawn at. */
+  k: number;
+  f: number;
+  /** Light version it was drawn under. */
+  light: number;
+  /** Its soil changed since. */
+  dirty: boolean;
+  /** Last frame it was on screen. */
+  used: number;
+}
+
+/** Tile side, in cells (mm). */
+const TILE = 32;
+/** How far a cell's change reaches into the picture: the solidity blur and the quads around it. */
+const MARGIN = 3;
 
 /** Texture tiles: 8 texels per millimetre, repeating every 64 mm. */
 const TS = 512;
@@ -84,8 +112,6 @@ export class MacroLens {
   private jit: Float32Array;
   /** Mineral grains (0 none, 1 quartz, 2 rusty, 3 dark, 4 glint), same tiling. */
   private spk: Uint8Array;
-  readonly canvas: HTMLCanvasElement;
-  private ctx: CanvasRenderingContext2D;
   private img: ImageData | null = null;
   private out: Uint32Array | null = null;
   // Per-cell scratch for the region being composed.
@@ -98,6 +124,9 @@ export class MacroLens {
   private sol = new Float32Array(0);
   private tmp = new Float32Array(0);
   private uni = new Uint8Array(0);
+  private mixA = new Float32Array(0);
+  private mixStamp = new Uint32Array(0);
+  private stamp = 0;
 
   constructor(world: World, seed: number) {
     this.world = world;
@@ -105,8 +134,6 @@ export class MacroLens {
     for (let t = 0; t < NTEX; t++) this.tex.push(makeTexture(t, rng));
     this.jit = periodicNoise(rng);
     this.spk = speckles(rng);
-    this.canvas = document.createElement('canvas');
-    this.ctx = this.canvas.getContext('2d')!;
   }
 
   /** Sub-pixels per millimetre for a given screen scale (device pixels per mm). */
@@ -114,39 +141,198 @@ export class MacroLens {
     return Math.max(2, Math.min(6, Math.round(z / 2.8)));
   }
 
+  // ------------------------------------------------------------- tiles
+
   /**
-   * Resolve the lit slice `buf` over the cells of `r` (which must be lit) into
-   * the lens canvas, k sub-pixels per cell. Past the edge of `r` the outermost
-   * cells are held, so keep a cell of margin around what is on screen.
+   * The lens image is kept in tiles of 32 × 32 mm, each drawn once and reused
+   * until something in it changes: the soil (dug, wet, fallen), the light, or
+   * how far in focus the lens is. Stale tiles are redrawn a few per frame
+   * within a time budget, nearest the middle of the view first, so panning,
+   * following an ant or a change of light never redraws the whole screen at
+   * once. A tile drawn at another sub-division or focus still covers the same
+   * ground, so it stays on screen until its turn comes.
+   */
+  private tiles = new Map<number, Tile>();
+  private frame = 0;
+  /** Bumped when the light has changed enough to show (see Renderer.lightMoved). */
+  lightVersion = 0;
+
+  /** Cells to light for the tiles over `vr` (the visible cells): whole tiles plus the blur margin. */
+  region(vr: Rect): Rect {
+    const w = this.world;
+    return {
+      x0: Math.max(0, Math.floor(vr.x0 / TILE) * TILE - MARGIN),
+      y0: Math.max(0, Math.floor(vr.y0 / TILE) * TILE - MARGIN),
+      x1: Math.min(w.w - 1, (Math.floor(vr.x1 / TILE) + 1) * TILE - 1 + MARGIN),
+      y1: Math.min(w.h - 1, (Math.floor(vr.y1 / TILE) + 1) * TILE - 1 + MARGIN),
+    };
+  }
+
+  /** Mark the tiles that saw a change (call before the world's dirty list is cleared). */
+  markDirty(): void {
+    const w = this.world;
+    if (!this.tiles.size) return;
+    if (w.dirtyAll) {
+      this.markAll();
+      return;
+    }
+    const nx = Math.ceil(w.w / TILE);
+    for (let k = 0; k < w.dirtyCount; k++) {
+      const i = w.dirtyList[k]!;
+      const x = i % w.w;
+      const y = (i - x) / w.w;
+      // A change reaches MARGIN cells into the neighbouring tiles (the blur and the quads).
+      const tx0 = Math.floor((x - MARGIN) / TILE);
+      const tx1 = Math.floor((x + MARGIN) / TILE);
+      const ty0 = Math.floor((y - MARGIN) / TILE);
+      const ty1 = Math.floor((y + MARGIN) / TILE);
+      for (let ty = ty0; ty <= ty1; ty++) {
+        for (let tx = tx0; tx <= tx1; tx++) {
+          const t = this.tiles.get(ty * nx + tx);
+          if (t) t.dirty = true;
+        }
+      }
+    }
+  }
+
+  markAll(): void {
+    for (const t of this.tiles.values()) t.dirty = true;
+  }
+
+  /**
+   * Draw the lens over the visible cells `vr`, with the context already scaled
+   * to world millimetres. `f` is how far in focus (0 looks like the pixel slice,
+   * 1 is full material), `alpha` its opacity, `budget` milliseconds to spend on
+   * redrawing stale tiles. A tile with no picture yet shows `slice` (the pixel
+   * slice) until its turn comes.
+   */
+  draw(ctx: CanvasRenderingContext2D, buf: Uint32Array, vr: Rect, z: number, f: number, alpha: number, budget: number, slice: HTMLCanvasElement): void {
+    const w = this.world;
+    const k = MacroLens.subdiv(z);
+    const fq = Math.round(f * 8) / 8;
+    const nx = Math.ceil(w.w / TILE);
+    const tx0 = Math.max(0, Math.floor(vr.x0 / TILE));
+    const tx1 = Math.min(nx - 1, Math.floor(vr.x1 / TILE));
+    const ty0 = Math.max(0, Math.floor(vr.y0 / TILE));
+    const ty1 = Math.min(Math.ceil(w.h / TILE) - 1, Math.floor(vr.y1 / TILE));
+    const cx = (vr.x0 + vr.x1) / 2;
+    const cy = (vr.y0 + vr.y1) / 2;
+    this.frame++;
+    // What each visible tile needs: 0 nothing drawn yet, 1 another sub-division or focus,
+    // 2 its soil changed, 3 the light changed, 4 up to date.
+    const todo: { key: number; tx: number; ty: number; need: number; d: number }[] = [];
+    for (let ty = ty0; ty <= ty1; ty++) {
+      for (let tx = tx0; tx <= tx1; tx++) {
+        const key = ty * nx + tx;
+        const t = this.tiles.get(key);
+        if (t) t.used = this.frame;
+        const need = !t ? 0 : t.k !== k || t.f !== fq ? 1 : t.dirty ? 2 : t.light !== this.lightVersion ? 3 : 4;
+        if (need < 4) {
+          const d = Math.hypot((tx + 0.5) * TILE - cx, (ty + 0.5) * TILE - cy);
+          todo.push({ key, tx, ty, need, d });
+        }
+      }
+    }
+    todo.sort((a, b) => a.need - b.need || a.d - b.d);
+    const t0 = performance.now();
+    let done = 0;
+    for (const job of todo) {
+      const spent = performance.now() - t0;
+      // Always make some progress; a tile with nothing on it yet may take a little longer.
+      if (done > 0 && spent > (job.need === 0 ? budget * 2.5 : budget)) break;
+      this.drawTile(job.key, job.tx, job.ty, buf, k, fq);
+      done++;
+    }
+    // Put the tiles on screen. Each canvas has a one-sub-pixel border, so smoothing
+    // across tile edges reads real neighbours and no seams show.
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'low';
+    if (alpha < 1) ctx.globalAlpha = alpha;
+    for (let ty = ty0; ty <= ty1; ty++) {
+      for (let tx = tx0; tx <= tx1; tx++) {
+        const t = this.tiles.get(ty * nx + tx);
+        const X = tx * TILE;
+        const Y = ty * TILE;
+        const cw = Math.min(TILE, w.w - X);
+        const ch = Math.min(TILE, w.h - Y);
+        if (t) {
+          ctx.drawImage(t.canvas, 1, 1, cw * t.k, ch * t.k, X, Y, cw, ch);
+        } else if (alpha >= 1) {
+          // Not drawn yet (and the pixel slice isn't under the lens at full strength).
+          ctx.imageSmoothingEnabled = false;
+          ctx.drawImage(slice, X, Y, cw, ch, X, Y, cw, ch);
+          ctx.imageSmoothingEnabled = true;
+        }
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.imageSmoothingEnabled = false;
+    // Forget tiles long out of view (a close-up tile is ~150 KB).
+    if (this.tiles.size > 180) {
+      for (const [key, t] of this.tiles) if (this.frame - t.used > 90) this.tiles.delete(key);
+    }
+  }
+
+  private drawTile(key: number, tx: number, ty: number, buf: Uint32Array, k: number, f: number): void {
+    const w = this.world;
+    const X = tx * TILE;
+    const Y = ty * TILE;
+    const o = { x0: X, y0: Y, x1: Math.min(w.w - 1, X + TILE - 1), y1: Math.min(w.h - 1, Y + TILE - 1) };
+    const r = { x0: Math.max(0, o.x0 - MARGIN), y0: Math.max(0, o.y0 - MARGIN), x1: Math.min(w.w - 1, o.x1 + MARGIN), y1: Math.min(w.h - 1, o.y1 + MARGIN) };
+    const img = this.compose(buf, r, o, k, f);
+    let t = this.tiles.get(key);
+    const side = TILE * k + 2;
+    if (!t) {
+      const canvas = document.createElement('canvas');
+      t = { canvas, ctx: canvas.getContext('2d')!, k, f, light: 0, dirty: false, used: this.frame };
+      this.tiles.set(key, t);
+    }
+    if (t.canvas.width !== side) {
+      t.canvas.width = side;
+      t.canvas.height = side;
+    }
+    t.ctx.putImageData(img, 0, 0, 0, 0, img.w, img.h);
+    t.k = k;
+    t.f = f;
+    t.light = this.lightVersion;
+    t.dirty = false;
+    t.used = this.frame;
+  }
+
+  // ------------------------------------------------------------- composing
+
+  /**
+   * Resolve the lit slice `buf` over the cells of `o` into k sub-pixels per
+   * cell, with a border of one sub-pixel. The cells of `r` (which contains `o`
+   * and must be lit) supply the neighbours; past its edge the outermost cells
+   * are held.
    *
    * Where ground meets air the boundary follows a lightly blurred solidity
    * field rather than cell edges, so steps in a tunnel wall become a curve.
    * Straight walls stay exactly where the cells put them, and every cell keeps
    * its own centre, so no gap an ant can use is closed and no thread is cut.
+   *
+   * `f` is the focus: at 0 every sub-pixel takes its own cell's colour and
+   * class, which looks like the pixel slice; towards 1 colours blend between
+   * cells, edges follow the field, and texture, grains and the wall lining
+   * come in. So the lens can fade in where it still looks like pixels and
+   * then come into focus, with nothing drawn twice.
    */
-  compose(buf: Uint32Array, r: { x0: number; y0: number; x1: number; y1: number }, z: number): { x0: number; y0: number; k: number; w: number; h: number } {
+  compose(buf: Uint32Array, r: Rect, o: Rect, k: number, f: number): ImageData & { w: number; h: number } {
     const w = this.world;
     const W = w.w;
-    const k = MacroLens.subdiv(z);
-    const ox0 = r.x0;
-    const oy0 = r.y0;
-    const RW = r.x1 - r.x0 + 1;
-    const RH = r.y1 - r.y0 + 1;
-    const OW = RW * k;
-    const OH = RH * k;
-    if (RW < 2 || RH < 2) return { x0: ox0, y0: oy0, k, w: 0, h: 0 };
+    const OW = (o.x1 - o.x0 + 1) * k + 2;
+    const OH = (o.y1 - o.y0 + 1) * k + 2;
     if (!this.img || this.img.width < OW || this.img.height < OH) {
-      const cw = Math.ceil(Math.max(OW, this.img?.width ?? 0) * 1.15);
-      const chh = Math.ceil(Math.max(OH, this.img?.height ?? 0) * 1.15);
-      this.canvas.width = cw;
-      this.canvas.height = chh;
-      this.img = this.ctx.createImageData(cw, chh);
+      this.img = new ImageData(Math.max(OW, TILE * 6 + 2), Math.max(OH, TILE * 6 + 2));
       this.out = new Uint32Array(this.img.data.buffer);
     }
     const stride = this.img.width;
     const out = this.out!;
 
     // Unpack the region's cells: class, texture, lit colour, solidity.
+    const RW = r.x1 - r.x0 + 1;
+    const RH = r.y1 - r.y0 + 1;
     const n = RW * RH;
     if (this.cls.length < n) {
       this.cls = new Uint8Array(n);
@@ -157,8 +343,9 @@ export class MacroLens {
       this.ca = new Float32Array(n);
       this.sol = new Float32Array(n);
       this.tmp = new Float32Array(n);
+      this.uni = new Uint8Array(n);
     }
-    const { cls, tx, cr, cg, cb, ca, sol, tmp } = this;
+    const { cls, tx, cr, cg, cb, ca, sol, tmp, uni } = this;
     const mat = w.mat;
     const bg = w.bg;
     for (let y = 0; y < RH; y++) {
@@ -169,12 +356,18 @@ export class MacroLens {
         let c: number;
         let t: number;
         if (m === EMPTY) {
-          c = bg[i] ? OPEN : SKY;
-          t = T_WALL;
-        } else if (m === SEED || m === REFUSE) {
+          // Shrub stems are drawn here (rounded, barked); other plants are drawn as shapes
+          // over the lens (drawPlants), so here they are air.
+          if (w.plant[i] === TWIG) {
+            c = TWIGC;
+            t = T_FIBER;
+          } else {
+            c = bg[i] ? OPEN : SKY;
+            t = T_WALL;
+          }
+        } else if (m === SEED || m === REFUSE || isPiece(w, i)) {
           // The top layer of a heap is drawn as loose grains over the back wall; inside, a solid base.
-          const up = mat[i - W];
-          if (up === SEED || up === REFUSE) {
+          if (heapy(w, i - W)) {
             c = HEAP;
             t = T_FLAT;
           } else {
@@ -188,64 +381,68 @@ export class MacroLens {
         const col = buf[i]!;
         cls[l] = c;
         tx[l] = t;
-        cr[l] = col & 255;
-        cg[l] = (col >>> 8) & 255;
-        cb[l] = (col >>> 16) & 255;
-        ca[l] = col >>> 24;
-        tmp[l] = SOLIDC[c]!;
+        let R = col & 255;
+        let G = (col >>> 8) & 255;
+        let B = (col >>> 16) & 255;
         if (c === OPEN) {
           // The back wall a few millimetres behind the glass: a little lighter than far out,
           // so black ants stand off it (and the edges, not darkness, carry the cavity).
-          cr[l] *= 1.08;
-          cg[l] *= 1.07;
-          cb[l] *= 1.06;
+          R *= 1 + 0.08 * f;
+          G *= 1 + 0.07 * f;
+          B *= 1 + 0.06 * f;
         } else if (c === LITTERC) {
           // Dead leaves and twigs close up: brown and dry rather than orange.
-          cr[l] *= 0.82;
-          cg[l] *= 0.8;
-          cb[l] *= 0.78;
+          R *= 1 - 0.26 * f;
+          G *= 1 - 0.3 * f;
+          B *= 1 - 0.3 * f;
         } else if (c === HEAP) {
           // Inside a heap: shade between the grains.
-          cr[l] *= 0.7;
-          cg[l] *= 0.66;
-          cb[l] *= 0.64;
+          R *= 1 - 0.3 * f;
+          G *= 1 - 0.34 * f;
+          B *= 1 - 0.36 * f;
         }
+        cr[l] = R;
+        cg[l] = G;
+        cb[l] = B;
+        ca[l] = col >>> 24;
+        tmp[l] = SOLIDC[c]!;
       }
     }
-    // Stones are domed: lighter where they face up and left, darker under.
     for (let y = 1; y < RH - 1; y++) {
       for (let x = 1, l = y * RW + 1; x < RW - 1; x++, l++) {
-        if (cls[l] !== STONEC) continue;
-        const e = (cls[l - RW] !== STONEC ? 1 : 0) + (cls[l - 1] !== STONEC ? 0.6 : 0) - (cls[l + RW] !== STONEC ? 1 : 0) - (cls[l + 1] !== STONEC ? 0.6 : 0);
-        const f = 1 + 0.16 * e;
-        cr[l] *= f;
-        cg[l] *= f;
-        cb[l] *= f;
-      }
-    }
-    // Fine roots are drawn as fibres over the soil (see drawRoots), so here they are
-    // just soil: the colour of the soil cells around them.
-    for (let y = 1; y < RH - 1; y++) {
-      for (let x = 1, l = y * RW + 1; x < RW - 1; x++, l++) {
-        if (cls[l] !== ROOTC) continue;
-        let R = 0;
-        let G = 0;
-        let B = 0;
-        let s = 0;
-        for (const d of [-1, 1, -RW, RW, -RW - 1, -RW + 1, RW - 1, RW + 1]) {
-          if (cls[l + d] !== SOILC) continue;
-          R += cr[l + d]!;
-          G += cg[l + d]!;
-          B += cb[l + d]!;
-          s++;
+        const c = cls[l]!;
+        if (c === STONEC || c === TWIGC) {
+          // Stones (and fruit, dead insects, shrub stems) are rounded: lighter where they
+          // face up and left, darker under.
+          const e = (cls[l - RW] !== c ? 1 : 0) + (cls[l - 1] !== c ? 0.6 : 0) - (cls[l + RW] !== c ? 1 : 0) - (cls[l + 1] !== c ? 0.6 : 0);
+          const g = 1 + 0.16 * e * f;
+          cr[l] *= g;
+          cg[l] *= g;
+          cb[l] *= g;
+        } else if (c === ROOTC) {
+          // In focus, fine roots are drawn as fibres over the soil (see drawRoots), so here
+          // they turn into the soil around them.
+          let R = 0;
+          let G = 0;
+          let B = 0;
+          let s = 0;
+          for (const d of [-1, 1, -RW, RW, -RW - 1, -RW + 1, RW - 1, RW + 1]) {
+            if (cls[l + d] !== SOILC) continue;
+            R += cr[l + d]!;
+            G += cg[l + d]!;
+            B += cb[l + d]!;
+            s++;
+          }
+          if (s) {
+            // They dissolve only once the fibres are already there (see Renderer.render).
+            const q = rootFade(f);
+            cr[l] += (R / s - cr[l]!) * q;
+            cg[l] += (G / s - cg[l]!) * q;
+            cb[l] += (B / s - cb[l]!) * q;
+          }
+          cls[l] = SOILC;
+          tx[l] = T_LOAM;
         }
-        if (s) {
-          cr[l] = R / s;
-          cg[l] = G / s;
-          cb[l] = B / s;
-        }
-        cls[l] = SOILC;
-        tx[l] = T_LOAM;
       }
     }
     // Solidity, blurred [1 4 6 4 1] both ways (a straight wall stays on its cell edge).
@@ -269,32 +466,8 @@ export class MacroLens {
       }
     }
     const S = tmp;
-
-    // Sub-pixel centres in cell-centre coordinates: which four cells, and how far between them.
-    const colQ = new Int32Array(OW);
-    const colF = new Float32Array(OW);
-    const colT = new Int32Array(OW);
-    for (let sx = 0; sx < OW; sx++) {
-      const u = ox0 + (sx + 0.5) / k;
-      const uc = u - 0.5;
-      let q = Math.floor(uc);
-      let f = uc - q;
-      if (q < r.x0) {
-        q = r.x0;
-        f = 0;
-      } else if (q > r.x1 - 1) {
-        q = r.x1 - 1;
-        f = 1;
-      }
-      colQ[sx] = q - r.x0;
-      colF[sx] = f;
-      colT[sx] = Math.floor(u * TPM) & TM;
-    }
-
-    // Quads (between four cell centres) that lie inside one material, away from any
-    // edge, take the fast path: 1 inside, 2 inside the sky.
-    if (this.uni.length < n) this.uni = new Uint8Array(n);
-    const uni = this.uni;
+    // Quads (between four cell centres) inside one material and away from any edge take
+    // the fast path: 1 inside, 2 inside the sky.
     for (let y = 0; y < RH - 1; y++) {
       for (let x = 0, l = y * RW; x < RW - 1; x++, l++) {
         const c = cls[l]!;
@@ -310,15 +483,67 @@ export class MacroLens {
       }
     }
 
+    // Sub-pixel centres in cell-centre coordinates: which four cells, and how far between them.
+    const colQ = new Int32Array(OW);
+    const colF = new Float32Array(OW);
+    const colT = new Int32Array(OW);
+    for (let sx = 0; sx < OW; sx++) {
+      const u = o.x0 + (sx - 1 + 0.5) / k;
+      const uc = u - 0.5;
+      let q = Math.floor(uc);
+      let fr = uc - q;
+      if (q < r.x0) {
+        q = r.x0;
+        fr = 0;
+      } else if (q > r.x1 - 1) {
+        q = r.x1 - 1;
+        fr = 1;
+      }
+      colQ[sx] = q - r.x0;
+      colF[sx] = fr;
+      colT[sx] = Math.floor(u * TPM) & TM;
+    }
+
     const tex = this.tex;
     const jit = this.jit;
     const spk = this.spk;
     const E = 0.6 / k;
+    // Texture comes in with the focus; mineral grains, the lining and the shadows only near the end.
+    const texF = 0.3 + 0.7 * f;
+    const fine = f * f;
+    // Per quad, how much of the soil around each corner is the soil of the quad's first
+    // cell ([1 4 6 4 1] weights over 5 × 5 cells), worked out the first time a quad needs it.
+    if (this.mixA.length < n * 4) {
+      this.mixA = new Float32Array(n * 4);
+      this.mixStamp = new Uint32Array(n);
+    }
+    const mixA = this.mixA;
+    const mixStamp = this.mixStamp;
+    const stamp = ++this.stamp;
+    const KW = [1, 4, 6, 4, 1];
+    const share = (l: number, a: number): number => {
+      const x = l % RW;
+      const y = (l - x) / RW;
+      let num = 0;
+      let den = 0;
+      for (let dy = -2; dy <= 2; dy++) {
+        const yy = Math.min(RH - 1, Math.max(0, y + dy));
+        for (let dx = -2; dx <= 2; dx++) {
+          const xx = Math.min(RW - 1, Math.max(0, x + dx));
+          const lq = yy * RW + xx;
+          if (cls[lq] !== SOILC) continue;
+          const wq = KW[dx + 2]! * KW[dy + 2]!;
+          den += wq;
+          if (tx[lq] === a) num += wq;
+        }
+      }
+      return den ? num / den : 0;
+    };
     const ls = new Int32Array(4);
     const ws = new Float32Array(4);
     // Colour of one side of a boundary (solid or not) at a sub-pixel: its cells among
     // the four, by weight; if none of the four is on that side, the nearest such cell
-    // in the ring around them. Leaves the colour in px* and the texture in pxT.
+    // in the ring around them. Leaves the colour in p*, the texture in pT, the class in pC.
     let pr = 0;
     let pg = 0;
     let pb = 0;
@@ -329,8 +554,8 @@ export class MacroLens {
       let sw = 0;
       let bw = -1;
       pr = pg = pb = pa = 0;
-      // Which material on this side: the one with the most weight (stones and roots
-      // pushed a little by the wobble, so their outlines aren't drawn with a ruler).
+      // Which material on this side: the one with the most weight (stones pushed a
+      // little by the wobble, so their outlines aren't drawn with a ruler).
       let wc = -1;
       let wcs = -9;
       for (let q = 0; q < 4; q++) {
@@ -387,7 +612,7 @@ export class MacroLens {
     };
 
     for (let sy = 0; sy < OH; sy++) {
-      const v = oy0 + (sy + 0.5) / k;
+      const v = o.y0 + (sy - 1 + 0.5) / k;
       const vc = v - 0.5;
       let qy = Math.floor(vc);
       let fy = vc - qy;
@@ -400,16 +625,17 @@ export class MacroLens {
       }
       const rowL = (qy - r.y0) * RW;
       const tv = (Math.floor(v * TPM) & TM) * TS;
-      let o = sy * stride;
-      for (let sx = 0; sx < OW; sx++, o++) {
+      let p = sy * stride;
+      for (let sx = 0; sx < OW; sx++, p++) {
         const fx = colF[sx]!;
         const l00 = rowL + colQ[sx]!;
         const l10 = l00 + 1;
         const l01 = l00 + RW;
         const l11 = l01 + 1;
+        const ln = fx < 0.5 ? (fy < 0.5 ? l00 : l01) : fy < 0.5 ? l10 : l11;
         const u = uni[l00]!;
         if (u === 2) {
-          out[o] = 0;
+          out[p] = 0;
           continue;
         }
         const c00 = cls[l00]!;
@@ -426,12 +652,61 @@ export class MacroLens {
         let amp = 1;
         let lum = 1;
         if (u === 1) {
-          // Inside one material, away from any edge.
+          // Inside one material, away from any edge: from the cell's own colour (out of
+          // focus) to colours blended between cells (in focus).
           R = cr[l00]! * w00 + cr[l10]! * w10 + cr[l01]! * w01 + cr[l11]! * w11;
           G = cg[l00]! * w00 + cg[l10]! * w10 + cg[l01]! * w01 + cg[l11]! * w11;
           B = cb[l00]! * w00 + cb[l10]! * w10 + cb[l01]! * w01 + cb[l11]! * w11;
-          A = c00 === WATERC ? ca[l00]! * w00 + ca[l10]! * w10 + ca[l01]! * w01 + ca[l11]! * w11 : 255;
-          texId = tx[fx < 0.5 ? (fy < 0.5 ? l00 : l01) : fy < 0.5 ? l10 : l11]!;
+          if (f < 1) {
+            R = cr[ln]! + (R - cr[ln]!) * f;
+            G = cg[ln]! + (G - cg[ln]!) * f;
+            B = cb[ln]! + (B - cb[ln]!) * f;
+          }
+          A = c00 === WATERC ? ca[ln]! : 255;
+          texId = tx[ln]!;
+          if (f > 0.2 && (tx[l00] !== tx[l10] || tx[l00] !== tx[l01] || tx[l00] !== tx[l11])) {
+            // Where one soil meets another (humus over sand, loam into clay) the line
+            // follows a blurred field of the one soil, like the ground/air edge, so it
+            // curves instead of stepping from cell to cell.
+            const a = tx[l00]!;
+            const q = l00 * 4;
+            if (mixStamp[l00] !== stamp) {
+              mixStamp[l00] = stamp;
+              mixA[q] = share(l00, a);
+              mixA[q + 1] = share(l10, a);
+              mixA[q + 2] = share(l01, a);
+              mixA[q + 3] = share(l11, a);
+            }
+            const ia = mixA[q]! * w00 + mixA[q + 1]! * w10 + mixA[q + 2]! * w01 + mixA[q + 3]! * w11 + jit[(ti + 0x3d17) & 0x3ffff]! * 0.08;
+            const isA = ia > 0.5;
+            // The colour and texture of that soil, from its cells among the four.
+            let sr = 0;
+            let sg = 0;
+            let sb = 0;
+            let sw = 0;
+            let bw = -1;
+            let bt = a;
+            for (let c = 0; c < 4; c++) {
+              const lc = c === 0 ? l00 : c === 1 ? l10 : c === 2 ? l01 : l11;
+              if ((tx[lc] === a) !== isA) continue;
+              const wc = (c === 0 ? w00 : c === 1 ? w10 : c === 2 ? w01 : w11) + 1e-4;
+              sr += cr[lc]! * wc;
+              sg += cg[lc]! * wc;
+              sb += cb[lc]! * wc;
+              sw += wc;
+              if (wc > bw) {
+                bw = wc;
+                bt = tx[lc]!;
+              }
+            }
+            texId = bt;
+            // Soft for a sub-pixel either side of the line.
+            const t = Math.min(1, Math.abs(ia - 0.5) / E) * 0.5 + 0.5;
+            const q2 = f * t;
+            R += (sr / sw - R) * q2;
+            G += (sg / sw - G) * q2;
+            B += (sb / sw - B) * q2;
+          }
         } else {
           const s0 = S[l00]!;
           const s1 = S[l10]!;
@@ -439,27 +714,36 @@ export class MacroLens {
           const s3 = S[l11]!;
           ls[0] = l00; ls[1] = l10; ls[2] = l01; ls[3] = l11;
           ws[0] = w00; ws[1] = w10; ws[2] = w01; ws[3] = w11;
-          // Ground or air: the blurred field with a little organic wobble decides.
-          // A cell the blur would swallow (a gap one or two cells wide, a lone grain,
-          // a thin spur) still shows what it is around its centre.
-          const s = s0 * w00 + s1 * w10 + s2 * w01 + s3 * w11 + jit[ti]! * 0.09;
+          // Ground or air: in focus the blurred field with a little organic wobble decides;
+          // out of focus, the cell itself. A cell the blur would swallow (a gap one or two
+          // cells wide, a lone grain, a thin spur) still shows what it is around its centre.
+          const mine = SOLIDC[cls[ln]!]!;
+          const s = mine + (s0 * w00 + s1 * w10 + s2 * w01 + s3 * w11 + jit[ti]! * 0.09 - mine) * f;
           const nx = fx < 0.5 ? fx : 1 - fx;
           const ny = fy < 0.5 ? fy : 1 - fy;
-          const ln = fx < 0.5 ? (fy < 0.5 ? l00 : l01) : fy < 0.5 ? l10 : l11;
-          const lost = SOLIDC[cls[ln]!] ? S[ln]! < 0.5 : S[ln]! > 0.5;
+          const lost = mine ? S[ln]! < 0.5 : S[ln]! > 0.5;
           const own = lost && nx * nx + ny * ny < 0.1;
-          const solid = own ? SOLIDC[cls[ln]!]! : s > 0.5 ? 1 : 0;
-          side(solid, l00, fx, fy, jit[(ti + 0x1555) & 0x3ffff]! * 0.25);
+          const solid = own ? mine : s > 0.5 ? 1 : 0;
+          side(solid, l00, fx, fy, jit[(ti + 0x1555) & 0x3ffff]! * 0.25 * f);
           let cl = pC;
-          // Within air, sky versus the nest's open space (and water) is just the nearest cell.
-          if (!solid && own) {
-            cl = cls[ln]!;
+          if (solid === mine) {
+            // Out of focus, a cell keeps its own colour.
+            pr = cr[ln]! + (pr - cr[ln]!) * f;
+            pg = cg[ln]! + (pg - cg[ln]!) * f;
+            pb = cb[ln]! + (pb - cb[ln]!) * f;
+            pa = ca[ln]! + (pa - ca[ln]!) * f;
+            if (f < 0.5) {
+              pT = tx[ln]!;
+              cl = pC = cls[ln]!;
+            }
           }
+          // Within air, sky versus the nest's open space (and water) is just the nearest cell.
+          if (!solid && own) cl = cls[ln]!;
           if (cl === SKY) {
             // Fade the edge of the ground into the sky.
             const m = 0.5 - s;
             if (m >= E || own) {
-              out[o] = 0;
+              out[p] = 0;
               continue;
             }
             side(1, l00, fx, fy);
@@ -480,16 +764,16 @@ export class MacroLens {
               // Ant-made lining: workers pat the walls smooth and compact, a darker, finer
               // skin a few tenths of a millimetre thick. Floors catch the light on their lip.
               if (m < 0.14 && (cls[l00] === OPEN || cls[l10] === OPEN || cls[l01] === OPEN || cls[l11] === OPEN)) {
-                const q = 1 - m / 0.14;
+                const q = (1 - m / 0.14) * fine;
                 amp = 1 - 0.85 * q;
                 const gy = s2 + s3 - s0 - s1;
                 const gx = s1 + s3 - s0 - s2;
                 const floor = gy > 0.08 && gy > Math.abs(gx) * 0.6;
-                lum = floor && m < 0.06 ? 1.24 - m * 2 : 1 - 0.14 * q;
+                lum = floor && m < 0.06 ? 1 + (0.24 - m * 2) * fine : 1 - 0.14 * q;
               }
             } else if (cl === OPEN && m < 0.3) {
               // Contact shadow on the back wall just inside the opening.
-              lum = 1 - 0.34 * (1 - m / 0.3);
+              lum = 1 - 0.34 * (1 - m / 0.3) * fine;
             }
             if (m < E && !own) {
               // Anti-alias across the edge.
@@ -512,15 +796,15 @@ export class MacroLens {
         }
         // Grain is uneven: some patches are crumbly, some smoother.
         const patch = 0.8 + 0.4 * jit[(ti + 0x2a15a) & 0x3ffff]!;
-        const f = (1 + (tex[texId]![ti]! / 127) * AMP[texId]! * amp * patch) * lum;
-        let rr = R * f;
-        let gg = G * f;
-        let bb = B * f;
+        const g = (1 + (tex[texId]![ti]! / 127) * AMP[texId]! * amp * patch * texF) * lum;
+        let rr = R * g;
+        let gg = G * g;
+        let bb = B * g;
         // Mineral grains: pale quartz, rusty and dark grains, the odd glint. Multiplied,
-        // so they take the light they are in (red under the night lamp).
+        // so they take the light they are in.
         const sp = spk[ti]!;
         if (sp && amp > 0.5) {
-          const q = SPECK[texId]!;
+          const q = SPECK[texId]! * fine;
           if (q > 0) {
             const k3 = sp * 3;
             rr *= 1 + (SPK_MUL[k3]! - 1) * q;
@@ -531,11 +815,13 @@ export class MacroLens {
         if (rr > 255) rr = 255;
         if (gg > 255) gg = 255;
         if (bb > 255) bb = 255;
-        out[o] = (((A | 0) << 24) | ((bb & 255) << 16) | ((gg & 255) << 8) | (rr & 255)) >>> 0;
+        out[p] = (((A | 0) << 24) | ((bb & 255) << 16) | ((gg & 255) << 8) | (rr & 255)) >>> 0;
       }
     }
-    this.ctx.putImageData(this.img, 0, 0, 0, 0, OW, OH);
-    return { x0: ox0, y0: oy0, k, w: OW, h: OH };
+    const res = this.img as ImageData & { w: number; h: number };
+    res.w = OW;
+    res.h = OH;
+    return res;
   }
 
   /**
@@ -672,7 +958,8 @@ export class MacroLens {
       for (let k = 0; k < parts.length; k++) {
         const pt = parts[k]!;
         if (w.plant[pt.i] !== pt.m) continue;
-        if (pt.m === FLOWER) {
+        // Feather grass "flowers" are its long awns: drawn as lines, like stems.
+        if (pt.m === FLOWER && p.kind !== 'stipa') {
           flowers.push(pt);
           continue;
         }
@@ -697,21 +984,57 @@ export class MacroLens {
         run.pts.push(pt.i);
       }
       for (const r of runs) {
-        const pts = smooth(r.pts.map((i) => [(i % W) + 0.5, ((i / W) | 0) + 0.5] as [number, number]), r.m === STEM ? 4 : 2);
+        const pts = smooth(r.pts.map((i) => [(i % W) + 0.5, ((i / W) | 0) + 0.5] as [number, number]), r.m === LEAF ? 2 : 4);
+        if (r.m === FLOWER) {
+          // A feather-grass awn: a fine silvery thread with a feathered plume.
+          strokeCurve(ctx, pts, lit([200, 196, 178], 0.85), 0.16);
+          ctx.strokeStyle = lit([226, 222, 206], 0.4);
+          ctx.lineWidth = 0.08;
+          ctx.beginPath();
+          for (let q = Math.floor(pts.length * 0.35); q < pts.length - 1; q++) {
+            const [x, y] = pts[q]!;
+            const [nx2, ny2] = pts[q + 1]!;
+            const dx = nx2 - x;
+            const dy = ny2 - y;
+            const d = Math.hypot(dx, dy) || 1;
+            ctx.moveTo(x - (dy / d) * 0.55, y + (dx / d) * 0.55);
+            ctx.lineTo(x + (dy / d) * 0.55, y - (dx / d) * 0.55);
+          }
+          ctx.stroke();
+          continue;
+        }
+        const base = greenCol(r.m, w.ptone[r.pts[r.pts.length > 1 ? 1 : 0]!]!);
         if (r.m === STEM) {
-          const base = sampleRamp(PAL.stem, r.tone / 255);
-          const width = p.kind === 'purse' ? 0.62 : p.kind === 'clover' ? 0.5 : 0.56;
+          const width = p.kind === 'purse' ? 0.62 : p.kind === 'clover' ? 0.5 : p.kind === 'erodium' ? 0.42 : p.kind === 'stipa' ? 0.46 : 0.56;
           strokeCurve(ctx, pts, lit(base), width);
           strokeCurve(ctx, pts.map(([x, y]) => [x - 0.14, y] as [number, number]), lit([base[0] * 1.35 + 20, base[1] * 1.3 + 18, base[2] * 1.2], 0.55), width * 0.28);
         } else {
-          const base = sampleRamp(PAL.leaf, r.tone / 255);
-          blade(ctx, pts, p.kind === 'purse' ? 1.5 : 0.95, lit(base));
+          blade(ctx, pts, p.kind === 'purse' ? 1.5 : p.kind === 'erodium' ? 1.3 : p.kind === 'stipa' ? 0.6 : 0.95, lit(base));
           // Midrib catches the light.
           strokeCurve(ctx, pts.slice(0, Math.max(2, pts.length - 1)), lit([base[0] * 1.4 + 18, base[1] * 1.35 + 20, base[2] * 1.2], 0.45), 0.12);
         }
       }
-      if (blobs.length) this.clover(ctx, blobs, lit);
-      if (flowers.length) this.flower(ctx, flowers, p.kind, lit);
+      if (blobs.length) this.clover(ctx, blobs, greenCol(LEAF, w.ptone[blobs[0]!.i]!), lit);
+      if (flowers.length) {
+        // One flower (or flower head) per patch of touching cells.
+        const left = new Map(flowers.map((c) => [c.i, c]));
+        while (left.size) {
+          const first = left.values().next().value!;
+          left.delete(first.i);
+          const group = [first];
+          for (let q = 0; q < group.length; q++) {
+            const i = group[q]!.i;
+            for (const d of [1, -1, W, -W, W + 1, W - 1, -W + 1, -W - 1]) {
+              const c = left.get(i + d);
+              if (c) {
+                left.delete(c.i);
+                group.push(c);
+              }
+            }
+          }
+          this.flower(ctx, group, p.kind, lit);
+        }
+      }
       // Ripe seeds still on the plant.
       for (const s of p.slots) {
         if (w.plant[s] !== SEEDHEAD) continue;
@@ -732,11 +1055,154 @@ export class MacroLens {
   }
 
   /**
+   * Fallen leaves and twigs close up: each run of litter cells is followed and
+   * drawn as a thin, curled leaf (brown, a paler midrib, darker edges) or a
+   * barked twig, over the lens's own strip of litter.
+   */
+  drawLitter(ctx: CanvasRenderingContext2D, view: Rect, light: (x: number, y: number) => RGB): void {
+    const w = this.world;
+    const W = w.w;
+    const x0 = Math.max(1, Math.floor(view.x0) - 24);
+    const x1 = Math.min(W - 2, Math.ceil(view.x1) + 24);
+    const y0 = Math.max(1, Math.floor(view.y0) - 4);
+    const y1 = Math.min(w.h - 2, Math.ceil(view.y1) + 4);
+    const mat = w.mat;
+    const seen = new Set<number>();
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    for (let y = y0; y <= y1; y++) {
+      for (let x = x0; x <= x1; x++) {
+        const i0 = y * W + x;
+        if (mat[i0] !== LITTER || seen.has(i0)) continue;
+        // Litter lies along the ground: walk left to right, stepping up or down a cell.
+        const run: number[] = [];
+        let i = i0;
+        for (let guard = 0; guard < 60; guard++) {
+          seen.add(i);
+          run.push(i);
+          const next = [i + 1, i + 1 - W, i + 1 + W].find((j) => mat[j] === LITTER && !seen.has(j));
+          if (next === undefined) break;
+          i = next;
+        }
+        const twig = w.tint[i0] === 1;
+        const pts = smooth(run.map((j) => [(j % W) + 0.5, ((j / W) | 0) + 0.6] as [number, number]), 3);
+        const l = light(pts[0]![0], pts[0]![1]);
+        const lit = (c: RGB, a = 1): string => `rgba(${(c[0] * l[0]) | 0},${(c[1] * l[1]) | 0},${(c[2] * l[2]) | 0},${a})`;
+        if (twig) {
+          const c = sampleRamp(PAL.twig, w.tone[i0]! / 255);
+          strokeCurve(ctx, pts, lit(c), 0.95);
+          strokeCurve(ctx, pts.map(([px, py]) => [px, py - 0.22] as [number, number]), lit([c[0] * 1.5 + 14, c[1] * 1.45 + 12, c[2] * 1.4 + 10], 0.5), 0.22);
+          continue;
+        }
+        // A dead leaf: brown, dry, its ends curling up.
+        const c = mixRGB(sampleRamp(PAL.leafLitter, w.tone[i0]! / 255), [92, 64, 40], 0.35);
+        if (pts.length > 2) {
+          pts[0] = [pts[0]![0], pts[0]![1] - 0.6];
+          pts[pts.length - 1] = [pts[pts.length - 1]![0], pts[pts.length - 1]![1] - 0.5];
+        }
+        blade(ctx, pts, 1.25, lit(c));
+        strokeCurve(ctx, pts, lit([c[0] * 1.35 + 16, c[1] * 1.3 + 12, c[2] * 1.25 + 8], 0.5), 0.12);
+      }
+    }
+  }
+
+  /**
+   * The shrub at ant height: its stems are drawn by the lens (barked and
+   * rounded); here each leaf is a pointed leaf with a midrib, each flower five
+   * petals (white blackthorn, pink dog rose), each fruit a sloe with its bloom
+   * or a glossy hip.
+   */
+  drawShrub(ctx: CanvasRenderingContext2D, shrub: ShrubInfo, light: (x: number, y: number) => RGB, view: Rect): void {
+    const w = this.world;
+    const W = w.w;
+    if (shrub.x < view.x0 - 160 || shrub.x > view.x1 + 160) return;
+    const l = light(shrub.x, w.ground[shrub.x]! - 20);
+    const lit = (c: RGB, a = 1): string => `rgba(${(c[0] * l[0]) | 0},${(c[1] * l[1]) | 0},${(c[2] * l[2]) | 0},${a})`;
+    for (const cells of shrub.leaves) {
+      const on = cells.filter((i) => w.plant[i] === LEAF);
+      if (!on.length) continue;
+      const { cx, cy, a, len, wid } = patchShape(on, W);
+      if (cx < view.x0 - 8 || cx > view.x1 + 8 || cy < view.y0 - 8 || cy > view.y1 + 8) continue;
+      const base = greenCol(LEAF, w.ptone[on[0]!]!);
+      const L = Math.max(1.4, len);
+      const H = Math.max(0.8, Math.min(wid, L * 0.55));
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(a);
+      ctx.fillStyle = lit(base);
+      ctx.beginPath();
+      ctx.moveTo(-L, 0);
+      ctx.quadraticCurveTo(-L * 0.2, -H * 1.5, L, 0);
+      ctx.quadraticCurveTo(-L * 0.2, H * 1.5, -L, 0);
+      ctx.fill();
+      ctx.strokeStyle = lit([base[0] * 1.35 + 18, base[1] * 1.3 + 20, base[2] * 1.2], 0.5);
+      ctx.lineWidth = 0.14;
+      ctx.beginPath();
+      ctx.moveTo(-L, 0);
+      ctx.lineTo(L * 0.9, 0);
+      for (let q = -0.5; q <= 0.5; q += 0.33) {
+        ctx.moveTo(q * L, 0);
+        ctx.lineTo(q * L + L * 0.25, -H * 0.6);
+        ctx.moveTo(q * L, 0);
+        ctx.lineTo(q * L + L * 0.25, H * 0.6);
+      }
+      ctx.stroke();
+      ctx.restore();
+    }
+    for (const cells of shrub.buds) {
+      const fl = cells.filter((i) => w.plant[i] === FLOWER);
+      const be = cells.filter((i) => w.plant[i] === BERRY);
+      const on = fl.length >= be.length ? fl : be;
+      if (!on.length) continue;
+      const { cx, cy, len } = patchShape(on, W);
+      if (cx < view.x0 - 8 || cx > view.x1 + 8 || cy < view.y0 - 8 || cy > view.y1 + 8) continue;
+      const R = Math.max(1, len);
+      if (on === fl) {
+        const pink = shrub.kind === 'rose';
+        for (let k = 0; k < 5; k++) {
+          const a = (k / 5) * Math.PI * 2 - Math.PI / 2;
+          ctx.fillStyle = lit(pink ? sampleRamp(PAL.flowerPink, 0.6 + (k % 2) * 0.15) : [246, 243, 234]);
+          ctx.beginPath();
+          ctx.ellipse(cx + Math.cos(a) * R * 0.5, cy + Math.sin(a) * R * 0.5, R * 0.52, R * 0.42, a, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // A ring of stamens.
+        ctx.fillStyle = lit([222, 196, 96]);
+        for (let k = 0; k < 9; k++) {
+          const a = (k / 9) * Math.PI * 2;
+          ctx.beginPath();
+          ctx.arc(cx + Math.cos(a) * R * 0.28, cy + Math.sin(a) * R * 0.28, Math.max(0.1, R * 0.07), 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        const pt = w.ptone[on[0]!]! / 255;
+        const sloe = pt < 0.5;
+        const c = sloe ? sampleRamp(PAL.sloe, pt * 2) : sampleRamp(PAL.hip, (pt - 0.5) * 2);
+        ctx.fillStyle = lit(c);
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, R * (sloe ? 1 : 0.8), R * (sloe ? 1 : 1.15), 0, 0, Math.PI * 2);
+        ctx.fill();
+        // A sloe wears a pale waxy bloom; a hip is glossy.
+        ctx.fillStyle = sloe ? lit([150, 160, 196], 0.25) : lit([255, 220, 200], 0.5);
+        ctx.beginPath();
+        ctx.ellipse(cx - R * 0.3, cy - R * 0.35, R * (sloe ? 0.55 : 0.22), R * (sloe ? 0.45 : 0.3), -0.5, 0, Math.PI * 2);
+        ctx.fill();
+        if (!sloe) {
+          ctx.fillStyle = lit([60, 40, 24]);
+          ctx.beginPath();
+          ctx.arc(cx, cy + R * 1.1, R * 0.2, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+    }
+  }
+
+  /**
    * Clover leaves: each leaflet is found by its middle cell (the one with all four
    * neighbours in leaf), and drawn as a rounded leaflet turned away from the
    * middle of its leaf, with the pale chevron white clover carries.
    */
-  private clover(ctx: CanvasRenderingContext2D, cells: { i: number; tone: number }[], lit: (c: RGB, a?: number) => string): void {
+  private clover(ctx: CanvasRenderingContext2D, cells: { i: number; tone: number }[], base: RGB, lit: (c: RGB, a?: number) => string): void {
     const W = this.world.w;
     const set = new Set(cells.map((c) => c.i));
     const mids = cells.filter((c) => set.has(c.i - 1) && set.has(c.i + 1) && set.has(c.i - W) && set.has(c.i + W));
@@ -747,7 +1213,6 @@ export class MacroLens {
     for (let a = 0; a < pts.length; a++)
       for (let b = a + 1; b < pts.length; b++)
         if (Math.hypot(pts[a]![0] - pts[b]![0], pts[a]![1] - pts[b]![1]) < 4.2) group[find(a)] = find(b);
-    const base = sampleRamp(PAL.leaf, cells[0]!.tone / 255);
     for (let a = 0; a < pts.length; a++) {
       let cx = 0;
       let cy = 0;
@@ -818,6 +1283,29 @@ export class MacroLens {
       ctx.beginPath();
       ctx.arc(cx - 0.5, cy - 0.7, 0.7, 0, Math.PI * 2);
       ctx.fill();
+    } else if (kind === 'erodium') {
+      // Stork's bill: one small five-petalled pink flower with darker veins.
+      const R = 1.5;
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2 - Math.PI / 2;
+        ctx.fillStyle = lit(sampleRamp(PAL.flowerPink, 0.55 + (k % 2) * 0.2));
+        ctx.beginPath();
+        ctx.ellipse(cx + Math.cos(a) * R * 0.55, cy + Math.sin(a) * R * 0.55, R * 0.55, R * 0.38, a, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.strokeStyle = lit([140, 60, 96], 0.5);
+      ctx.lineWidth = 0.08;
+      ctx.beginPath();
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2 - Math.PI / 2;
+        ctx.moveTo(cx, cy);
+        ctx.lineTo(cx + Math.cos(a) * R * 0.85, cy + Math.sin(a) * R * 0.85);
+      }
+      ctx.stroke();
+      ctx.fillStyle = lit([226, 206, 120]);
+      ctx.beginPath();
+      ctx.arc(cx, cy, 0.22, 0, Math.PI * 2);
+      ctx.fill();
     } else {
       // Shepherd's purse: tiny four-petalled white flowers in a tight cluster.
       for (const c of cells) {
@@ -840,6 +1328,76 @@ export class MacroLens {
 }
 
 // ------------------------------------------------------------- curves
+
+/**
+ * A piece of fruit or prey lying in the nest (stored, or being cut up): close
+ * up it is drawn as a crumb among the seeds. Out in the open a dead insect or
+ * a fallen sloe keeps its shape, and so does a cicada nymph in the soil.
+ */
+export function isPiece(w: World, i: number): boolean {
+  const m = w.mat[i];
+  return (m === FRUIT || (m === PREY && w.tint[i] !== 3)) && w.bg[i] === 1;
+}
+
+/** Seed, chaff or a stored piece: what a granary heap is made of. */
+export function heapy(w: World, i: number): boolean {
+  const m = w.mat[i];
+  return m === SEED || m === REFUSE || isPiece(w, i);
+}
+
+
+/** How far fine roots have turned from pixels into fibres at a given focus. */
+export const rootFade = (f: number): number => smoothstep(0.35, 0.9, f);
+/** How visible the root fibres are at a given focus: in before the pixels go. */
+export const fibreAlpha = (f: number): number => smoothstep(0.05, 0.45, f);
+
+/** A stem or leaf's colour: its shade, and how dry it is (green, yellowing, straw, dead). */
+function greenCol(m: number, pt: number): RGB {
+  const sh = (pt & 63) / 63;
+  const dry = pt >> DRY_SHIFT;
+  const c = sampleRamp(m === STEM ? PAL.stem : PAL.leaf, sh);
+  if (dry === 3) return mixRGB(c, sampleRamp(PAL.deadPlant, sh), 0.9);
+  if (dry > 0) return mixRGB(c, sampleRamp(PAL.straw, sh), dry === 1 ? 0.45 : 0.88);
+  return c;
+}
+
+/** Centre, long axis (radians), half-length and half-width of a patch of cells. */
+function patchShape(cells: number[], W: number): { cx: number; cy: number; a: number; len: number; wid: number } {
+  let cx = 0;
+  let cy = 0;
+  for (const i of cells) {
+    cx += (i % W) + 0.5;
+    cy += ((i / W) | 0) + 0.5;
+  }
+  cx /= cells.length;
+  cy /= cells.length;
+  let xx = 0;
+  let yy = 0;
+  let xy = 0;
+  for (const i of cells) {
+    const dx = (i % W) + 0.5 - cx;
+    const dy = ((i / W) | 0) + 0.5 - cy;
+    xx += dx * dx;
+    yy += dy * dy;
+    xy += dx * dy;
+  }
+  const a = 0.5 * Math.atan2(2 * xy, xx - yy);
+  let lo = 0;
+  let hi = 0;
+  let wl = 0;
+  let wh = 0;
+  for (const i of cells) {
+    const dx = (i % W) + 0.5 - cx;
+    const dy = ((i / W) | 0) + 0.5 - cy;
+    const u = dx * Math.cos(a) + dy * Math.sin(a);
+    const v = -dx * Math.sin(a) + dy * Math.cos(a);
+    lo = Math.min(lo, u);
+    hi = Math.max(hi, u);
+    wl = Math.min(wl, v);
+    wh = Math.max(wh, v);
+  }
+  return { cx, cy, a, len: (hi - lo) / 2 + 0.5, wid: (wh - wl) / 2 + 0.5 };
+}
 
 /** Soften a cell-centre polyline (passes of a three-point average, ends kept). */
 function smooth(pts: [number, number][], passes = 2): [number, number][] {
