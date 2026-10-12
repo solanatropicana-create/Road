@@ -2,6 +2,7 @@ import { Rng } from '../util/rng';
 import { World } from './world';
 import { EMPTY, STEM, LEAF, FLOWER, SEEDHEAD, SEED, ROOT, SOIL, SOLID } from './mat';
 import { TICK_HZ } from '../config';
+import { SEED_TONE } from '../render/palette';
 
 export type PlantKind = 'grass' | 'clover' | 'purse';
 
@@ -76,7 +77,7 @@ export class Plants {
     this.list.push(p);
     if (instant) {
       while (!p.mature) this.growStep(p);
-      for (const s of p.slots) if (this.rng.chance(0.6) && w.mat[s] === EMPTY && !w.plant[s]) w.setPlant(s, SEEDHEAD, this.rng.int(0, 255));
+      for (const s of p.slots) if (this.rng.chance(0.6) && w.mat[s] === EMPTY && !w.plant[s]) w.setPlant(s, SEEDHEAD, this.seedTone(p));
     }
     return p;
   }
@@ -226,6 +227,12 @@ export class Plants {
     }
   }
 
+  /** Seed tone carries the species (see seedLook in the palette). */
+  private seedTone(p: Plant): number {
+    const [lo, hi] = SEED_TONE[p.kind]!;
+    return this.rng.int(lo, hi);
+  }
+
   /** Take a plant out entirely: stem, leaves, flowers and any seeds still on it. */
   remove(p: Plant): void {
     const w = this.world;
@@ -254,7 +261,7 @@ export class Plants {
         // Ripen one empty slot that still hangs off the plant.
         const s = p.slots[this.rng.int(0, p.slots.length - 1)];
         if (s !== undefined && w.mat[s] === EMPTY && !w.plant[s] && !w.plan[s] && this.attached(s)) {
-          w.setPlant(s, SEEDHEAD, this.rng.int(0, 255));
+          w.setPlant(s, SEEDHEAD, this.seedTone(p));
           this.ripened++;
         }
       }

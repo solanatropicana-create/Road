@@ -56,6 +56,28 @@ export const PAL = {
   fruit: ramp('#24111a', '#361822', '#48202b', '#5a2a34'),
 };
 
+/**
+ * A seed's tone also says which plant it came from: grass seed (long, golden),
+ * clover (round, orange-brown) or shepherd's purse (tiny, red-brown).
+ */
+const SEED_RAMPS = [
+  ramp('#8a6a30', '#a5803c', '#c09a4c', '#d4b060'),
+  ramp('#7a4a22', '#94592a', '#ad6c34', '#c07e40'),
+  ramp('#5a2e1c', '#703a22', '#87482a', '#9a5634'),
+];
+const SEED_SIZE: [number, number][] = [[0.8, 0.4], [0.55, 0.48], [0.4, 0.32]];
+
+/** Colour and half-size (mm) of a seed of this tone. */
+export const seedLook = (tone: number): { col: RGB; rx: number; ry: number } => {
+  const kind = tone < 86 ? 0 : tone < 171 ? 1 : 2;
+  const t = (tone - kind * 85.33) / 85.33;
+  const [rx, ry] = SEED_SIZE[kind]!;
+  return { col: sampleRamp(SEED_RAMPS[kind]!, t), rx, ry };
+};
+
+/** Tone range for seed from each kind of plant. */
+export const SEED_TONE: Record<string, [number, number]> = { grass: [0, 85], clover: [86, 170], purse: [171, 255] };
+
 /** Chamber floor tints so rooms read at a glance (applied to the back wall). */
 export const ZONE_TINT: Record<string, RGB> = {
   queen: hex('#5a3350'),

@@ -3,7 +3,10 @@ import {
   EMPTY, HUMUS, LOAM, CLAY, SUBSOIL, GRAVEL, STONE, ROOT, SAND, WATER, STEM, LEAF, FLOWER,
   SEED, REFUSE, LITTER, FRUIT, BEDROCK, SOLID,
 } from '../world/mat';
-import { PAL, RGB, ZONE_TINT, hex, mixRGB, pack, sampleRamp } from './palette';
+import { PAL, RGB, ZONE_TINT, hex, mixRGB, pack, sampleRamp, seedLook } from './palette';
+
+/** Tone buckets for drawing seeds (each species gets four shades). */
+const SEED_BUCKETS = 12;
 import { Backdrop, skyAt } from './backdrop';
 import { Camera } from './camera';
 import { AntPainter } from './antdraw';
@@ -162,7 +165,7 @@ export class Renderer {
           c = this.backwall(i, x, y);
           return pack(c[0], c[1], c[2]);
         }
-        c = m === SEED ? sampleRamp(PAL.seed, tone) : w.tint[i] === SPROUT ? sampleRamp(PAL.leaf, 0.75) : sampleRamp(PAL.refuse, tone);
+        c = m === SEED ? seedLook(w.tone[i]!).col : w.tint[i] === SPROUT ? sampleRamp(PAL.leaf, 0.75) : sampleRamp(PAL.refuse, tone);
         break;
       case LITTER: c = w.tint[i] === 1 ? sampleRamp(PAL.twig, tone) : sampleRamp(PAL.leafLitter, tone); break;
       case FRUIT: c = sampleRamp(PAL.fruit, tone); break;
@@ -419,10 +422,8 @@ export class Renderer {
     const B = 4;
     const seedPaths: Path2D[] = [];
     const huskPaths: Path2D[] = [];
-    for (let k = 0; k < B; k++) {
-      seedPaths.push(new Path2D());
-      huskPaths.push(new Path2D());
-    }
+    for (let k = 0; k < B; k++) huskPaths.push(new Path2D());
+    for (let k = 0; k < SEED_BUCKETS; k++) seedPaths.push(new Path2D());
     const gloss = new Path2D();
     const shoots = new Path2D();
     let any = false;
@@ -442,11 +443,16 @@ export class Renderer {
         const cy = y + 0.55 + jy;
         const b = Math.min(B - 1, (w.tone[i]! * B) >> 8);
         if (m === SEED) {
-          const p = seedPaths[b]!;
-          p.moveTo(cx + 0.68 * Math.cos(rot), cy + 0.68 * Math.sin(rot));
-          p.ellipse(cx, cy, 0.68, 0.5, rot, 0, Math.PI * 2);
-          gloss.moveTo(cx - 0.12 + 0.2, cy - 0.2);
-          gloss.ellipse(cx - 0.12, cy - 0.2, 0.2, 0.1, rot, 0, Math.PI * 2);
+          // Grouped by species and shade: one path per tone bucket.
+          const look = seedLook(w.tone[i]!);
+          const sb = Math.min(SEED_BUCKETS - 1, (w.tone[i]! * SEED_BUCKETS) >> 8);
+          const p = seedPaths[sb]!;
+          const rx = look.rx * 0.95;
+          const ry = look.ry * 0.95;
+          p.moveTo(cx + rx * Math.cos(rot), cy + rx * Math.sin(rot));
+          p.ellipse(cx, cy + 0.5 - ry, rx, ry, rot, 0, Math.PI * 2);
+          gloss.moveTo(cx - 0.1 + rx * 0.3, cy + 0.5 - ry * 1.5);
+          gloss.ellipse(cx - 0.1, cy + 0.5 - ry * 1.5, rx * 0.3, ry * 0.22, rot, 0, Math.PI * 2);
         } else if (w.tint[i] === SPROUT) {
           // A germinated seed: the grain with a pale root and a green shoot.
           const p = seedPaths[b]!;
@@ -466,7 +472,9 @@ export class Renderer {
     for (let k = 0; k < B; k++) {
       ctx.fillStyle = lit(sampleRamp(PAL.refuse, 0.35 + (k / B) * 0.6));
       ctx.fill(huskPaths[k]!);
-      ctx.fillStyle = lit(sampleRamp(PAL.seed, (k + 0.5) / B));
+    }
+    for (let k = 0; k < SEED_BUCKETS; k++) {
+      ctx.fillStyle = lit(seedLook(((k + 0.5) * 256) / SEED_BUCKETS).col);
       ctx.fill(seedPaths[k]!);
     }
     ctx.fillStyle = lit([255, 236, 196], 0.45);

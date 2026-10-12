@@ -3,7 +3,7 @@ import type { Brood, Corpse } from '../sim/brood';
 import type { World } from '../world/world';
 import { Carry, Task } from '../sim/types';
 import { SOLID } from '../world/mat';
-import { PAL, RGB, hex, mixRGB, sampleRamp } from './palette';
+import { PAL, RGB, hex, mixRGB, sampleRamp, seedLook } from './palette';
 
 /**
  * Ants are the subject of the shot, so unlike the soil they are drawn at the
@@ -554,13 +554,15 @@ export class AntPainter {
       ctx.fill();
     };
     switch (a.carry) {
-      case Carry.Seed:
-        blob(0.85, 0.55, sampleRamp(PAL.seed, a.carryTone / 255), -0.3);
+      case Carry.Seed: {
+        const look = seedLook(a.carryTone);
+        blob(look.rx * 1.05, look.ry * 1.1, look.col, -0.3);
         ctx.fillStyle = css([255, 240, 200], l, 0.35);
         ctx.beginPath();
-        ctx.ellipse(mx + 0.4, my - 0.22, 0.35, 0.14, -0.3, 0, Math.PI * 2);
+        ctx.ellipse(mx + look.rx * 0.5, my - look.ry * 0.4, look.rx * 0.4, look.ry * 0.25, -0.3, 0, Math.PI * 2);
         ctx.fill();
         break;
+      }
       case Carry.Soil:
         blob(0.55, 0.48, mixRGB(sampleRamp(PAL.loam, a.carryTone / 255), [230, 215, 190], 0.14), 0.4);
         break;
