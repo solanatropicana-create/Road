@@ -98,6 +98,8 @@ export class Ant {
   private offLoad = false;
   private search = 0;
   private lastDir = -1;
+  /** Which way the last sideways step went (-1 / 1), kept through steps straight up or down. */
+  private lastDX = 0;
   private stuck = 0;
   /** Steps walked on the surface with the current load. */
   private trip = 0;
@@ -412,6 +414,7 @@ export class Ant {
     this.x += DX[k]!;
     this.y += DY[k]!;
     this.lastDir = k;
+    if (DX[k]) this.lastDX = DX[k]!;
     this.step++;
     this.orient(sim, DX[k]!, DY[k]!);
   }
@@ -1269,7 +1272,7 @@ export class Ant {
     this.fdist = 0;
   }
 
-  /** Random search biased by trail pheromone, outward from the nest, mostly on the ground. */
+  /** Random search that keeps its heading, biased by trail pheromone, outward from the nest, mostly on the ground. */
   private searchStep(sim: Sim, i: number): void {
     const w0 = sim.world;
     // The trail runs on past the edge of the slice: the forager goes on into the meadow beyond.
@@ -1323,7 +1326,16 @@ export class Ant {
         s *= outward ? 1.1 : inward ? 0.75 : 1;
         s += p * (outward ? 1.5 : 0.4);
       }
-      if (k === this.lastDir) s *= 2;
+      // Searching, a forager keeps on the way it is going: Messor search in
+      // fairly straight runs with now and then a turn. The same step again is
+      // favoured, other steps the same way (over a bump) less so, and turning
+      // back is rare. Straight up or down keeps the old weight, so climbing
+      // stems stays the exception.
+      if (outbound) {
+        if (k === this.lastDir) s *= 2;
+      } else if (DX[k]! * this.lastDX < 0) s *= 0.04;
+      else if (k === this.lastDir) s *= DX[k] ? 4 : 2;
+      else if (DX[k] === this.lastDX) s *= 1.6;
       // Harvesters mostly glean fallen seed; climbing stems is the exception,
       // and a forager up a stem with nothing in reach climbs back down.
       if (!SOLID[w.mat[n + w.w]!]) s *= DY[k]! < 0 ? 0.25 : 0.6;

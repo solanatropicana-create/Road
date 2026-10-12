@@ -237,7 +237,7 @@ Ayrıca:
 
 **Toplama**
 
-- Toplayıcı bir yön seçip uzaklaşıyor, sonra arıyor.
+- Toplayıcı bir yön seçip uzaklaşıyor, sonra arıyor. Ararken yönünü koruyor: gerçek *Messor* toplayıcıları gibi oldukça düz yürüyüp arada bir dönüyor, geri dönmesi seyrek (bağıntılı rastgele yürüyüş).
 - Yakındaki tohumu kokluyor, iz feromonu bırakıyor ve izi yönüyle takip ediyor.
 - Ulaşılamayan bir kokuyu (sapı kesilmiş ya da toprak altında kalmış bir bitkinin tohumu) bir süre sonra bırakıyor. Yoksa bütün toplayıcılar oraya yığılırdı.
 - Beş bitki türü var (brom otu, yonca, çoban çantası, sorguç otu, dönbaba) ve her birinin tohumu farklı görünüyor. Ambara bakınca hangi bitkilerin hasat edildiği anlaşılıyor.

@@ -202,11 +202,12 @@ function upgrade(sim: Sim): void {
     Object.assign(fog.box, { x0: v.x0, x1: v.x1, y1: v.y1 });
     o.fog = fog;
   }
-  // Saves from before alarm, temperament, the gate queue and the second gate.
+  // Saves from before alarm, temperament, the gate queue, the second gate and the searcher's heading.
   const ants = [...sim.colony.ants, ...sim.colony.alates, ...(o.neighbours ?? (o.neighbour ? [o.neighbour] : [])).flatMap((nb) => nb.ants)];
   for (const a of ants) {
-    const x = a as unknown as { alarm?: number; zeal?: number; sent?: boolean; waiting?: boolean };
+    const x = a as unknown as { alarm?: number; zeal?: number; sent?: boolean; waiting?: boolean; lastDX?: number };
     if (x.alarm === undefined) x.alarm = 0;
+    if (x.lastDX === undefined) x.lastDX = 0;
     if (x.sent === undefined) x.sent = false;
     if (x.waiting === undefined) x.waiting = false;
     if (x.zeal === undefined) x.zeal = a.id % 4 === 0 ? 0.25 : 0.75;
