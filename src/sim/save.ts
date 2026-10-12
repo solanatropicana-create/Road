@@ -14,6 +14,7 @@ import { Noise } from '../util/noise';
 import { Calendar } from './calendar';
 import { Ecology } from './ecology';
 import { Critters } from './critters';
+import { Neighbour } from './rivals';
 
 /**
  * Saving a colony: the whole simulation object graph, written generically.
@@ -24,7 +25,7 @@ import { Critters } from './critters';
  */
 
 const CLASSES: Record<string, { prototype: object }> = {
-  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar, Ecology, Critters,
+  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar, Ecology, Critters, Neighbour,
 };
 
 const TYPED: Record<string, new (b: ArrayBuffer) => ArrayBufferView> = {

@@ -26,7 +26,7 @@ npm run dev            # http://localhost:5173
 
 ## Dünya
 
-Altı gerçek *Messor* sahası (Pannonya lösü, kumlu bozkır, kireçtaşı tepe, bağ kenarı, Orta Anadolu, Karadeniz bozkırı), her biri kendi iklimi, toprak profili ve bitkileriyle. Aynı sahanın her haritası farklı: toprak kalınlığı, bakı, tohum bankası, kil merceği, yassı taşlar, eski yuvalar, ağaç, çalı, taban suyu, çömlek kırıkları, ağustos böceği perileri. Takvim haftalık: kış uykusu, kar, yılda bir evlilik uçuşu. Yüzeyde beş bitki türü tohum takvimine göre olgunlaşıp kuruyor; karaçalı ya da kuşburnu çiçek açıp meyve döküyor, ağaç gölge yapıp yaprak döküyor; tepeli toygar, çekirge, Harpalus böceği ve solucanlar dolaşıyor.
+Altı gerçek *Messor* sahası (Pannonya lösü, kumlu bozkır, kireçtaşı tepe, bağ kenarı, Orta Anadolu, Karadeniz bozkırı), her biri kendi iklimi, toprak profili ve bitkileriyle. Aynı sahanın her haritası farklı: toprak kalınlığı, bakı, tohum bankası, kil merceği, yassı taşlar, eski yuvalar, ağaç, çalı, taban suyu, çömlek kırıkları, ağustos böceği perileri. Takvim haftalık: kış uykusu, kar, yılda bir evlilik uçuşu. Yüzeyde beş bitki türü tohum takvimine göre olgunlaşıp kuruyor; karaçalı ya da kuşburnu çiçek açıp meyve döküyor, ağaç gölge yapıp yaprak döküyor; tepeli toygar, çekirge, Harpalus böceği ve solucanlar dolaşıyor. Tehditler gerçek kayıtlardan: *Zodarion* örümceği, forid sinek ve karıncanın "C" duruşu, mantar ve sosyal bağışıklık, karınca aslanı çukurları, yuva misafirleri. Kenarın ötesinde komşu bir koloni var: toplayıcıları ritüel boks yapıyor, nadiren savaşıyor ya da ambarı yağmalıyor. Aynı uçuştan inen diğer kraliçelerin neredeyse hepsi ölüyor. Kraliçenin ve koloninin adı var; mevsim başlık kartları ve kış başında yılın özeti çıkıyor.
 
 ## Modlar
 

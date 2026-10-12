@@ -265,6 +265,27 @@ Ayrıca:
 - Kuşlar, fareler ve çürüme yerdeki fazla tohumu, meyveyi ve leşi zamanla götürüyor.
 - Fareyle üzerine gelinen bitki, hayvan ve buluntu adını, durumunu ve kısa bir bilgiyi gösteriyor.
 
+**Tehditler (araştırma raporundaki kayıtlara göre)**
+
+- *Zodarion* örümceği: akşamdan itibaren toplayıcı izinin yanında pusuya yatıyor, tek ısırıkla felç edip sürüklüyor (genç örümceğin zehri ~1,5 kat geç etkiliyor). Etrafına birkaç işçi toplanırsa avını bırakıp kaçıyor.
+- Forid sinek (*Razorfemora*): Mayıs–Temmuz arası gündüz yalnızca orta boy işçilere yumurta bırakıyor; en küçükler ve majörler güvende. Fark eden karınca "C" duruşuna geçiyor, yanındakiler donuyor ve sinek vazgeçiyor. Yumurta bırakılan işçi 1,5–2,5 hafta sonra içindeki larva yüzünden ölüyor.
+- Mantar ve sosyal bağışıklık: sıcak, nemli haftalarda kazıcı ve toplayıcılara spor bulaşıyor; yuvadaşlar temizliyor (erken temizlenen iyileşiyor, temizleyen küçük doz alıp bağışıklık kazanıyor); ölmek üzere olan işçi yalnız ölmek için yuvadan uzaklaşıyor; yuvada kalan küflü ceset çevresine spor saçıyor.
+- Kumlu sahalarda karınca aslanı çukurları; yakalayan larva haftalarca sindiriyor.
+- Yuva misafirleri: kör beyaz tespihböcekleri (kavuz yiyor), yiyecek dilenen karınca cırcırı, Orta Avrupa sahalarında yalnızca *M. structor* yuvalarında bilinen *Attaephilus molitori*.
+
+**Komşular ve kuruluş kaybı**
+
+- Haritaların çoğunda kenarın ötesinde daha yaşlı bir komşu koloni var; yalnızca toplayıcıları kesite giriyor ve aynı tohumlar için yarışıyor (komşunun rengi okunabilirlik için hafif kızıl).
+- Karşılaşmalar çoğunlukla ritüel boks: ön bacaklarla itişip biri geri çekiliyor. Yağmurdan sonraki ılık, nemli günlerde nadiren savaş çıkıyor; savaşın kokusu forid sinekleri çekiyor (Delgado, Disney & Palma 2020).
+- Çok güçlü bir komşu zayıf koloninin ambarını yağmalayabiliyor; majörler depoya iniyor.
+- Aynı uçuştan 2–4 genç kraliçe daha kesite iniyor. Kuşlar, komşunun işçileri ve (ilk işçilerden sonra) bizim toplayıcılar onları bulup öldürüyor; ilk kışta saha defteri kaçının hayatta kaldığını söylüyor.
+
+**Anlatıcı katmanı**
+
+- Kraliçe sahanın bölgesinden bir isim alıyor (Elif, Ilka, Oksana…); koloni yuvanın yanındaki belirgin şeyle anılıyor (Karaçalı kolonisi, Yassı taş kolonisi, Sorguç otu kolonisi…).
+- Olayların konumu var: belgesel kamera kuşun konduğu, örümceğin ısırdığı, savaşın çıktığı yere kesiyor; saha defterindeki satırlar da oraya götürüyor.
+- Mevsim dönerken başlık kartı; kış uykusu başlarken "yılın özeti" kartı (işçi, doğum, nedenleriyle kayıplar, depo, savaş ve yağmalar, uçuş).
+
 **Performans**
 
 - 300 karıncalık kolonide simülasyon adımı yaklaşık 0,45 ms (16× hızda bir çekirdeğin ~%20'si). Zamanın çoğu mesafe alanlarına ve kum fiziğine gidiyor.

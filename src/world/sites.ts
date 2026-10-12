@@ -251,6 +251,11 @@ export interface Variant {
   bones: number;
   /** Cicada nymphs in their cells by the roots, years from emerging. */
   nymphs: number;
+  /** Antlion pits in dry, loose sand. */
+  antlions: number;
+  /** Workers of the neighbouring Messor colony beyond one edge (0: none in reach), and which edge. */
+  neighbour: number;
+  neighbourSide: number;
   traits: Trait[];
 }
 
@@ -271,6 +276,9 @@ export function makeVariant(site: SiteId, seed: number): Variant {
     shards: (site === 'anatolia' || site === 'vineyard' || site === 'pontic') && rng.chance(0.55) ? rng.int(1, 4) : 0,
     bones: rng.chance(0.4) ? rng.int(1, 2) : 0,
     nymphs: rng.chance(0.5) ? rng.int(1, 3) : 0,
+    antlions: site === 'sand' ? rng.int(1, 3) : site === 'anatolia' && rng.chance(0.35) ? 1 : 0,
+    neighbour: rng.chance(0.8) ? Math.round(rng.range(250, 1400)) : 0,
+    neighbourSide: rng.chance(0.5) ? -1 : 1,
     traits: [],
   };
   const t = v.traits;
@@ -288,6 +296,10 @@ export function makeVariant(site: SiteId, seed: number): Variant {
   if (v.wetBottom) t.push({ key: 'tr_wetBottom', sign: -1 });
   if (v.shards) t.push({ key: 'tr_shards', sign: 0 });
   if (v.nymphs) t.push({ key: 'tr_nymphs', sign: 1 });
+  if (v.antlions) t.push({ key: 'tr_antlions', sign: -1 });
+  if (v.neighbour > 900) t.push({ key: 'tr_bigNeighbour', sign: -1 });
+  else if (v.neighbour) t.push({ key: 'tr_neighbour', sign: 0 });
+  else t.push({ key: 'tr_noNeighbour', sign: 1 });
   return v;
 }
 

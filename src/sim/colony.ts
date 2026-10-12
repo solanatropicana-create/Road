@@ -78,6 +78,9 @@ export class Colony {
   reach = 220;
   /** Larvae fed on insect since the start (protein meals). */
   proteinMeals = 0;
+  /** Spore-grooming sessions and infections cleared by them. */
+  groomings = 0;
+  cured = 0;
   /** Damp seeds in the stores, and how many the colony wants carried up to dry now. */
   wetSeeds = 0;
   dryNeed = 0;
@@ -104,7 +107,7 @@ export class Colony {
   /** Temperature where most of the colony sits (food use and ageing). */
   nestTemp = 15;
   /** Id of the first worker (the nanitics are the handful after it). */
-  private firstWorkerId = 0;
+  firstWorkerId = 0;
 
   constructor(size: number, width: number) {
     this.w = width;
@@ -532,7 +535,8 @@ export class Colony {
 
   // ---------------------------------------------------------------- death
 
-  kill(a: Ant, cause: string): void {
+  /** An ant dies. `body`: what is left ('fungus' grows mould, 'none' was carried off by a predator). */
+  kill(a: Ant, cause: string, body: 'plain' | 'fungus' | 'parasite' | 'none' = 'plain'): void {
     if (!a.alive) return;
     a.alive = false;
     a.deathCause = cause;
@@ -543,18 +547,38 @@ export class Colony {
       a.carryBrood = null;
     }
     a.carry = Carry.None;
-    this.corpses.push({ x: a.x, y: a.y, carried: false });
+    if (body !== 'none') this.corpses.push({ x: a.x, y: a.y, carried: false, kind: body === 'plain' ? undefined : body });
   }
 
-  takeCorpseAt(x: number, y: number): boolean {
+  /** Pick up a body lying here: false if none, else what killed it ('plain', 'fungus', 'parasite'). */
+  takeCorpseAt(x: number, y: number): false | 'plain' | 'fungus' | 'parasite' {
     for (let k = 0; k < this.corpses.length; k++) {
       const c = this.corpses[k]!;
       if (!c.carried && Math.abs(c.x - x) <= 1 && Math.abs(c.y - y) <= 1) {
         this.corpses.splice(k, 1);
-        return true;
+        return c.kind ?? 'plain';
       }
     }
     return false;
+  }
+
+  /**
+   * Where workers pick up fungal spores: from the soil in warm, damp weeks
+   * (diggers and foragers), and from a nestmate that died of a fungus and
+   * still lies in the nest. Checked a few times an in-game hour.
+   */
+  private exposure(sim: Sim): void {
+    const rng = sim.rng;
+    const w = sim.world;
+    const air = sim.cal.airMean(sim.doy);
+    if (air > 14 && sim.recentRain(DAY_TICKS * 1.5) && this.ants.length > 0 && rng.chance(0.012 * Math.min(1, this.adults / 40))) {
+      const a = this.ants[rng.int(0, this.ants.length - 1)]!;
+      if (a.caste !== 'queen' && (a.task === Task.Dig || a.task === Task.Forage)) a.spores += rng.range(0.5, 0.9);
+    }
+    for (const c of this.corpses) {
+      if (c.carried || c.kind !== 'fungus' || w.bg[c.y * w.w + c.x] !== 1) continue;
+      for (const a of this.ants) if (Math.abs(a.x - c.x) <= 3 && Math.abs(a.y - c.y) <= 3) a.spores += 0.05;
+    }
   }
 
   // ---------------------------------------------------------------- climate
@@ -606,6 +630,7 @@ export class Colony {
       this.refreshStore(sim);
       this.updateDemand(sim);
     }
+    if (sim.tick % 150 === 75) this.exposure(sim);
     this.consume(sim);
     if (this.queen?.alive) this.queen.tick(sim);
     // Who stands where, so ants that meet head-on can stop and touch antennae.

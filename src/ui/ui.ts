@@ -134,6 +134,7 @@ export class UI {
     card.innerHTML = `
       <div class="brand">${LOGO_ANT}<span class="wordmark-s">Underfoot</span></div>
       <div class="species">${t(`site_${this.game.sim.site}`)}</div>
+      <div class="cname" id="cname"></div>
       <div class="specimen">${t('colonyNo', { n: String(this.game.sim.seed).padStart(4, '0') })}</div>
       <div class="pop"><b id="pop">0</b><span>${t('workers')}</span></div>
       <div class="grid">
@@ -461,6 +462,13 @@ export class UI {
     const over = h('div', 'panel');
     over.id = 'over';
     r.appendChild(over);
+    // Season title card and the year's review.
+    const season = h('div');
+    season.id = 'season';
+    r.appendChild(season);
+    const review = h('div', 'panel');
+    review.id = 'review';
+    r.appendChild(review);
     const keys = h('div', 'panel');
     keys.id = 'keys';
     keys.hidden = true;
@@ -532,7 +540,7 @@ export class UI {
     scale.id = 'scale';
     r.appendChild(scale);
 
-    for (const id of ['title', 'colony', 'scale', 'skyico', 'year', 'winter', 'crooms', 'cb-e', 'cb-l', 'cb-p', 'cb-t', 'cb-a', 'pop', 'maj', 'brood', 'food', 'fooddays', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark', 'notes', 'caption', 'watch', 'keys', 'broodtrend', 'majval', 's-pop', 's-brood', 's-food', 's-day', 'v-plan', 'v-trails']) {
+    for (const id of ['season', 'review', 'cname', 'title', 'colony', 'scale', 'skyico', 'year', 'winter', 'crooms', 'cb-e', 'cb-l', 'cb-p', 'cb-t', 'cb-a', 'pop', 'maj', 'brood', 'food', 'fooddays', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark', 'notes', 'caption', 'watch', 'keys', 'broodtrend', 'majval', 's-pop', 's-brood', 's-food', 's-day', 'v-plan', 'v-trails']) {
       this.els[id] = r.querySelector(`#${id}`) as HTMLElement;
     }
     this.syncCollapse();
@@ -1138,7 +1146,12 @@ export class UI {
         if (e.kind) vars.kind = `ch_${e.kind}`;
         if (e.who) vars.who = t(`who_${e.who}`);
         if (e.what) vars.what = t(`what_${e.what}`);
-        this.note(`ev_${e.key}`, vars, { toast: true, merge: !e.kind });
+        vars.queen = sim.names.queen;
+        const loc = e.x !== undefined && e.y !== undefined ? { x: e.x, y: e.y } : undefined;
+        if (e.key.startsWith('season_')) this.seasonCard(e.key.slice(7));
+        if (e.key === 'dormancy' && sim.colony.hadWorkers) this.yearReview();
+        this.note(`ev_${e.key}`, vars, { toast: true, merge: !e.kind, loc });
+        if (loc) dir.notice(loc.x, loc.y, t(`ev_${e.key}`, vars), e.key);
       }
     }
     // The ant being followed died: show its life card for a moment.
@@ -1157,6 +1170,7 @@ export class UI {
     const days = (col.stored + col.reserve) / Math.max(1, this.dailyNeed());
     const foodText = days >= 10 ? t('foodDays', { n: '10+' }) : days >= 1 ? t('foodDays', { n: num(days) }) : t('foodHours', { n: Math.floor(days * 24) });
     this.els.pop!.textContent = String(col.adults);
+    if (sim.names.queen && !this.els.cname!.textContent) this.els.cname!.textContent = `${t('queenTitle', { name: sim.names.queen })} · ${t(sim.names.colony)}`;
     this.els.maj!.textContent = String(col.majors);
     this.els.brood!.textContent = String(e + l + p);
     this.els.brood!.title = t('broodTitle', { e, l, p });
@@ -1373,6 +1387,53 @@ export class UI {
     tip.style.top = `${this.pointer.y + 14}px`;
   }
 
+  /**
+   * A title card as the season turns: the name of the season, the year and
+   * the colony, fading in and out over the scene like a chapter heading.
+   */
+  private seasonCard(season: string): void {
+    const el = this.els.season!;
+    const sim = this.game.sim;
+    el.innerHTML = `<div class="s1">${t(`season_${season}`)}</div><div class="s2">${t('yearN', { n: sim.cal.year(sim.simDays) })}${sim.names.colony ? ` · ${t(sim.names.colony)}` : ''}</div>`;
+    el.classList.remove('on');
+    void el.offsetWidth;
+    el.classList.add('on');
+    clearTimeout(this.seasonTimer);
+    this.seasonTimer = window.setTimeout(() => el.classList.remove('on'), 4200);
+  }
+
+  private seasonTimer = 0;
+
+  /** The year in review, as the colony goes into its winter rest. */
+  private yearReview(): void {
+    const sim = this.game.sim;
+    const col = sim.colony;
+    const y = sim.closeYear();
+    const lost = y.deaths.filter(([k]) => k !== 'brood drowned' && k !== 'larva starved');
+    const lostN = lost.reduce((s, [, n]) => s + n, 0);
+    const causes = lost.slice(0, 4).map(([k, n]) => t('rvCause', { n, what: t(`cause_${k.replace(/ /g, '_')}`) })).join(', ');
+    const rows = [
+      [t('rvWorkers'), t('rvWorkersV', { n: col.adults, p: y.peak })],
+      [t('rvBorn'), String(y.born)],
+      [t('rvLost'), lostN ? `${lostN} · ${causes}` : '0'],
+      [t('rvSeeds'), String(col.stored + col.reserve)],
+    ];
+    if (y.wars || y.raids) rows.push([t('rvNeighbours'), t('rvNeighboursV', { w: y.wars, r: y.raids })]);
+    if (y.flown) rows.push([t('rvFlown'), String(y.flown)]);
+    const el = this.els.review!;
+    el.innerHTML = `<div class="eyebrow">${t('yearN', { n: y.year })}${sim.names.colony ? ` · ${t(sim.names.colony)}` : ''}</div><h2>${t('rvTitle')}</h2>
+      <dl>${rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl>
+      <p>${t('rvRest', { queen: sim.names.queen || '' })}</p><button class="btn" id="rvok">${t('rvOk')}</button>`;
+    el.style.display = 'block';
+    const close = (): void => {
+      el.style.display = 'none';
+    };
+    (el.querySelector('#rvok') as HTMLElement).onclick = close;
+    // Watching on its own, the card steps aside by itself.
+    if (this.mode === 'watch') setTimeout(close, 16000);
+    this.note('j_yearReview', { y: y.year, n: col.adults, b: y.born, l: lostN });
+  }
+
   /** The plant, animal or thing at a point of the slice, for the hover card. */
   private natureAt(x: number, y: number): { key: string; state?: string } | null {
     const sim = this.game.sim;
@@ -1382,6 +1443,8 @@ export class UI {
       if (c.kind === 'hopper' && Math.abs(x - c.x) < 14 && Math.abs(y - c.y + 4) < 8) return { key: 'hopper' };
       if (c.kind === 'beetle' && Math.abs(x - c.x) < 8 && Math.abs(y - c.y + 3) < 5) return { key: 'beetle' };
       if (c.kind === 'worm' && c.body.some((i) => Math.abs((i % w.w) - x) < 3 && Math.abs(((i / w.w) | 0) - y) < 3)) return { key: 'worm' };
+      if (c.kind === 'antlion' && Math.abs(x - (c.px ?? c.x)) < (c.pr ?? 8) && y > c.y - (c.pr ?? 8) && y <= c.y + 2) return { key: 'antlion' };
+      if ((c.kind === 'spider' || c.kind === 'phorid' || c.kind === 'woodlouse' || c.kind === 'cricket' || c.kind === 'beetlet') && Math.abs(x - c.x) < 4 && Math.abs(y - c.y + 1) < 4) return { key: c.kind };
     }
     const i = y * w.w + x;
     const pl = w.plant[i]!;

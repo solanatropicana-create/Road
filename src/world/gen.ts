@@ -26,6 +26,8 @@ export interface Generated {
   /** Where a tree stands (trunk centre x, may be off the slice), or null. */
   tree: { x: number; r: number } | null;
   shrub: ShrubInfo | null;
+  /** Antlion pits: centre, bottom and radius. */
+  pits: { x: number; y: number; r: number }[];
 }
 
 /**
@@ -269,6 +271,41 @@ export function generate(seed: number, siteId: SiteId): Generated {
     for (let y = h - 70; y < h - 3; y++) for (let x = 0; x < w; x++) if (SOIL[world.mat[y * w + x]!] && rng.chance(0.7)) wet.push(y * w + x);
   }
 
+  // Antlion pits: steep cones in loose dry sand, the larva buried at the bottom.
+  const pits: Generated['pits'] = [];
+  for (let k = 0; k < variant.antlions; k++) {
+    const x0 = rng.int(60, w - 61);
+    if (pits.some((p) => Math.abs(p.x - x0) < 60) || (shrub && Math.abs(shrub.x - x0) < 40) || (tree && Math.abs(x0 - tree.x) < tree.r + 20)) continue;
+    const r = rng.int(10, 18);
+    const d = Math.round(r * 0.75);
+    const g0 = world.ground[x0]!;
+    // A patch of bare loose sand where the larva has dug in.
+    for (let dx = -r - 8; dx <= r + 8; dx++) {
+      const x = x0 + dx;
+      const deep = d + 6 - Math.max(0, Math.abs(dx) - r) * 0.8;
+      for (let y = world.ground[x]!; y < world.ground[x]! + deep; y++) {
+        const i = y * w + x;
+        if (world.mat[i] === HUMUS || world.mat[i] === LOAM) {
+          world.mat[i] = SANDY;
+          world.tone[i] = rng.int(90, 200);
+        }
+      }
+    }
+    for (let dx = -r; dx <= r; dx++) {
+      const x = x0 + dx;
+      const depth = Math.round(d * (1 - Math.pow(Math.abs(dx) / r, 1.3)));
+      const top = Math.min(world.ground[x]!, g0);
+      for (let y = world.ground[x]! - 6; y < top + depth; y++) {
+        const i = y * w + x;
+        world.mat[i] = EMPTY;
+        world.plant[i] = 0;
+        world.bg[i] = 0;
+        world.tint[i] = 0;
+      }
+    }
+    pits.push({ x: x0, y: g0 + d - 1, r });
+  }
+
   world.recomputeAllWalk();
 
   // Meadow plants, spaced out but clumped like a real sward, in this site's mix.
@@ -279,6 +316,7 @@ export function generate(seed: number, siteId: SiteId): Generated {
     const x = rng.int(10, w - 11);
     if (plants.list.some((p) => Math.abs(p.x - x) < 9)) continue;
     if (tree && Math.abs(x - tree.x) < tree.r + 6) continue;
+    if (pits.some((p) => Math.abs(x - p.x) < p.r + 4)) continue;
     const kind = plants.pickKind();
     if (plants.spawn(kind, x, true, SPECIES[kind].ripen[0] <= 110)) placed++;
   }
@@ -286,7 +324,7 @@ export function generate(seed: number, siteId: SiteId): Generated {
 
   world.recomputeAllWalk();
   world.dirtyAll = true;
-  return { world, plants, horizons: { tops }, variant, wet, tree, shrub };
+  return { world, plants, horizons: { tops }, variant, wet, tree, shrub, pits };
 }
 
 function surfaceTop(world: World, x: number): number {

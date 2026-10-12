@@ -857,6 +857,8 @@ export class Renderer {
     const col = sim.colony;
     // (Foragers out in the meadow beyond the slice are out of view.)
     const out = col.ants.filter((a) => a.away === 0);
+    if (sim.neighbour?.ants.length) out.push(...sim.neighbour.ants);
+    if (sim.foreigners.length) out.push(...sim.foreigners.filter((q) => q.phase < 2));
     const base = col.alates.length ? [...out, ...col.alates] : out;
     const ants = col.queen && col.queen.alive ? [...base, col.queen] : base;
     this.painter.update(ants, dt, speed);

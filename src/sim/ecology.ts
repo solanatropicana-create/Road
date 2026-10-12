@@ -156,7 +156,8 @@ export class Ecology {
     const rng = sim.rng;
     // The tree drops its leaves through October and early November.
     if (this.tree && doy > 278 && doy < 322) {
-      sim.noteYearly('leafFall');
+      const lx = clamp(Math.round(this.tree.x + (this.tree.x < w.w / 2 ? 260 : -260)), 40, w.w - 40);
+      sim.noteYearly('leafFall', { x: lx, y: w.ground[lx]! - 30 });
       const n = rng.next() < 0.12 ? 1 : 0;
       for (let k = 0; k < n; k++) {
         const side = this.tree.x < w.w / 2 ? 1 : -1;
@@ -258,7 +259,7 @@ export class Ecology {
           } else if (!bloom && w.plant[i] === FLOWER) w.setPlant(i, 0);
         }
       }
-      if (bloom) sim.noteYearly(black ? 'blackthornBloom' : 'roseBloom');
+      if (bloom) sim.noteYearly(black ? 'blackthornBloom' : 'roseBloom', { x: s.x, y: w.ground[s.x]! - 70 });
     }
     const leafy = doy >= (black ? 108 : 100) && doy < 305 && air > 6;
     if (leafy && !this.shrubLeaves) {
@@ -303,7 +304,7 @@ export class Ecology {
           w.setPlant(i, BERRY, black ? Math.round(lit * 120) : 140 + Math.round(lit * 115));
         }
       }
-      sim.noteYearly(black ? 'sloes' : 'hips');
+      sim.noteYearly(black ? 'sloes' : 'hips', { x: s.x, y: w.ground[s.x]! - 50 });
     }
     if (this.shrubFruit) {
       const late = doy > 260 || doy < 40;

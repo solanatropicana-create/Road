@@ -1,4 +1,5 @@
 import type { Sim } from './sim';
+import type { Ant } from './ant';
 import { EMPTY, SEED, PREY, SOIL, SOLID, WATER } from '../world/mat';
 import { TICK_HZ, DAY_TICKS } from '../config';
 import { clamp } from '../util/math';
@@ -13,9 +14,19 @@ import { clamp } from '../util/math';
  *            competitor for fallen seed.
  *   worm   – an earthworm working through the topsoil in the cool, damp
  *            months; heavy rain drives worms up to the surface.
+ *   spider – Zodarion, the ant-eating spider: lurks by the foragers' trail at
+ *            dusk, paralyses an ant with one bite and drags it away.
+ *   phorid – Razorfemora, a 2 mm parasitoid fly: hovers over medium-sized
+ *            workers and lays an egg in one; ants that freeze or curl into a
+ *            "C" are spared.
+ *   woodlouse, cricket, beetlet – nest guests: blind white woodlice that eat
+ *            chaff, an ant cricket that begs food from the workers, and
+ *            Attaephilus molitori, a tiny beetle known only from Messor
+ *            structor nests in the dry grasslands near Vienna and in Moravia.
+ *   antlion – an antlion larva at the bottom of its sand pit.
  * At 1 mm per cell the lark is a giant: as long as the frame is tall.
  */
-export type CritterKind = 'lark' | 'hopper' | 'beetle' | 'worm';
+export type CritterKind = 'lark' | 'hopper' | 'beetle' | 'worm' | 'spider' | 'phorid' | 'woodlouse' | 'cricket' | 'beetlet' | 'antlion';
 
 export interface Critter {
   kind: CritterKind;
@@ -39,6 +50,13 @@ export interface Critter {
   air: boolean;
   /** Worm: the cells its body lies along, head first. */
   body: number[];
+  /** Colour variant (spider: below 90 a young one). */
+  tone: number;
+  /** Spider: the ant it is holding. Phorid: the ant it is stalking. */
+  prey?: Ant | null;
+  /** Antlion: the pit's centre and radius. */
+  px?: number;
+  pr?: number;
 }
 
 const LARK_MONTH = [1.4, 1.4, 1.2, 0.8, 0.7, 0.7, 0.8, 0.9, 1, 1.1, 1.3, 1.4];
@@ -52,7 +70,7 @@ export class Critters {
   birdX = NaN;
 
   private add(c: Partial<Critter> & { kind: CritterKind; x: number; y: number }): Critter {
-    const full: Critter = { vx: 0, vy: 0, dir: 1, t: 0, state: 0, timer: 0, life: 0, peck: 0, air: false, body: [], ...c };
+    const full: Critter = { vx: 0, vy: 0, dir: 1, t: 0, state: 0, timer: 0, life: 0, peck: 0, air: false, body: [], tone: 0, ...c };
     this.list.push(full);
     return full;
   }
@@ -98,13 +116,30 @@ export class Critters {
       const x = dir > 0 ? 2 : w.w - 3;
       this.add({ kind: 'beetle', x, y: this.top(sim, x), dir, life: DAY_TICKS, state: rng.int(0, 3) });
     }
-    // Earthworms in the topsoil when it is cool and damp (not in summer drought or frost).
     const air = sim.cal.airMean(doy);
+    const nest = sim.nest;
+    const col = sim.colony;
+    // Zodarion hunts by the foragers' trail from dusk, in the warm months.
+    if (nest.founded && col.adults > 5 && sim.cal.daylight(sim.dayT, doy) < 0.3 && dry && air > 14 && this.count('spider') === 0 && rng.chance(0.02)) {
+      const x = clamp(nest.foundX + (rng.chance(0.5) ? -1 : 1) * rng.int(40, 220), 10, w.w - 11);
+      // A young spider is smaller and its venom acts more slowly.
+      this.add({ kind: 'spider', x, y: this.top(sim, x), dir: rng.chance(0.5) ? 1 : -1, life: rng.int(DAY_TICKS / 6, DAY_TICKS / 3), tone: rng.int(0, 255), timer: 0 });
+    }
+    // Phorid flies, May to mid-July, by day over the foragers.
+    // (The smell of a battle draws them in: Delgado, Disney & Palma 2020.)
+    const battle = (sim.neighbour?.war ?? 0) > 0;
+    if (nest.founded && doy > 125 && doy < 200 && day && dry && air > 15 && this.count('phorid') < (battle ? 5 : 1) && rng.chance(battle ? 0.3 : 0.015)) {
+      const x = clamp(nest.foundX + rng.int(-150, 150), 10, w.w - 11);
+      this.add({ kind: 'phorid', x, y: this.top(sim, x) - rng.int(20, 50), dir: 1, life: rng.int(TICK_HZ * 40, TICK_HZ * 120), air: true });
+    }
+    // Nest guests move in as the colony grows.
+    if (nest.founded && sim.tick % (TICK_HZ * 60) < Critters.PERIOD) this.guests(sim);
+    // Earthworms in the topsoil when it is cool and damp (not in summer drought or frost).
     if (air > 4 && air < 17 && this.count('worm') < 2 && rng.chance(0.05)) {
       const x = rng.int(30, w.w - 31);
       const y = w.ground[x]! + rng.int(25, 110);
       const i = y * w.w + x;
-      if (SOIL[w.mat[i]!] && w.bg[i] === 0 && w.moist[i]! > 0) {
+      if (SOIL[w.mat[i]!] && !w.plan[i] && w.moist[i]! > 0) {
         const len = rng.int(45, 85);
         this.add({ kind: 'worm', x, y, dir: rng.chance(0.5) ? 1 : -1, vx: rng.range(-1, 1), vy: rng.range(-0.3, 0.3), life: rng.int(DAY_TICKS / 3, DAY_TICKS), body: new Array(len).fill(i), state: 0 });
       }
@@ -123,11 +158,313 @@ export class Critters {
         case 'hopper': keep = this.hopper(sim, c); break;
         case 'beetle': keep = this.beetle(sim, c); break;
         case 'worm': keep = this.worm(sim, c); break;
+        case 'spider': keep = this.spider(sim, c); break;
+        case 'phorid': keep = this.phorid(sim, c); break;
+        case 'woodlouse':
+        case 'cricket':
+        case 'beetlet': keep = this.guest(sim, c); break;
+        case 'antlion': keep = this.antlion(sim, c); break;
       }
       if (keep) this.list[j++] = c;
     }
     this.list.length = j;
   }
+
+  /** Ticks between seasonal checks (matches Ecology.PERIOD). */
+  static readonly PERIOD = TICK_HZ * 10;
+
+  /** Antlions in their pits (from the map). */
+  addAntlion(x: number, y: number, r: number): void {
+    this.add({ kind: 'antlion', x, y, px: x, pr: r, life: Infinity, dir: 1 });
+  }
+
+  /** A free spot on a chamber floor, for a guest to appear on. */
+  private floorSpot(sim: Sim, kinds: string[]): number {
+    const rooms = sim.nest.chambers.filter((c) => c.ready && kinds.includes(c.kind) && c.floor.length);
+    if (!rooms.length) return -1;
+    const room = rooms[sim.rng.int(0, rooms.length - 1)]!;
+    return room.floor[sim.rng.int(0, room.floor.length - 1)]!;
+  }
+
+  /**
+   * Myrmecophiles: half of all the obligate ant guests on Malta live with
+   * Messor. Woodlice come first, then an ant cricket, and in the dry
+   * grasslands of Austria and Moravia, Attaephilus.
+   */
+  private guests(sim: Sim): void {
+    const a = sim.colony.adults;
+    const w = sim.world;
+    const want: [CritterKind, number, string[], string][] = [
+      ['woodlouse', a >= 50 ? Math.min(5, Math.floor(a / 50)) : 0, ['granary', 'rest', 'queen'], 'guestWoodlouse'],
+      ['cricket', a >= 90 ? 1 + (a >= 250 ? 1 : 0) : 0, ['rest', 'nursery', 'granary'], 'guestCricket'],
+      ['beetlet', a >= 140 && (sim.site === 'pannonian' || sim.site === 'vineyard' || sim.site === 'limestone') ? 2 : 0, ['granary'], 'guestBeetle'],
+    ];
+    for (const [kind, n, rooms, key] of want) {
+      if (this.count(kind) >= n) continue;
+      const i = this.floorSpot(sim, rooms);
+      if (i < 0) continue;
+      this.add({ kind, x: i % w.w, y: (i / w.w) | 0, dir: sim.rng.chance(0.5) ? 1 : -1, life: Infinity, timer: sim.rng.int(0, TICK_HZ * 5) });
+      sim.noteOnce(key, { x: i % w.w, y: (i / w.w) | 0 });
+    }
+  }
+
+  // ------------------------------------------------------------- Zodarion
+
+  private spider(sim: Sim, c: Critter): boolean {
+    const w = sim.world;
+    const rng = sim.rng;
+    const col = sim.colony;
+    const young = c.tone < 90;
+    const dawn = sim.cal.daylight(sim.dayT, sim.doy) > 0.35;
+    // Holding a bitten ant: wait for the venom, then drag it off.
+    const prey = c.prey;
+    if (prey) {
+      if (!prey.alive) {
+        c.prey = null;
+        return true;
+      }
+      if (c.state === 1) {
+        if (--c.timer <= 0) c.state = 2;
+        // Nestmates that find her at it drive her off (she leaves the ant).
+        if (this.mobbed(sim, c, 3)) {
+          c.state = 3;
+          c.prey = null;
+          // Too late for the bitten ant: the venom has done its work.
+          prey.venom = 1;
+        }
+        return true;
+      }
+      // Dragging: back the way she came, out of the meadow's view.
+      c.x += -c.dir * 0.22;
+      c.y = this.top(sim, c.x);
+      prey.x = clamp(Math.round(c.x + c.dir * 4), 1, w.w - 2);
+      prey.y = this.top(sim, prey.x);
+      if (Math.abs(c.x - sim.nest.foundX) > 260 || c.x < 3 || c.x > w.w - 4) {
+        col.kill(prey, 'killed by a spider', 'none');
+        this.spiderKills++;
+        return false;
+      }
+      return true;
+    }
+    if (c.state === 3 || dawn || --c.life <= 0) {
+      // Fleeing, or off to her retreat at dawn.
+      c.x += (c.x < sim.nest.foundX ? -1 : 1) * 0.5;
+      c.y = this.top(sim, c.x);
+      return c.x > 2 && c.x < w.w - 3 && Math.abs(c.x - sim.nest.foundX) < 320;
+    }
+    // Lurking: creeping a little, turning, waiting by the trail.
+    if (--c.timer <= 0) {
+      c.timer = rng.int(TICK_HZ, TICK_HZ * 6);
+      if (rng.chance(0.4)) c.dir = -c.dir;
+    }
+    if (c.t % 3 === 0 && rng.chance(0.3)) {
+      c.x = clamp(c.x + c.dir * 0.5, 4, w.w - 5);
+      c.y = this.top(sim, c.x);
+    }
+    if (this.mobbed(sim, c, 4)) {
+      c.state = 3;
+      return true;
+    }
+    // An ant within reach: one bite.
+    for (const a of col.ants) {
+      if (a.away || a.paralysed || a.caste === 'queen') continue;
+      if (Math.abs(a.x - c.x) > 3 || Math.abs(a.y - c.y) > 4 || w.bg[a.y * w.w + a.x] !== 0) continue;
+      if (!rng.chance(0.02)) continue;
+      a.paralysed = true;
+      a.carry = 0;
+      c.prey = a;
+      c.state = 1;
+      c.dir = a.x >= c.x ? 1 : -1;
+      // The venom of a young spider takes half as long again to work.
+      c.timer = Math.round(TICK_HZ * (young ? 9 : 6));
+      sim.noteYearly('spider', c);
+      break;
+    }
+    return true;
+  }
+
+  /** Several workers round her: the spider is found out and attacked. */
+  private mobbed(sim: Sim, c: Critter, n: number): boolean {
+    let k = 0;
+    for (const a of sim.colony.ants) {
+      if (a.away || a.paralysed) continue;
+      if (Math.abs(a.x - c.x) <= 7 && Math.abs(a.y - c.y) <= 6 && ++k >= n) return true;
+    }
+    return false;
+  }
+
+  /** Ants killed by spiders since the start. */
+  spiderKills = 0;
+  /** Eggs laid in ants by phorid flies, and attacks warded off by the C posture. */
+  phoridHits = 0;
+  phoridBlocked = 0;
+
+  // ------------------------------------------------------------- phorid fly
+
+  private phorid(sim: Sim, c: Critter): boolean {
+    const w = sim.world;
+    const rng = sim.rng;
+    const col = sim.colony;
+    if (--c.life <= 0 || sim.raining) {
+      c.y -= 0.8;
+      return c.y > -20;
+    }
+    let target = c.prey;
+    if (!target || !target.alive || target.away || w.bg[target.y * w.w + target.x] !== 0) {
+      // Pick a medium-sized worker out on the surface (never a major, never the smallest).
+      target = null;
+      let best = 1e9;
+      for (const a of col.ants) {
+        if (a.caste !== 'worker' || a.away || a.paralysed || a.parasite > 0 || a.id <= col.firstWorkerId + 8) continue;
+        if (w.bg[a.y * w.w + a.x] !== 0) continue;
+        const d = Math.abs(a.x - c.x) + Math.abs(a.y - c.y);
+        if (d < best && d < 260) {
+          best = d;
+          target = a;
+        }
+      }
+      c.prey = target;
+      c.timer = rng.int(TICK_HZ, TICK_HZ * 3);
+    }
+    // Jinking flight: darting about, then hovering a few millimetres over the target.
+    const tx = target ? target.x + Math.sin(c.t * 0.4) * 2 : c.x + Math.sin(c.t * 0.05) * 30;
+    const ty = target ? target.y - 5 + Math.sin(c.t * 0.7) * 1.2 : c.y;
+    c.x += (tx - c.x) * 0.12 + (rng.next() - 0.5) * 0.8;
+    c.y += (ty - c.y) * 0.12 + (rng.next() - 0.5) * 0.8;
+    c.dir = tx >= c.x ? 1 : -1;
+    if (!target || Math.abs(c.x - target.x) > 4 || Math.abs(c.y - (target.y - 5)) > 3) return true;
+    // The ant may notice and curl into a C (or freeze), and the fly gives up on her.
+    if (target.cpose > 0) {
+      c.prey = null;
+      return true;
+    }
+    if (rng.chance(0.02)) {
+      target.cpose = rng.int(TICK_HZ * 3, TICK_HZ * 8);
+      this.phoridBlocked++;
+      sim.noteYearly('cPosture', target);
+      // Nestmates nearby freeze too.
+      for (const a of col.ants) if (a !== target && Math.abs(a.x - target.x) < 12 && Math.abs(a.y - target.y) < 8 && !a.away) a.cpose = Math.max(a.cpose, rng.int(TICK_HZ, TICK_HZ * 4));
+      return true;
+    }
+    if (--c.timer <= 0) {
+      // Strike: an egg is laid in the ant in an instant.
+      target.parasite = DAY_TICKS * rng.range(1.5, 2.5);
+      this.phoridHits++;
+      sim.noteYearly('phorid', target);
+      c.prey = null;
+      c.life = Math.min(c.life, TICK_HZ * 20);
+    }
+    return true;
+  }
+
+  // ------------------------------------------------------------- nest guests
+
+  private guest(sim: Sim, c: Critter): boolean {
+    const w = sim.world;
+    const rng = sim.rng;
+    const col = sim.colony;
+    const speed = c.kind === 'cricket' ? 0.35 : c.kind === 'woodlouse' ? 0.12 : 0.08;
+    if (c.timer > 0) {
+      c.timer--;
+      return true;
+    }
+    if (rng.next() > speed) return true;
+    // Wander the nest's floors and walls (never out into the open).
+    const x = Math.round(c.x);
+    const y = Math.round(c.y);
+    const opts: number[] = [];
+    for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, 1], [1, -1], [-1, -1]] as const) {
+      const n = (y + dy) * w.w + x + dx;
+      if (w.walk[n] && w.bg[n] === 1 && w.mat[n] !== WATER) opts.push(n);
+    }
+    if (!opts.length) return true;
+    let n = opts[rng.int(0, opts.length - 1)]!;
+    // Keep going the same way along a floor where possible.
+    const ahead = y * w.w + x + c.dir;
+    if (opts.includes(ahead) && rng.chance(0.7)) n = ahead;
+    else c.dir = (n % w.w) >= x ? 1 : -1;
+    c.x = n % w.w;
+    c.y = (n / w.w) | 0;
+    if (rng.chance(0.004)) c.timer = rng.int(TICK_HZ * 2, TICK_HZ * 10);
+    if (c.kind === 'woodlouse' && col.husks > 0 && rng.chance(0.002)) col.husks--;
+    if (c.kind === 'cricket') {
+      for (const a of col.ants) {
+        if (Math.abs(a.x - c.x) > 4 || Math.abs(a.y - c.y) > 4) continue;
+        // It begs food by mimicking a nestmate; now and then it is found out and chased.
+        if (rng.chance(0.01) && col.reserve > 0) col.reserve--;
+        if (rng.chance(0.004)) {
+          c.timer = 0;
+          c.dir = -c.dir;
+          for (let k = 0; k < 6; k++) this.guestStep(sim, c);
+        }
+        break;
+      }
+    }
+    return true;
+  }
+
+  private guestStep(sim: Sim, c: Critter): void {
+    const w = sim.world;
+    const n = Math.round(c.y) * w.w + Math.round(c.x) + c.dir;
+    if (w.walk[n] && w.bg[n] === 1) c.x += c.dir;
+  }
+
+  // ------------------------------------------------------------- antlion
+
+  private antlion(sim: Sim, c: Critter): boolean {
+    const w = sim.world;
+    const rng = sim.rng;
+    const r = c.pr ?? 15;
+    const cx = c.px ?? c.x;
+    if (c.timer > 0) c.timer--;
+    if (sim.cal.airMean(sim.doy) < 12 || sim.raining) return true;
+    // Anything that fell into the pit is flicked out over the rim.
+    if (c.t % 45 === 0) {
+      for (let dx = -2; dx <= 2; dx++) {
+        const x = Math.round(cx) + dx;
+        let y = w.ground[x]!;
+        while (y < c.y && w.mat[y * w.w + x] === EMPTY) y++;
+        const i = y * w.w + x;
+        if (y < c.y && w.mat[i] !== EMPTY && !SOIL[w.mat[i]!]) {
+          w.set(i, EMPTY, 0, 0);
+          c.peck = 8;
+          break;
+        }
+      }
+    }
+    if (c.peck > 0) c.peck--;
+    // An ant on the pit's slope slips on the loose sand toward the jaws; the
+    // antlion flicks sand at it as it scrambles.
+    for (const a of sim.colony.ants) {
+      if (a.away || a.paralysed) continue;
+      const dx = a.x - cx;
+      if (Math.abs(dx) >= r * 0.85 || a.y < w.ground[a.x]! - 1 || w.bg[a.y * w.w + a.x] !== 0) continue;
+      // A big harvester worker usually scrambles out; the jaws close on one now
+      // and then, and a fed larva digests for weeks before it hunts again.
+      if (Math.abs(dx) <= 2 && a.y >= c.y - 3) {
+        if (c.timer <= 0 && rng.chance(0.01)) {
+          sim.colony.kill(a, 'caught by an antlion', 'none');
+          this.antlionKills++;
+          c.peck = 12;
+          c.timer = DAY_TICKS * 3;
+          sim.noteYearly('antlion', c);
+        } else if (rng.chance(0.03)) {
+          a.x += Math.sign(dx) || 1;
+          a.y = this.top(sim, a.x);
+        }
+        continue;
+      }
+      if (rng.chance(0.025)) {
+        a.x -= Math.sign(dx);
+        a.y = this.top(sim, a.x);
+        c.peck = 6;
+      }
+    }
+    return true;
+  }
+
+  /** Ants caught by antlions since the start. */
+  antlionKills = 0;
 
   /** After a downpour the worms come up: those under the surface leave the slice upward. */
   afterStorm(): void {
@@ -152,7 +489,7 @@ export class Critters {
         c.state = 1;
         c.air = false;
         c.timer = rng.int(TICK_HZ / 2, TICK_HZ * 2);
-        sim.noteYearly('lark');
+        sim.noteYearly('lark', { x: c.x, y: c.y - 40 });
       }
       return true;
     }
@@ -315,7 +652,7 @@ export class Critters {
     if (leaving && ny <= w.ground[nx]! - 1) return false;
     const m = w.mat[n]!;
     // Only through soil: tunnels, stones, roots and the nest are in the way.
-    if (n === head || !SOIL[m] || w.bg[n] !== 0 || w.plan[n]) {
+    if (n === head || !SOIL[m] || w.plan[n]) {
       if (leaving && (m === EMPTY || m === WATER) && !SOLID[m]) return false;
       c.vx = -c.vx + rng.range(-0.5, 0.5);
       c.vy = -c.vy + rng.range(-0.5, 0.5);

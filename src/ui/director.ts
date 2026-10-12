@@ -19,6 +19,10 @@ export class Director {
   private point: { x: number; y: number } | null = null;
   private left = 0;
   private last: Shot | null = null;
+  /** Something just happened somewhere: the next cut goes there. */
+  private story: { x: number; y: number; caption: string; zoom: number } | null = null;
+  /** Seconds the current shot has run. */
+  private ran = 0;
 
   constructor(game: Game) {
     this.game = game;
@@ -46,9 +50,24 @@ export class Director {
     this.game.cam.follow = null;
   }
 
+  /**
+   * A moment worth filming (a bird lands, a spider bites, a battle breaks
+   * out): the camera cuts to it with the field note as the caption.
+   */
+  notice(x: number, y: number, caption: string, key: string): void {
+    if (!this.active) return;
+    const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds'];
+    const wide = ['war', 'raid', 'flight', 'lark', 'leafFall', 'otherQueens', 'wormsUp'];
+    const zoom = close.includes(key) ? 11 : wide.includes(key) ? 3.4 : 6;
+    this.story = { x, y, caption, zoom };
+    // Don't cut away from a shot that has barely started, unless it's big news.
+    if (this.ran > 2.5 || wide.includes(key)) this.left = 0;
+  }
+
   update(dt: number): void {
     if (!this.active) return;
     this.left -= dt;
+    this.ran += dt;
     if (this.left <= 0 || (this.subject && !this.subject.alive)) this.cut();
     const cam = this.game.cam;
     if (this.subject) {
@@ -64,6 +83,18 @@ export class Director {
     const col = sim.colony;
     const w = sim.world;
     const cam = this.game.cam;
+    this.ran = 0;
+    if (this.story) {
+      const s = this.story;
+      this.story = null;
+      this.subject = null;
+      this.point = { x: s.x, y: s.y };
+      this.caption = s.caption;
+      cam.tzoom = Math.min(cam.maxZoom, Math.max(cam.minZoom, s.zoom));
+      this.left = 9;
+      this.last = null;
+      return;
+    }
     const under = (a: Ant): boolean => w.bg[a.y * w.w + a.x] === 1;
     const pick = <T>(xs: T[]): T | undefined => xs[Math.floor(Math.random() * xs.length)];
     const options: [Shot, number][] = [
@@ -163,6 +194,10 @@ export class Director {
     const who = t(a.caste === 'soldier' ? 'dc_major' : a.task === Task.Forage ? 'dc_forager' : a.task === Task.Dig ? 'dc_digger' : a.task === Task.Nurse ? 'dc_nurse' : a.task === Task.Clean ? 'dc_cleaner' : 'dc_worker');
     const below = depth > 0.3;
     if (a.away > 0) return `${who} ${a.name} · ${t('dc_away')}`;
+    if (a.paralysed) return `${who} ${a.name} · ${t('dc_paralysed')}`;
+    if (a.cpose > 0) return `${who} ${a.name} · ${t('dc_cpose')}`;
+    if (a.fight > 0) return `${who} ${a.name} · ${t('dc_boxing')}`;
+    if (a.sick > 0.6) return `${who} ${a.name} · ${t('dc_sick')}`;
     let doing: string;
     switch (a.carry) {
       case Carry.Seed: doing = below ? 'dc_seedGranary' : 'dc_seedHome'; break;
