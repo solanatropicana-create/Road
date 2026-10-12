@@ -375,6 +375,7 @@ export class Colony {
     const life = sim.rng.int(l0, l1) * (nanitic ? 0.6 : 1);
     const ant = new Ant(major ? 'soldier' : 'worker', b.x, b.y, Math.round(life), major ? TUNING.soldierSpeed : TUNING.workerSpeed * sim.rng.range(0.9, 1.1));
     if (!this.firstWorkerId) this.firstWorkerId = ant.id;
+    ant.nanitic = nanitic && !major;
     ant.orient(sim, 0, 0);
     ant.reevalAt = 0;
     // About one in four is one of the quiet ones.

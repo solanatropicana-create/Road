@@ -5,6 +5,7 @@ import type { Ant } from '../sim/ant';
 import type { Chamber } from '../sim/nest';
 import { SPEEDS, TICK_HZ, DAY_TICKS, TUNING } from '../config';
 import { ZONE_TINT } from '../render/palette';
+import { bodyLength } from '../render/antdraw';
 import { savedMeta } from '../sim/save';
 import { t, num, getLang, setLang, Lang, Vars } from './i18n';
 import { metabolism } from '../sim/calendar';
@@ -1561,8 +1562,9 @@ export class UI {
     const name = a.caste === 'queen' ? t('queenTitle', { name: sim.names.queen }) : head;
     const body = rest;
     const temper = a.caste === 'queen' ? '' : (a.zeal ?? 0.75) < 0.4 ? ` · ${t('tipQuiet')}` : (a.zeal ?? 0.75) > 0.92 ? ` · ${t('tipTireless')}` : '';
-    const age = a.caste === 'queen' ? '' : t('tipAge', { n: num(a.age / DAY_TICKS) }) + temper;
-    return `<b>${name}</b>${body.length ? `<br>${body.join(' · ')}` : ''}${age ? `<br><span class="dim">${age}</span>` : ''}<div class="fact">${t('tipFollow')}</div>`;
+    const size = `${num(bodyLength(a))} mm`;
+    const dim = a.caste === 'queen' ? size : `${t('tipAge', { n: num(a.age / DAY_TICKS) })} · ${size}${temper}`;
+    return `<b>${name}</b>${body.length ? `<br>${body.join(' · ')}` : ''}<br><span class="dim">${dim}</span><div class="fact">${t('tipFollow')}</div>`;
   }
 
   /**

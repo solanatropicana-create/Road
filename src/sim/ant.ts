@@ -86,6 +86,8 @@ export class Ant {
    * The same quiet ones fill the idle share here, day after day.
    */
   zeal = 0.75;
+  /** One of the first, tiny workers the queen raised on her own reserves. */
+  nanitic = false;
   /**
    * Ticks left of alarm (the scent of a fight, passed on from ant to ant).
    * Alarmed ants run, and if neighbours are attacking they turn out to defend.
@@ -169,6 +171,23 @@ export class Ant {
     this.life = life;
     this.speed = speed;
     this.name = `${NAMES[this.id % NAMES.length]}-${this.id}`;
+  }
+
+  /** Body size against a typical member of its caste (see sizeOf). */
+  get size(): number {
+    return Ant.sizeOf(this.caste, this.id, this.nanitic);
+  }
+
+  /**
+   * Messor workers come in every size: about 4.3 to 6.5 mm long, most of them
+   * small, and the nanitics smaller still (under 4.2 mm); majors 8.3 to 9.3 mm.
+   * Taken from a hash of the id, so it costs the sim's random stream nothing.
+   */
+  static sizeOf(caste: Caste, id: number, nanitic = false): number {
+    const r = (Math.imul(id, 0x9e3779b1) >>> 0) / 4294967296;
+    if (caste === 'soldier') return 0.94 + 0.12 * r;
+    if (caste !== 'worker') return 1;
+    return nanitic ? 0.72 + 0.08 * r : 0.82 + 0.42 * r ** 1.5;
   }
 
   /** Age as a fraction of lifespan (drives which jobs an ant prefers). */
