@@ -5,6 +5,7 @@ import { UI } from './ui/ui';
 import { TICK_HZ, SPEEDS } from './config';
 import type { Ant } from './sim/ant';
 import { Director } from './ui/director';
+import { saveSim, loadSim, SAVE_KEY, META_KEY } from './sim/save';
 
 /**
  * Owns the loop: a fixed-rate simulation, rendered every animation frame.
@@ -26,7 +27,12 @@ export class Game {
   private tpsCount = 0;
   private tpsTime = 0;
 
+  private canvas: HTMLCanvasElement;
+  private saving = false;
+  private lastSave = performance.now();
+
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement, seed: number) {
+    this.canvas = canvas;
     this.sim = new Sim(seed);
     this.renderer = new Renderer(canvas, this.sim.world, seed);
     this.cam = new Camera(this.sim.world.w, this.sim.world.h);
@@ -36,6 +42,10 @@ export class Game {
     this.cam.fit();
     this.cam.zoom = this.cam.tzoom;
     addEventListener('resize', () => this.resize());
+    // Keep the colony when the tab goes away.
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') void this.save();
+    });
     requestAnimationFrame((t) => this.frame(t));
   }
 
@@ -44,6 +54,58 @@ export class Game {
     const h = innerHeight;
     this.renderer.resize(w, h, Math.min(2, devicePixelRatio || 1));
     this.cam.resize(w, h);
+  }
+
+  /** Write the colony to browser storage (compressed). Quietly does nothing if storage is unavailable. */
+  async save(): Promise<void> {
+    const phase = this.sim.phase;
+    if (this.saving || (phase !== 'founding' && phase !== 'growing')) return;
+    this.saving = true;
+    try {
+      const { meta, blob } = await saveSim(this.sim, { journal: this.ui.journalData() });
+      localStorage.setItem(SAVE_KEY, blob);
+      localStorage.setItem(META_KEY, JSON.stringify(meta));
+    } catch {
+      // Private window, full storage: the colony just won't persist.
+    } finally {
+      this.saving = false;
+      this.lastSave = performance.now();
+    }
+  }
+
+  /** Forget the saved colony (it died, or the player started over). */
+  clearSave(): void {
+    try {
+      localStorage.removeItem(SAVE_KEY);
+      localStorage.removeItem(META_KEY);
+    } catch {
+      // nothing stored
+    }
+  }
+
+  /** Bring back the saved colony in place of the current one. */
+  async resume(): Promise<boolean> {
+    let blob: string | null = null;
+    try {
+      blob = localStorage.getItem(SAVE_KEY);
+    } catch {
+      return false;
+    }
+    if (!blob) return false;
+    try {
+      const { sim, extra } = await loadSim(blob);
+      this.sim = sim;
+      this.renderer = new Renderer(this.canvas, sim.world, sim.seed);
+      this.selected = null;
+      this.director.stop();
+      this.resize();
+      this.cam.fit();
+      this.cam.zoom = this.cam.tzoom;
+      this.ui.restore((extra as { journal?: unknown } | null)?.journal);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   setSpeed(i: number): void {
@@ -87,6 +149,8 @@ export class Game {
     this.cam.update(dt);
     this.renderer.render(this.sim, this.cam, dt, this.paused ? 0 : this.speed, this.selected);
     this.ui.update(dt);
+    // Autosave about once a minute of real time.
+    if (now - this.lastSave > 60000) void this.save();
     requestAnimationFrame((t) => this.frame(t));
   }
 }

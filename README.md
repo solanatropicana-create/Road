@@ -54,3 +54,5 @@ scripts/           görüntüsüz test, toplu test, ekran görüntüsü, tek dos
 ```
 
 Simülasyon 30 Hz sabit adımla çalışır ve görüntüden bağımsızdır. Aynı seed her zaman aynı koloniyi üretir.
+
+Koloni tarayıcıda otomatik kaydedilir (`src/sim/save.ts`). Sayfa yeniden açılınca iniş ekranında "Continue colony" düğmesi çıkar.

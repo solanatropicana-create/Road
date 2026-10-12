@@ -5,6 +5,7 @@ import { WORK, Work, TASK_LABEL, Task, ChamberKind } from '../sim/types';
 import { Ant } from '../sim/ant';
 import { SPEEDS, TICK_HZ, DAY_TICKS } from '../config';
 import { ZONE_TINT } from '../render/palette';
+import { savedMeta } from '../sim/save';
 
 const WORK_LABEL: Record<Work, string> = { dig: 'Dig', forage: 'Forage', nurse: 'Nurse', clean: 'Clean' };
 const WORK_TASK: Record<Work, number> = { dig: Task.Dig, forage: Task.Forage, nurse: Task.Nurse, clean: Task.Clean };
@@ -231,8 +232,23 @@ export class UI {
     const prompt = h('div', 'panel');
     prompt.id = 'prompt';
     prompt.innerHTML = `<div class="eyebrow">Nuptial flight</div><h2>Where should the queen land?</h2><p>Click the ground. She will tear off her wings, dig a burrow and raise her first daughters alone.</p>
-      <button class="btn" id="anywhere" style="display:inline-block; margin-top:12px; padding:7px 14px">Let her choose</button>`;
+      <div class="prompt-btns"><button class="btn" id="anywhere">Let her choose</button><button class="btn on" id="resume" hidden></button></div>`;
     r.appendChild(prompt);
+    // A colony saved from an earlier visit can be picked up again.
+    const meta = savedMeta();
+    const resume = prompt.querySelector('#resume') as HTMLButtonElement;
+    if (meta) {
+      resume.hidden = false;
+      resume.textContent = `Continue colony · Day ${meta.day} · ${meta.adults} workers`;
+      resume.onclick = async () => {
+        resume.textContent = 'Opening the colony…';
+        if (await this.game.resume()) this.toast('Welcome back to your colony');
+        else {
+          resume.textContent = 'That save could not be opened';
+          this.game.clearSave();
+        }
+      };
+    }
     (prompt.querySelector('#anywhere') as HTMLElement).onclick = () => {
       const sim = this.game.sim;
       // A spot near the middle that suits her; the click path handles the camera and the toast.
@@ -280,6 +296,33 @@ export class UI {
     t.style.animationDuration = `${ms / 1000}s`;
     box.appendChild(t);
     setTimeout(() => t.remove(), ms);
+  }
+
+  /** The journal and what it has already noted, for saving with the colony. */
+  journalData(): unknown {
+    return {
+      entries: this.journal,
+      milestone: this.milestone,
+      chambers: [...this.notedChambers],
+      firstStore: this.firstStore,
+      firstMajor: this.firstMajor,
+      drowned: this.drowned,
+    };
+  }
+
+  /** After loading a saved colony: put the journal back and resync the panels. */
+  restore(data: unknown): void {
+    const d = data as { entries?: { at: string; html: string }[]; milestone?: number; chambers?: number[]; firstStore?: boolean; firstMajor?: boolean; drowned?: number } | undefined;
+    this.journal = d?.entries ?? [];
+    this.milestone = d?.milestone ?? 0;
+    this.notedChambers = new Set(d?.chambers ?? []);
+    this.firstStore = d?.firstStore ?? false;
+    this.firstMajor = d?.firstMajor ?? false;
+    this.drowned = d?.drowned ?? 0;
+    this.lastPhase = '';
+    this.lastChambers = this.game.sim.nest.chambers.length;
+    this.renderNotes();
+    this.syncBrain();
   }
 
   /** Write an entry in the field journal (and optionally pop it up as a toast). */
@@ -506,6 +549,7 @@ export class UI {
       if (phase === 'growing' && this.lastPhase === 'founding') this.note('The first workers have <b>hatched</b>', true);
       if (phase === 'failed') {
         this.note('The colony has died out');
+        this.game.clearSave();
         this.showOver();
       }
       this.els.prompt!.style.display = phase === 'choose' ? 'block' : 'none';

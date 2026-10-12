@@ -157,6 +157,7 @@ Ayrıca:
 - **Belgesel kamera (Watch / C):** Kamera 10–16 saniyede bir özne seçip yavaşça takip ediyor. Özneler: tohum taşıyan toplayıcı, kazı yüzündeki işçi, yumurtlayan kraliçe, larva taşıyan bakıcı, ambarın yakın planı, yuvanın genel görüntüsü. Altta saha notu tarzında bir alt yazı çıkıyor: "Forager Ila-8 · bringing a seed home · 4.1 cm from the nest". Elle kamera hareketi kontrolü geri veriyor. "İzle" tarafının ilk adımı ve klip aracının (7.4) bir ön tadı.
 - **Koku izleri (T):** Toplayıcıların bıraktığı feromon izleri turkuaz bir hale olarak görünüyor. Karıncaların neden aynı yolları kullandığı böylece okunuyor.
 - **Açılış:** Oyuncu iniş yeri seçerken kanatlı kraliçe odak dışı çayırın üstünde uçuyor ve imlecin gösterdiği yerin üstünde süzülüyor. Tıklayınca oraya iniyor, bir an duruyor, sonra kanatlarını koparıyor.
+- **Kayıt:** Koloni yaklaşık dakikada bir ve sekme kapanınca tarayıcıya kaydediliyor (sıkıştırılmış, ~0,5 MB). Tekrar açınca iniş ekranında "Continue colony · Day N · X workers" çıkıyor; saha defteri de geri geliyor. Steam sürümünde aynı kayıt dosyaya yazılacak.
 - **Kazı planı (P):** Koloninin kazmayı planladığı toprak kehribar noktalarla görünüyor. Büyüme işareti bir nişangâh olarak çiziliyor. Bir oda sipariş edince ya da işaret koyunca birkaç saniye kendiliğinden görünüyor. Böylece oyuncu, koloni beyninin kararını görüyor.
 - Bir odanın üstüne gelirsen içindeki tohum ya da yavru sayısı çıkar.
 - Kısayollar: Boşluk duraklatır, 1–5 hız seçer, F tüm kesiti gösterir, tekerlek zoom yapar, sürükleme kaydırır.
@@ -305,7 +306,7 @@ Aşağıdakiler benim önerilerim. Senin "benle konuşmadan tasarımı komple ya
 - Şu anki yapı TypeScript, Vite ve Canvas2D. Bağımlılığı yok, tek dosyaya derleniyor.
 - Electron sarmalı ile Steam'e çıkış kolay. Vampire Survivors da web teknolojisiyle yapılıp Steam'de çıktı.
 - Steamworks entegrasyonu `steamworks.js` ile olur (başarımlar, bulut kayıt).
-- Kayıt/yükleme sistemi henüz yok. Dünya typed array tabanlı olduğu için kolay eklenir.
+- Kayıt sistemi var: genel bir nesne grafiği serileştiricisi (sınıf örnekleri, paylaşılan referanslar, typed array'ler ikili olarak). Steam'de localStorage yerine dosyaya yazmak tek satırlık bir değişiklik.
 
 ## 8. Bilinen sorunlar
 
@@ -314,7 +315,6 @@ Aşağıdakiler benim önerilerim. Senin "benle konuşmadan tasarımı komple ya
   - Bu bir mimari kararı olduğu için sormadan yapmadım.
 - Yağmur suyu derine pek inmiyor, bu yüzden çökmeler nadir.
 - Ses yok.
-- Kayıt/yükleme yok.
 - Klavye dışında erişilebilirlik ayarı yok.
 
 ## 9. Sana sorular: karar bekleyenler

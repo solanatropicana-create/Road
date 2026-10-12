@@ -16,6 +16,7 @@ export const CSS = `
 }
 #ui { position: fixed; inset: 0; pointer-events: none; font-family: var(--sans); color: var(--ink); font-size: 13px; }
 #ui * { box-sizing: border-box; }
+#ui [hidden] { display: none !important; }
 .panel {
   position: absolute; pointer-events: auto; background: var(--panel);
   border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
@@ -84,6 +85,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #prompt { left: 50%; top: 18%; transform: translateX(-50%); text-align: center; padding: 16px 22px; max-width: 440px; }
 #prompt h2 { margin: 6px 0 6px; font-weight: 500; font-size: 20px; }
 #prompt p { margin: 0; color: var(--ink-dim); line-height: 1.5; }
+#prompt .prompt-btns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px; }
+#prompt .prompt-btns .btn { padding: 7px 14px; }
 
 #toasts { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); display: flex; flex-direction: column; gap: 6px; align-items: center; }
 .toast { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px; font-size: 12px; animation: toast 5s forwards; backdrop-filter: blur(8px); }
