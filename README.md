@@ -1,1 +1,52 @@
-# Road
+# Underfoot
+
+*Çalışma adı.* Gerçek ölçekte (1 piksel = 1 mm) bir toprak kesitinde *Messor structor* hasatçı karınca kolonisi simülasyonu. Oyuncu karıncalara emir vermez, koloninin önceliklerini belirler.
+
+Tasarım belgesi, görsel dil kararları ve açık sorular: [docs/GDD.md](docs/GDD.md)
+
+## Çalıştırma
+
+```bash
+npm install
+npm run dev            # http://localhost:5173
+```
+
+- `?seed=123` aynı haritayı yeniden üretir.
+- `?paused=1` duraklatılmış başlatır.
+
+## Kontroller
+
+| | |
+|---|---|
+| Tıklama (başta) | Kraliçenin ineceği yeri seç |
+| Tıklama | Karınca seç ve takip et |
+| Sürükle / tekerlek | Kaydır / yakınlaştır |
+| Boşluk | Duraklat |
+| 1–5 | Hız (1× … 16×) |
+| F | Tüm kesiti göster |
+| Esc | Takibi bırak |
+
+## Komutlar
+
+| Komut | Ne yapar |
+|---|---|
+| `npm run dev` | Geliştirme sunucusu |
+| `npm run build` | Tip kontrolü ve üretim derlemesi (`dist/`) |
+| `npm run build:artifact` | Tek dosyalık sayfa (`dist-artifact/underfoot.html`) |
+| `npm run headless -- 7 20` | Görüntüsüz: 7 numaralı harita, 20 dakika, büyüme raporu |
+| `scripts/batch.sh 40` | 8 haritayı paralel 40 dakika çalıştırır (sağlamlık testi) |
+| `node scripts/shot.mjs ad 7 9000` | Çalışan dev sunucusundan ekran görüntüsü (`shots/`) |
+
+## Kod yapısı
+
+```
+src/
+  config.ts        ölçek, zaman ve ayar sabitleri
+  world/           hücre dünyası, toprak üretimi, bitkiler, düşen kum fiziği, su ve nem
+  sim/             koloni, karınca davranışı, yuva planlayıcı, mesafe alanları, yavru
+  render/          piksel kesit, makro arka plan, ışık ve hava, kamera, sprite'lar
+  ui/              koloni beyni paneli, HUD, araç ipuçları
+scripts/           görüntüsüz test, toplu test, ekran görüntüsü, tek dosya derleme
+```
+
+Simülasyon 30 Hz sabit adımla çalışır ve görüntüden bağımsızdır. Aynı seed her zaman aynı koloniyi üretir.
