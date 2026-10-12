@@ -183,8 +183,27 @@ export class UI {
     r.appendChild(insp);
     const prompt = h('div', 'panel');
     prompt.id = 'prompt';
-    prompt.innerHTML = `<div class="eyebrow">Nuptial flight</div><h2>Where should the queen land?</h2><p>Click the ground. She will tear off her wings, dig a burrow and raise her first daughters alone.</p>`;
+    prompt.innerHTML = `<div class="eyebrow">Nuptial flight</div><h2>Where should the queen land?</h2><p>Click the ground. She will tear off her wings, dig a burrow and raise her first daughters alone.</p>
+      <button class="btn" id="anywhere" style="display:inline-block; margin-top:12px; padding:7px 14px">Let her choose</button>`;
     r.appendChild(prompt);
+    (prompt.querySelector('#anywhere') as HTMLElement).onclick = () => {
+      const sim = this.game.sim;
+      // A spot near the middle that suits her; the click path handles the camera and the toast.
+      for (let k = 0; k < 200; k++) {
+        const x = Math.round(sim.world.w * (0.3 + Math.random() * 0.4));
+        if (sim.canFound(x)) {
+          const cam = this.game.cam;
+          const s = cam.toScreen(x, sim.world.ground[x]!);
+          this.click(s.x, s.y);
+          return;
+        }
+      }
+    };
+    // Small screens start with the brain folded away so the slice stays visible.
+    if (innerWidth < 760) {
+      brain.classList.add('collapsed');
+      (brain.querySelector('#collapse') as HTMLElement).textContent = 'show';
+    }
     const toasts = h('div');
     toasts.id = 'toasts';
     r.appendChild(toasts);

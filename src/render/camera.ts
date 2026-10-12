@@ -27,11 +27,12 @@ export class Camera {
   resize(w: number, h: number): void {
     this.screenW = w;
     this.screenH = h;
-    this.minZoom = Math.min(w / this.worldW, h / this.worldH) * 0.98;
+    this.minZoom = this.fitZoom();
   }
 
+  /** Zoom at which the slice just covers the screen (no empty margins; tall screens crop the sides). */
   fitZoom(): number {
-    return Math.min(this.screenW / this.worldW, this.screenH / this.worldH);
+    return Math.max(this.screenW / this.worldW, this.screenH / this.worldH);
   }
 
   fit(): void {
