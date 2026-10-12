@@ -72,6 +72,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #bar .seg button { padding: 6px 10px; font-size: 11px; }
 #bar .perf { font-family: var(--mono); font-size: 10px; color: var(--ink-faint); min-width: 64px; text-align: right; }
 
+#caption { position: absolute; left: 22px; bottom: 22px; display: none; pointer-events: none; max-width: min(520px, calc(100vw - 44px)); }
+#caption .line { font-family: var(--mono); font-size: 13px; color: var(--ink); margin-top: 4px; text-shadow: 0 1px 8px rgba(0,0,0,0.7); }
+#caption .eyebrow { color: var(--accent); text-shadow: 0 1px 6px rgba(0,0,0,0.7); }
 #inspect { left: 14px; bottom: 14px; width: 248px; display: none; }
 #inspect .name { font-family: var(--mono); font-size: 15px; margin: 4px 0 8px; }
 #inspect dl { display: grid; grid-template-columns: 70px 1fr; gap: 4px 8px; margin: 0; }
@@ -101,6 +104,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
   #brain.collapsed .body { display: none; }
   #bar { bottom: 8px; }
   #inspect { display: none !important; }
+  #caption { bottom: 120px; left: 14px; }
   #card .notes, #card .legend { display: none; }
 }
 .collapse { all: unset; cursor: pointer; float: right; font-family: var(--mono); font-size: 10px; color: var(--ink-faint); }

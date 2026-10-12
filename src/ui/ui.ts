@@ -189,14 +189,31 @@ export class UI {
     const zin = h('button', '', '+');
     const zout = h('button', '', '−');
     const zfit = h('button', '', 'Fit');
-    zin.onclick = () => this.game.cam.zoomAt(this.game.cam.screenW / 2, this.game.cam.screenH / 2, 1.5);
-    zout.onclick = () => this.game.cam.zoomAt(this.game.cam.screenW / 2, this.game.cam.screenH / 2, 1 / 1.5);
+    const manual = (): void => {
+      if (this.game.director.active) this.game.director.stop();
+    };
+    zin.onclick = () => {
+      manual();
+      this.game.cam.zoomAt(this.game.cam.screenW / 2, this.game.cam.screenH / 2, 1.5);
+    };
+    zout.onclick = () => {
+      manual();
+      this.game.cam.zoomAt(this.game.cam.screenW / 2, this.game.cam.screenH / 2, 1 / 1.5);
+    };
     zfit.onclick = () => {
+      manual();
       this.game.selected = null;
       this.game.cam.fit();
     };
     zoom.append(zout, zin, zfit);
     bar.appendChild(zoom);
+    const watch = h('div', 'seg');
+    const watchBtn = h('button', '', 'Watch');
+    watchBtn.id = 'watch';
+    watchBtn.title = 'Documentary camera (C)';
+    watchBtn.onclick = () => this.game.director.toggle();
+    watch.appendChild(watchBtn);
+    bar.appendChild(watch);
     const perf = h('div', 'perf');
     perf.id = 'perf';
     bar.appendChild(perf);
@@ -238,8 +255,11 @@ export class UI {
     const over = h('div', 'panel');
     over.id = 'over';
     r.appendChild(over);
+    const caption = h('div', '', '<div class="eyebrow">Watching</div><div class="line"></div>');
+    caption.id = 'caption';
+    r.appendChild(caption);
 
-    for (const id of ['pop', 'maj', 'brood', 'food', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark', 'notes']) {
+    for (const id of ['pop', 'maj', 'brood', 'food', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark', 'notes', 'caption', 'watch']) {
       this.els[id] = r.querySelector(`#${id}`) as HTMLElement;
     }
     this.syncBrain();
@@ -338,6 +358,8 @@ export class UI {
     let dragDist = 0;
     let pinch0 = 0;
     canvas.addEventListener('pointerdown', (e) => {
+      // Taking the camera by hand ends the documentary.
+      if (game.director.active) game.director.stop();
       canvas.setPointerCapture(e.pointerId);
       pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
       dragDist = 0;
@@ -381,6 +403,7 @@ export class UI {
       'wheel',
       (e) => {
         e.preventDefault();
+        if (game.director.active) game.director.stop();
         game.cam.zoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0015));
       },
       { passive: false },
@@ -394,8 +417,11 @@ export class UI {
         game.setSpeed(Number(e.key) - 1);
         this.syncBar();
       } else if (e.key === 'f' || e.key === 'F') {
+        if (game.director.active) game.director.stop();
         game.selected = null;
         game.cam.fit();
+      } else if (e.key === 'c' || e.key === 'C') {
+        game.director.toggle();
       } else if (e.key === 'h' || e.key === 'H') {
         // Clean frame for screenshots and clips.
         this.root.style.display = this.root.style.display === 'none' ? '' : 'none';
@@ -477,6 +503,11 @@ export class UI {
       this.lastChambers = sim.nest.chambers.length;
       this.syncBrain();
     }
+    const dir = game.director;
+    this.els.watch!.classList.toggle('on', dir.active);
+    const cap = this.els.caption!;
+    cap.style.display = dir.active && dir.caption ? 'block' : 'none';
+    if (dir.active) (cap.querySelector('.line') as HTMLElement).innerHTML = dir.caption;
     while (sim.events.length) {
       const e = sim.events.shift()!;
       // The rain stopping is worth a glance, not a line in the journal.

@@ -4,6 +4,7 @@ import { Camera } from './render/camera';
 import { UI } from './ui/ui';
 import { TICK_HZ, SPEEDS } from './config';
 import type { Ant } from './sim/ant';
+import { Director } from './ui/director';
 
 /**
  * Owns the loop: a fixed-rate simulation, rendered every animation frame.
@@ -14,6 +15,7 @@ export class Game {
   renderer: Renderer;
   cam: Camera;
   ui: UI;
+  director: Director;
   speed = 1;
   paused = false;
   selected: Ant | null = null;
@@ -28,6 +30,7 @@ export class Game {
     this.sim = new Sim(seed);
     this.renderer = new Renderer(canvas, this.sim.world, seed);
     this.cam = new Camera(this.sim.world.w, this.sim.world.h);
+    this.director = new Director(this);
     this.ui = new UI(this, uiRoot);
     this.resize();
     this.cam.fit();
@@ -79,7 +82,8 @@ export class Game {
       this.tpsTime = 0;
     }
     if (this.selected && !this.selected.alive) this.selected = null;
-    this.cam.follow = this.selected ? { x: this.selected.x, y: this.selected.y - 2 } : this.cam.follow;
+    if (this.director.active) this.director.update(dt);
+    else this.cam.follow = this.selected ? { x: this.selected.x, y: this.selected.y - 2 } : this.cam.follow;
     this.cam.update(dt);
     this.renderer.render(this.sim, this.cam, dt, this.paused ? 0 : this.speed, this.selected);
     this.ui.update(dt);

@@ -16,6 +16,8 @@ export class Camera {
   ty: number;
   tzoom = 3;
   follow: { x: number; y: number } | null = null;
+  /** How quickly the view catches up with its target (per second). Slow for the documentary camera. */
+  ease = 12;
 
   constructor(worldW: number, worldH: number) {
     this.worldW = worldW;
@@ -73,7 +75,7 @@ export class Camera {
       this.tx = this.follow.x;
       this.ty = this.follow.y;
     }
-    const k = 1 - Math.exp(-dt * 12);
+    const k = 1 - Math.exp(-dt * this.ease);
     this.zoom += (this.tzoom - this.zoom) * k;
     this.x += (this.tx - this.x) * k;
     this.y += (this.ty - this.y) * k;
