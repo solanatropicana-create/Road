@@ -29,6 +29,8 @@ export class Game {
 
   private canvas: HTMLCanvasElement;
   private saving = false;
+  /** Bumped when the save is cleared, so a save already under way doesn't write it back. */
+  private saveGen = 0;
   private lastSave = performance.now();
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement, seed: number) {
@@ -61,8 +63,10 @@ export class Game {
     const phase = this.sim.phase;
     if (this.saving || (phase !== 'founding' && phase !== 'growing')) return;
     this.saving = true;
+    const gen = this.saveGen;
     try {
       const { meta, blob } = await saveSim(this.sim, { journal: this.ui.journalData() });
+      if (gen !== this.saveGen) return;
       localStorage.setItem(SAVE_KEY, blob);
       localStorage.setItem(META_KEY, JSON.stringify(meta));
     } catch {
@@ -75,6 +79,7 @@ export class Game {
 
   /** Forget the saved colony (it died, or the player started over). */
   clearSave(): void {
+    this.saveGen++;
     try {
       localStorage.removeItem(SAVE_KEY);
       localStorage.removeItem(META_KEY);

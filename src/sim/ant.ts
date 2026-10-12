@@ -182,7 +182,7 @@ export class Ant {
     const k = occ[ahead]!;
     if (!k) return false;
     const o = sim.colony.ants[k - 1];
-    if (!o || o === this || o.meet > 0 || o.hx !== -this.hx || o.hy !== -this.hy) return false;
+    if (!o || o === this || !o.alive || o.meet > 0 || o.hx !== -this.hx || o.hy !== -this.hy) return false;
     this.meetAgain = sim.tick + TICK_HZ * 12;
     if (sim.rng.next() > 0.35) return false;
     const t = sim.rng.int(9, 18);
@@ -471,15 +471,10 @@ export class Ant {
       if (this.lost > 90) this.discard(sim);
       return;
     }
-    // Hopelessly lost on the surface with a load: drop it and go back to work.
-    if (++this.trip > 900) {
-      this.discard(sim);
-      return;
-    }
     const ex = sim.nest.foundX;
     if (this.dropDist === 0) {
       // Most spoil lands close, some is carried far: a low, wide crater mound.
-      this.dropDist = refuse ? sim.rng.int(34, 70) : Math.round(10 + Math.pow(sim.rng.next(), 1.6) * 70);
+      this.dropDist = refuse ? sim.rng.int(34, 70) : Math.round(7 + Math.pow(sim.rng.next(), 2.2) * 60);
       // Spoil goes down whichever side of the crater the ant came up on, unless
       // that side already carries much more of the heap than the other.
       const [left, right] = sim.colony.spoilSides;
@@ -490,12 +485,22 @@ export class Ant {
       this.stuck = 0;
       this.trip = 0;
     }
+    // Hopelessly lost on the surface with a load: drop it and go back to work.
+    if (++this.trip > 900) {
+      this.discard(sim);
+      return;
+    }
+    // Sent to the far side but can't get across the crater: use this side instead.
+    if (Math.sign(this.x - ex) === -this.dumpDir && this.stuck > 40) {
+      this.dumpDir = -this.dumpDir;
+      this.stuck = 0;
+    }
     const away = Math.abs(this.x - ex);
     // Keep the mound low and wide: walk on over the heap rather than piling it higher.
     // The allowed height falls off gently from the crater and rises as the nest
     // grows, so all the spoil fits in one broad, low cone (as real Messor mounds).
     const heap = w.ground[this.x]! - this.y;
-    const maxHeap = Math.max(1.5, Math.sqrt(sim.nest.openCells * 0.09) + 2 - away * 0.07);
+    const maxHeap = Math.max(1.5, Math.sqrt(sim.nest.openCells * 0.16) + 3 - away * 0.09);
     if (!refuse && heap > maxHeap && away >= this.dropDist && this.stuck < 200 && this.x > 4 && this.x < w.w - 5) this.dropDist = away + 3;
     const canDrop = !w.plan[i] && this.grounded(sim, i) && Math.sign(this.x - ex) !== -this.dumpDir;
     if ((canDrop && (away >= this.dropDist || this.stuck > 90)) || (!w.plan[i] && this.stuck > 200)) {
@@ -557,6 +562,8 @@ export class Ant {
     this.carry = Carry.None;
     this.lost = 0;
     this.dropDist = 0;
+    this.trip = 0;
+    this.stuck = 0;
     this.reevalAt = 0;
   }
 

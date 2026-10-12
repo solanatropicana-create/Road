@@ -2,8 +2,11 @@ import { World } from './world';
 import { Rng } from '../util/rng';
 import { EMPTY, WATER, HUMUS, LOAM, CLAY, SUBSOIL, GRAVEL, SAND, SEED, REFUSE, ROOT } from './mat';
 
-/** `tint` of a refuse grain that is a germinated seed. */
-export const SPROUT = 1;
+/**
+ * `tint` of a refuse grain that is a germinated seed. The high bit, so it never
+ * reads as a soil id when the cell's tint becomes back-wall memory.
+ */
+export const SPROUT = 0x80;
 
 const table = (entries: [number, number][]): Float32Array => {
   const t = new Float32Array(32);

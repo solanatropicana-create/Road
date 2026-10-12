@@ -420,30 +420,29 @@ export class Renderer {
     const y0 = Math.max(1, Math.floor(view.y0) - 1);
     const y1 = Math.min(w.h - 2, Math.ceil(view.y1) + 1);
     const B = 4;
-    const seedPaths: Path2D[] = [];
-    const huskPaths: Path2D[] = [];
-    for (let k = 0; k < B; k++) huskPaths.push(new Path2D());
-    for (let k = 0; k < SEED_BUCKETS; k++) seedPaths.push(new Path2D());
-    const gloss = new Path2D();
-    const shoots = new Path2D();
-    const meniscus = new Path2D();
-    let any = false;
-    // One light level for the whole view keeps this to a handful of fills.
-    const l = this.lightAt((x0 + x1) / 2, (y0 + y1) / 2);
+    // Two layers, open air and nest, because they are lit so differently (moonlight
+    // against the red lamp); within a layer one light keeps this to a few fills.
+    const layer = (): { seed: Path2D[]; husk: Path2D[]; gloss: Path2D; shoots: Path2D; meniscus: Path2D; any: boolean } => ({
+      seed: Array.from({ length: SEED_BUCKETS }, () => new Path2D()),
+      husk: Array.from({ length: B }, () => new Path2D()),
+      gloss: new Path2D(),
+      shoots: new Path2D(),
+      meniscus: new Path2D(),
+      any: false,
+    });
+    const layers = [layer(), layer()];
     for (let y = y0; y <= y1; y++) {
       for (let x = x0; x <= x1; x++) {
         const i = y * w.w + x;
         const m = w.mat[i];
+        if (m !== WATER && m !== SEED && m !== REFUSE) continue;
+        const L = layers[w.bg[i]!]!;
+        L.any = true;
         if (m === WATER) {
           // The top of standing water catches the light.
-          if (w.mat[i - w.w] !== WATER) {
-            meniscus.rect(x, y, 1, 0.22);
-            any = true;
-          }
+          if (w.mat[i - w.w] !== WATER) L.meniscus.rect(x, y, 1, 0.22);
           continue;
         }
-        if (m !== SEED && m !== REFUSE) continue;
-        any = true;
         const hsh = Math.imul(i, 2654435761) >>> 0;
         const rot = ((hsh >>> 8) & 255) / 255 * Math.PI;
         const jx = (((hsh >>> 16) & 15) / 15 - 0.5) * 0.25;
@@ -454,46 +453,50 @@ export class Renderer {
         if (m === SEED) {
           // Grouped by species and shade: one path per tone bucket.
           const look = seedLook(w.tone[i]!);
-          const sb = Math.min(SEED_BUCKETS - 1, (w.tone[i]! * SEED_BUCKETS) >> 8);
-          const p = seedPaths[sb]!;
+          const p = L.seed[Math.min(SEED_BUCKETS - 1, (w.tone[i]! * SEED_BUCKETS) >> 8)]!;
           const rx = look.rx * 0.95;
           const ry = look.ry * 0.95;
           p.moveTo(cx + rx * Math.cos(rot), cy + rx * Math.sin(rot));
           p.ellipse(cx, cy + 0.5 - ry, rx, ry, rot, 0, Math.PI * 2);
-          gloss.moveTo(cx - 0.1 + rx * 0.3, cy + 0.5 - ry * 1.5);
-          gloss.ellipse(cx - 0.1, cy + 0.5 - ry * 1.5, rx * 0.3, ry * 0.22, rot, 0, Math.PI * 2);
+          L.gloss.moveTo(cx - 0.1 + rx * 0.3, cy + 0.5 - ry * 1.5);
+          L.gloss.ellipse(cx - 0.1, cy + 0.5 - ry * 1.5, rx * 0.3, ry * 0.22, rot, 0, Math.PI * 2);
         } else if (w.tint[i] === SPROUT) {
-          // A germinated seed: the grain with a pale root and a green shoot.
-          const p = seedPaths[b]!;
+          // A germinated seed: the grain with a green shoot.
+          const p = L.seed[b]!;
           p.moveTo(cx + 0.6, cy);
           p.ellipse(cx, cy, 0.6, 0.45, 0, 0, Math.PI * 2);
-          shoots.moveTo(cx + 0.1, cy - 0.3);
-          shoots.quadraticCurveTo(cx + 0.5, cy - 1.0, cx + 0.2, cy - 1.5);
+          L.shoots.moveTo(cx + 0.1, cy - 0.3);
+          L.shoots.quadraticCurveTo(cx + 0.5, cy - 1.0, cx + 0.2, cy - 1.5);
         } else {
-          const p = huskPaths[b]!;
+          const p = L.husk[b]!;
           p.moveTo(cx + 0.6 * Math.cos(rot), cy + 0.6 * Math.sin(rot));
           p.ellipse(cx, cy, 0.6, 0.26, rot, 0, Math.PI * 2);
         }
       }
     }
-    if (!any) return;
-    const lit = (c: RGB, a = 1): string => `rgba(${(c[0] * l[0]) | 0},${(c[1] * l[1]) | 0},${(c[2] * l[2]) | 0},${a})`;
-    for (let k = 0; k < B; k++) {
-      ctx.fillStyle = lit(sampleRamp(PAL.refuse, 0.35 + (k / B) * 0.6));
-      ctx.fill(huskPaths[k]!);
-    }
-    for (let k = 0; k < SEED_BUCKETS; k++) {
-      ctx.fillStyle = lit(seedLook(((k + 0.5) * 256) / SEED_BUCKETS).col);
-      ctx.fill(seedPaths[k]!);
-    }
-    ctx.fillStyle = lit([255, 236, 196], 0.45);
-    ctx.fill(gloss);
-    ctx.strokeStyle = lit([120, 170, 80]);
-    ctx.lineWidth = 0.22;
-    ctx.lineCap = 'round';
-    ctx.stroke(shoots);
-    ctx.fillStyle = lit([205, 228, 242], 0.6);
-    ctx.fill(meniscus);
+    const mx = Math.round(Math.max(0, Math.min(w.w - 1, (x0 + x1) / 2)));
+    const lights = [this.lightAt(mx, w.ground[mx]! - 2), this.lightAt(mx, w.ground[mx]! + 30)];
+    layers.forEach((L, k) => {
+      if (!L.any) return;
+      const l = lights[k]!;
+      const lit = (c: RGB, a = 1): string => `rgba(${(c[0] * l[0]) | 0},${(c[1] * l[1]) | 0},${(c[2] * l[2]) | 0},${a})`;
+      for (let q = 0; q < B; q++) {
+        ctx.fillStyle = lit(sampleRamp(PAL.refuse, 0.35 + (q / B) * 0.6));
+        ctx.fill(L.husk[q]!);
+      }
+      for (let q = 0; q < SEED_BUCKETS; q++) {
+        ctx.fillStyle = lit(seedLook(((q + 0.5) * 256) / SEED_BUCKETS).col);
+        ctx.fill(L.seed[q]!);
+      }
+      ctx.fillStyle = lit([255, 236, 196], 0.45);
+      ctx.fill(L.gloss);
+      ctx.strokeStyle = lit([120, 170, 80]);
+      ctx.lineWidth = 0.22;
+      ctx.lineCap = 'round';
+      ctx.stroke(L.shoots);
+      ctx.fillStyle = lit([205, 228, 242], 0.6);
+      ctx.fill(L.meniscus);
+    });
   }
 
   /** Dust, shed wings and rain at screen resolution, for close-ups. */
@@ -568,7 +571,8 @@ export class Renderer {
       w.dirtyAll = true;
       sim.nest.zonesChanged = false;
     }
-    const close = cam.zoom * this.dpr >= 5;
+    // Close-up is about how big a millimetre looks, not how many device pixels back it.
+    const close = cam.zoom >= 5;
     if (close !== this.closeUp) {
       this.closeUp = close;
       w.dirtyAll = true;

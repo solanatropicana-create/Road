@@ -363,7 +363,8 @@ export class Colony {
     // Cleaning demand follows the loads waiting to go out (husk bundles, the dead),
     // not how much floor they happen to lie on.
     let loads = Math.ceil(this.husks / 3);
-    for (const c of this.corpses) if (!c.carried) loads++;
+    // Only the dead inside the nest (the trash field ignores those already outside).
+    for (const c of this.corpses) if (!c.carried && sim.world.bg[c.y * sim.world.w + c.x] === 1) loads++;
     if (loads === 0 && f[F.Trash]! > 0) loads = 1;
     need[Task.Clean] = loads > 0 ? 0.08 + Math.min(0.8, loads / (adults * 0.08 + 4)) : 0;
     need[Task.Idle] = 0.28;
@@ -439,6 +440,8 @@ export class Colony {
   // ---------------------------------------------------------------- tick
 
   tick(sim: Sim): void {
+    // A colony with no workers left is over: the queen cannot raise brood again alone.
+    if (this.failed) return;
     this.advanceBrood(sim);
     this.lay(sim);
     if (sim.tick % 30 === 0) {

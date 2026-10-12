@@ -49,6 +49,8 @@ export class UI {
   private firstMajor = false;
   private drowned = 0;
   private starvedDay = -1;
+  private wingsNoted = false;
+  private replaceArmed = false;
 
   constructor(game: Game, root: HTMLElement) {
     this.game = game;
@@ -366,6 +368,7 @@ export class UI {
     this.firstStore = d?.firstStore ?? false;
     this.firstMajor = d?.firstMajor ?? false;
     this.drowned = d?.drowned ?? 0;
+    this.wingsNoted = true;
     this.lastPhase = '';
     this.lastChambers = this.game.sim.nest.chambers.length;
     this.renderNotes();
@@ -394,6 +397,11 @@ export class UI {
   private observe(): void {
     const sim = this.game.sim;
     const col = sim.colony;
+    if (!this.wingsNoted && col.queen && !col.queen.wings) {
+      this.wingsNoted = true;
+      this.note('The queen lands and <b>tears off her wings</b>', true);
+      setTimeout(() => this.toast('Drag to look around · scroll to zoom · click an ant to follow it · <b>?</b> shows all keys', 9000), 2500);
+    }
     const marks = [10, 25, 50, 100, 150, 200, 300, 500];
     while (this.milestone < marks.length && col.adults >= marks[this.milestone]!) {
       this.note(`The colony reaches <b>${marks[this.milestone]}</b> workers`, marks[this.milestone]! >= 50);
@@ -548,10 +556,15 @@ export class UI {
     const p = game.cam.toWorld(sx, sy);
     if (sim.phase === 'choose') {
       if (sim.canFound(p.x)) {
+        // A saved colony would be replaced at the next autosave: ask first.
+        if (savedMeta() && !this.replaceArmed) {
+          this.replaceArmed = true;
+          this.toast('Landing here starts a <b>new colony</b> and replaces the saved one. Click again to land.', 6000);
+          setTimeout(() => (this.replaceArmed = false), 6000);
+          return;
+        }
         sim.found(p.x);
-        // She lands now and sheds her wings a few seconds later; say so when she does.
-        setTimeout(() => this.note('The queen lands and <b>tears off her wings</b>', true), 3000);
-        setTimeout(() => this.toast('Drag to look around · scroll to zoom · click an ant to follow it · <b>H</b> hides the panels', 9000), 5500);
+        // The journal entry waits until she actually sheds her wings (see observe()).
         game.cam.tzoom = Math.max(game.cam.tzoom, game.cam.fitZoom() * 2.4);
         game.cam.tx = p.x;
         game.cam.ty = sim.world.ground[Math.round(p.x)]! + 10;
