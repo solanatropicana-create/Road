@@ -56,6 +56,18 @@ Yeni oyun sürümüyle aynı iki kayıtlı koloniden (`node scripts/artlab.mjs`)
 - 9:16 klip render'ı (klip aracıyla birlikte).
 - Yazılım render'ı kullanan bu makinede ekran kartı tarafının maliyetini ölçemedim. Gerçek bir dizüstünde bir kez bakmak iyi olur.
 
+## Karınca dönüşü
+
+Karıncalar geri dönerken profilleri yatayda +1'den −1'e sıkıştırılıyordu: kâğıttan kesilmiş gibi ortada incecik bir çizgiye iniyorlardı. Üstelik simülasyonun yönü adım adım titrediği için (karınca başına saniyede 3,2 yön değişimi, bunların %61'i 0,13 saniye içinde geri dönüyordu) bu çizgi hali çok sık görülüyordu. Olgun kolonide karıncaların %18'i 1×, %31'i 16× hızda yarı genişlikten ince çiziliyordu.
+
+- **Dönüş artık bir yalpa.** Her parçanın boyu, yüksekliği ve eni var. Karınca bacaklarından geçen eksen etrafında dönüyor: gövde kısalıyor, ana hatlar uçtan bakınca yuvarlaklaşıyor, iki yanın bacakları ve antenleri sağa sola açılıyor. Dönüşlerin yarısı kameraya (baş, iki göz, çeneler), yarısı kameradan uzağa (arkadan karın) gidiyor.
+- **Titreme dönüş sayılmıyor.** Karınca yalnızca yeni yönde gerçekten iki hücre yürürse ya da 0,3 saniye o yönde kalırsa dönüyor. Yüksek hızda bu eşik büyüyor. Simülasyon değişmedi; yalnızca çizim bu kararı veriyor.
+- Sonuç (aynı koloni, 60 kare/sn): dönüş 1×'te karınca başına saniyede 2,5'ten 0,95'e indi. Yarıdan ince çizilen karınca oranı 1×'te %17,7'den %5,2'ye, 16×'te %31,1'den %7,8'e düştü. Bu karelerde de artık çizgi yerine 3/4 ya da önden görünüş var.
+
+![Aynı karınca, dönüşün dokuz anı: önce, sonra kameraya, sonra kameradan uzağa](img/ant-turn-before-after.jpg)
+
+Hâlâ açık: kalan dönüşlerin çoğu yüzeydeki toplayıcılardan geliyor. Arama yürüyüşleri neredeyse ilintisiz bir rastgele yürüyüş olduğu için gerçekten sık geri dönüyorlar. Bu simülasyon (ve toplama dengesi) değişikliği, ayrı ele alınmalı.
+
 ---
 
 # İlk tur: panel ve öneri
