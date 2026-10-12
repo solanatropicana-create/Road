@@ -89,7 +89,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #inspect dt { color: var(--ink-faint); font-size: 11px; }
 #inspect dd { margin: 0; font-size: 12px; }
 
-#prompt { left: 50%; top: 18%; transform: translateX(-50%); text-align: center; padding: 16px 22px; max-width: 440px; }
+#prompt { left: 50%; top: 44%; transform: translateX(-50%); text-align: center; padding: 16px 22px; max-width: 440px; }
 #prompt h2 { margin: 6px 0 6px; font-weight: 500; font-size: 20px; }
 #prompt p { margin: 0; color: var(--ink-dim); line-height: 1.5; }
 #prompt .prompt-btns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 12px; }
