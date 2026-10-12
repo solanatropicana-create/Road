@@ -11,6 +11,7 @@ import { metabolism } from '../sim/calendar';
 import type { Sim } from '../sim/sim';
 import { ICON, LOGO_ANT } from './icons';
 import { SITES, SITE_IDS } from '../world/sites';
+import { TWIG, BERRY, FLOWER, SEEDHEAD, FRUIT, PREY, STONE, LITTER, SEED } from '../world/mat';
 
 export type Mode = 'watch' | 'guide';
 const MODE_KEY = 'underfoot.mode';
@@ -1347,7 +1348,16 @@ export class UI {
     }
     const c = game.sim.nest.chamberAt(y * w.w + x);
     if (!c || !c.ready) {
-      tip.style.display = 'none';
+      // Out of the nest: who or what is this?
+      const n = this.natureAt(x, y);
+      if (!n) {
+        tip.style.display = 'none';
+        return;
+      }
+      tip.innerHTML = `<b>${t(`nm_${n.key}`)}</b>${n.state ? ` · ${t(`st_${n.state}`)}` : ''}<div class="fact">${t(`nf_${n.key}`)}</div>`;
+      tip.style.display = 'block';
+      tip.style.left = `${Math.min(this.pointer.x + 14, innerWidth - 260)}px`;
+      tip.style.top = `${this.pointer.y + 14}px`;
       return;
     }
     let body = '';
@@ -1361,6 +1371,38 @@ export class UI {
     tip.style.display = 'block';
     tip.style.left = `${Math.min(this.pointer.x + 14, innerWidth - 260)}px`;
     tip.style.top = `${this.pointer.y + 14}px`;
+  }
+
+  /** The plant, animal or thing at a point of the slice, for the hover card. */
+  private natureAt(x: number, y: number): { key: string; state?: string } | null {
+    const sim = this.game.sim;
+    const w = sim.world;
+    for (const c of sim.critters.list) {
+      if (c.kind === 'lark' && Math.abs(x - c.x) < 75 && y > c.y - 110 && y <= c.y + 2) return { key: 'lark' };
+      if (c.kind === 'hopper' && Math.abs(x - c.x) < 14 && Math.abs(y - c.y + 4) < 8) return { key: 'hopper' };
+      if (c.kind === 'beetle' && Math.abs(x - c.x) < 8 && Math.abs(y - c.y + 3) < 5) return { key: 'beetle' };
+      if (c.kind === 'worm' && c.body.some((i) => Math.abs((i % w.w) - x) < 3 && Math.abs(((i / w.w) | 0) - y) < 3)) return { key: 'worm' };
+    }
+    const i = y * w.w + x;
+    const pl = w.plant[i]!;
+    const doy = sim.doy;
+    if (pl) {
+      const shrub = sim.eco.shrub;
+      if (shrub && (pl === TWIG || pl === BERRY || shrub.leaves.some((g) => g.includes(i)) || shrub.buds.some((g) => g.includes(i)))) return { key: shrub.kind, state: pl === BERRY ? 'fruit' : pl === FLOWER ? 'flower' : undefined };
+      const p = sim.plants.list.find((q) => q.parts.some((pt) => pt.i === i) || q.slots.includes(i));
+      if (p) {
+        const ripe = p.slots.some((s) => w.plant[s] === SEEDHEAD);
+        return { key: p.kind, state: p.resting ? 'resting' : ripe ? 'ripe' : p.dry >= 2 ? 'straw' : !p.mature ? 'growing' : p.parts.some((pt) => pt.m === FLOWER && w.plant[pt.i] === FLOWER) && doy < 200 ? 'flower' : undefined };
+      }
+    }
+    const m = w.mat[i]!;
+    if (m === FRUIT) return { key: 'fruit' };
+    if (m === PREY) return { key: w.tint[i] === 3 ? 'nymph' : w.tone[i]! < 150 ? 'deadBeetle' : w.tone[i]! < 220 ? 'deadHopper' : 'deadWorm' };
+    if (m === STONE && w.tint[i] === 4) return { key: 'shard' };
+    if (m === STONE && w.tint[i] === 5) return { key: 'bone' };
+    if (m === LITTER && w.tint[i] === 2) return { key: 'leaf' };
+    if (m === SEED && w.bg[i] === 0) return { key: `seed_${['grass', 'clover', 'purse', 'stipa', 'erodium'][Math.min(4, Math.floor(w.tone[i]! / 51.2))]}` };
+    return null;
   }
 
   private showOver(): void {

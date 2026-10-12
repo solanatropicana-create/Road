@@ -943,6 +943,8 @@ export class Sim {
       for (const n of [i - 1, i + 1, i - W, i + W]) {
         const m = w.mat[n]!;
         if (m === ROCK) once('rock', { key: 'hitRock', what: 'rock' });
+        else if (m === STONE && w.tint[n] === 4) once('shard', { key: 'foundShard' });
+        else if (m === STONE && w.tint[n] === 5) once('bone', { key: 'foundBone' });
         else if (m === WOOD) once('wood', { key: 'hitRock', what: 'wood' });
         else if (m === LIME) once('lime', { key: 'hitLime' });
       }

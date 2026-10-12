@@ -226,8 +226,12 @@ Ayrıca:
 - Toplayıcı bir yön seçip uzaklaşıyor, sonra arıyor.
 - Yakındaki tohumu kokluyor, iz feromonu bırakıyor ve izi yönüyle takip ediyor.
 - Ulaşılamayan bir kokuyu (sapı kesilmiş ya da toprak altında kalmış bir bitkinin tohumu) bir süre sonra bırakıyor. Yoksa bütün toplayıcılar oraya yığılırdı.
-- Üç bitki türü var (çimen, yonca, çoban çantası) ve her birinin tohumu farklı görünüyor. Ambara bakınca hangi bitkilerin hasat edildiği anlaşılıyor.
+- Beş bitki türü var (brom otu, yonca, çoban çantası, sorguç otu, dönbaba) ve her birinin tohumu farklı görünüyor. Ambara bakınca hangi bitkilerin hasat edildiği anlaşılıyor.
 - Tohumu ambara taşıyor. Ambar yoksa tohum ortak kursağa (trofalaksi) gidiyor.
+- Toplama menzili uyarlanıyor: en son yiyeceğin bulunduğu mesafeyi izliyor, boş dönülen aramalarda büyüyor. Yuvanın çevresi tükenince koloni daha uzağa gidiyor.
+- İz kesitin kenarından öteye devam ediyor: toplayıcı görüş dışına, ötedeki çayıra çıkıp mevsimine göre tohumla dönüyor (ve arada bir hiç dönmüyor).
+- Yağmurdan sonra ıslanan ambar tohumu güneşe çıkarılıp kurutuluyor (Moggridge, 1873). Toplayıcılar kuruyunca geri topluyor.
+- Böcek leşi ve yağmurla yüzeyde kalmış solucan protein: larvaya verilen bir parça iki öğün sayılıyor.
 
 **Yiyecek döngüsü**
 
@@ -236,22 +240,35 @@ Ayrıca:
 - Islanan tohum ambarda çimleniyor ve artık yiyecek sayılmıyor. İşçiler filizleri dışarı atıyor. Bu gerçek bir *Messor* davranışı ve saha defterine düşüyor.
 - Açlık başlarsa kraliçe yumurtayı kısıyor ve işçiler toplamaya kayıyor.
 
-**Hava**
+**Takvim ve hava**
 
-- 0,9–2,2 günde bir yağmur geliyor.
-- Fırtınada şimşek çakıyor.
+- Gündüz–gece döngüsü gerçek hızında (1×'te bir gün 6 dakika); biyoloji haftalık takvimle işliyor: bir oyun günü bir hafta.
+- Sıcaklık sahanın aylık ortalamalarından: yüzeyde günlük dalga, güneşte çıplak toprağın ısınması; derinlikte sönümlenen günlük ve mevsimlik dalga. Yavru gelişimi, toplama penceresi, yemek ve yaşlanma sıcaklığa bağlı.
+- Kış uykusu: ortalama hava 6,5 °C'nin altına inince kapı tıkanıyor, koloni derin odalarda toplanıyor; kar yağıp yalıtıyor, eriyince toprağa siniyor. Kış hızlı geçiliyor.
+- Yılda bir evlilik uçuşu: kanatlı kraliçe ve erkekler yazın yetişip ilkbaharda yağmurdan sonra sıcak bir sabah uçuyor.
+- Yağmur sahanın aylık sıklığıyla geliyor; yazın bir kısmı fırtına ve şimşek.
 - Yağmurda toplayıcılar eve koşuyor, yer üstündekiler sığınıyor.
 - Suya düşen karınca havaya doğru yüzüyor ya da boğuluyor.
 
-**Dış dünya**
+**Sahalar ve haritalar**
 
-- Çayırdan tohum yağıyor, ara sıra meyve düşüyor.
-- Kuşlar ve fareler yerdeki fazla tohumu topluyor.
+- Altı gerçek saha: Pannonya lösü (çernozyom), kumlu bozkır, kireçtaşı tepe (rendzina), bağ kenarı, Orta Anadolu (kireç katmanlı kastanozem), Karadeniz kuzeyi tüylü ot bozkırı. Her birinin iklimi, toprak profili, bitki karışımı ve kazıcı hayvanı ayrı.
+- Aynı sahanın her haritası farklı: üst toprak kalınlığı, bakı (güney yamaç sıcak, kuzey serin), tohum bankası zenginliği, kil merceği, yassı taşlar, eski yuvalar, ağaç, çalı, dipte taban suyu, çömlek kırıkları, kemikler, ağustos böceği perileri. Saha kartında artı ve eksi olarak görünüyor.
+- Dünya 128 × 72 cm; görünen alan yuva ve toplayıcıların menziliyle birlikte büyüyor.
+
+**Yüzey ekolojisi**
+
+- Bitkilerin tohum takvimi gerçek: dönbaba ve çoban çantası baharda, otlar yaz başında, yonca yaz sonunda tohum veriyor. Yaz sıcağında çayır sararıyor, tek yıllıklar ölüyor, çok yıllıklar kışın tutama çekilip baharda yeniden sürüyor. Kışlık tek yıllılar rozet olarak kışı geçirip baharın ilk tohumunu veriyor.
+- Fideler yağmurdan sonraki haftada çıkıyor: yerdeki tohumdan, topraktaki tohum bankasından ve karıncaların çöp yığınına attığı filizli tohumlardan (karınca bahçesi). Sorguç otu ve dönbaba tohumları ıslanınca kılçıklarıyla kendilerini toprağa vidalıyor.
+- Karaçalı ya da kuşburnu karınca boyundan görünüyor: gövdeler kadrajdan çıkıyor; baharda çiçek, iri yapraklar, sonbaharda yukarıdan düşen çakal erikleri ve kuşburnular. Ağaç yazın gölge yapıyor (öğlenler serin, baharda yavru yavaş) ve sonbaharda iri yapraklarını döküyor.
+- Hayvanlar: tohum ve arada karınca gagalayan tepeli toygar (yakınındaki toplayıcılar eve kaçıyor), yaz çekirgeleri (sonbaharda ölüp protein oluyor), geceleri tohum yiyen Harpalus böcekleri, toprağın içinde dolaşan solucanlar.
+- Kuşlar, fareler ve çürüme yerdeki fazla tohumu, meyveyi ve leşi zamanla götürüyor.
+- Fareyle üzerine gelinen bitki, hayvan ve buluntu adını, durumunu ve kısa bir bilgiyi gösteriyor.
 
 **Performans**
 
 - 300 karıncalık kolonide simülasyon adımı yaklaşık 0,45 ms (16× hızda bir çekirdeğin ~%20'si). Zamanın çoğu mesafe alanlarına ve kum fiziğine gidiyor.
-- 60 dakikalık (10 oyun günü) testte 8 haritanın hepsinde koloni hayatta kaldı ve 120–320 işçide çayırın taşıma kapasitesine yaklaştı.
+- Altı sahada 8 haritalık bir yıllık testte (60 hafta) bütün koloniler kışı geçti; ikinci yılın Haziranında 30–85 işçi, 180–510 tohum stok.
 - Görüntüsüz test aracı var: `npm run headless` ve `scripts/batch.sh`.
 
 ## 6. Formicarium'dan aldıklarımız ve geçtiğimiz yerler

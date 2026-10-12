@@ -428,6 +428,7 @@ export class Ant {
         // Clutter in a tunnel: seed goes to the granary, husks to the midden.
         // (A seed in undug soil was buried in the seed bank: a find.)
         if (m === SEED && w.bg[n] === 1 && !w.zone[n] && w.tint[n] === 0) sim.buriedSeed();
+        if (m === PREY && w.tint[n] === 3) sim.noteOnce('foundNymph');
         this.carryTone = w.tone[n]!;
         const sprout = m === REFUSE && w.tint[n] === SPROUT;
         w.set(n, EMPTY, w.tone[n], w.tint[n]);
@@ -699,6 +700,14 @@ export class Ant {
     }
     if (w.bg[i] === 1) {
       this.descend(sim, F.Out);
+      this.fdist = 0;
+      return;
+    }
+    // A bird on the ground nearby: the ground shakes with its hops, and foragers run for home.
+    const bird = sim.critters.birdX;
+    if (bird === bird && Math.abs(this.x - bird) < 110) {
+      this.task = Task.Idle;
+      this.reevalAt = sim.tick + TICK_HZ * 10;
       this.fdist = 0;
       return;
     }

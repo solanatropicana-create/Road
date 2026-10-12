@@ -245,6 +245,12 @@ export interface Variant {
   shrub: boolean;
   /** Ground water near the bottom of the slice. */
   wetBottom: boolean;
+  /** Old potsherds in the topsoil (people farmed or lived here long ago). */
+  shards: number;
+  /** Bones of small animals buried in the soil. */
+  bones: number;
+  /** Cicada nymphs in their cells by the roots, years from emerging. */
+  nymphs: number;
   traits: Trait[];
 }
 
@@ -262,6 +268,9 @@ export function makeVariant(site: SiteId, seed: number): Variant {
     tree: rng.chance(def.tree),
     shrub: rng.chance(def.shrub),
     wetBottom: (site === 'pannonian' || site === 'sand' || site === 'vineyard') && rng.chance(0.25),
+    shards: (site === 'anatolia' || site === 'vineyard' || site === 'pontic') && rng.chance(0.55) ? rng.int(1, 4) : 0,
+    bones: rng.chance(0.4) ? rng.int(1, 2) : 0,
+    nymphs: rng.chance(0.5) ? rng.int(1, 3) : 0,
     traits: [],
   };
   const t = v.traits;
@@ -277,6 +286,8 @@ export function makeVariant(site: SiteId, seed: number): Variant {
   if (v.tree) t.push({ key: 'tr_tree', sign: 0 });
   if (v.shrub) t.push({ key: 'tr_shrub', sign: 1 });
   if (v.wetBottom) t.push({ key: 'tr_wetBottom', sign: -1 });
+  if (v.shards) t.push({ key: 'tr_shards', sign: 0 });
+  if (v.nymphs) t.push({ key: 'tr_nymphs', sign: 1 });
   return v;
 }
 

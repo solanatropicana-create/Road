@@ -21,7 +21,12 @@ npm run dev            # http://localhost:5173
 ```
 
 - `?seed=123` aynı haritayı yeniden üretir.
+- `?site=anatolia` sahayı seçer: `pannonian`, `sand`, `limestone`, `vineyard`, `anatolia`, `pontic`.
 - `?paused=1` duraklatılmış başlatır.
+
+## Dünya
+
+Altı gerçek *Messor* sahası (Pannonya lösü, kumlu bozkır, kireçtaşı tepe, bağ kenarı, Orta Anadolu, Karadeniz bozkırı), her biri kendi iklimi, toprak profili ve bitkileriyle. Aynı sahanın her haritası farklı: toprak kalınlığı, bakı, tohum bankası, kil merceği, yassı taşlar, eski yuvalar, ağaç, çalı, taban suyu, çömlek kırıkları, ağustos böceği perileri. Takvim haftalık: kış uykusu, kar, yılda bir evlilik uçuşu. Yüzeyde beş bitki türü tohum takvimine göre olgunlaşıp kuruyor; karaçalı ya da kuşburnu çiçek açıp meyve döküyor, ağaç gölge yapıp yaprak döküyor; tepeli toygar, çekirge, Harpalus böceği ve solucanlar dolaşıyor.
 
 ## Modlar
 

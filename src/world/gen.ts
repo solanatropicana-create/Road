@@ -4,7 +4,7 @@ import { clamp } from '../util/math';
 import { World } from './world';
 import { Plants, SPECIES } from './plants';
 import {
-  EMPTY, HUMUS, LOAM, CLAY, SUBSOIL, GRAVEL, STONE, LITTER, BEDROCK, SOIL, SANDY, LIME, ROCK, WOOD, ROOT, SEED, SAND, TWIG,
+  EMPTY, HUMUS, LOAM, CLAY, SUBSOIL, GRAVEL, STONE, LITTER, BEDROCK, SOIL, SANDY, LIME, ROCK, WOOD, ROOT, SEED, SAND, TWIG, PREY,
 } from './mat';
 import { W, H, GROUND_Y } from '../config';
 import { SITES, SiteDef, SiteId, Variant, makeVariant } from './sites';
@@ -155,6 +155,64 @@ export function generate(seed: number, siteId: SiteId): Generated {
     const x = rng.int(10, w - 11);
     const r = rng.range(1.8, 4.2);
     stampPebble(world, rng, noise, x, world.ground[x]! + Math.round(r * 0.3), r, r * 0.7, rng.int(0, 3));
+  }
+
+  // Potsherds: curved flakes of fired clay from fields and villages long gone.
+  for (let k = 0; k < variant.shards; k++) {
+    const x = rng.int(20, w - 21);
+    const y = world.ground[x]! + rng.int(25, 220);
+    const len = rng.range(10, 28);
+    const a = rng.range(-0.6, 0.6);
+    const bend = rng.range(-0.04, 0.04);
+    for (let t = -len / 2; t <= len / 2; t += 0.5) {
+      const th = 2.2 - Math.abs(t / len) * 1.2;
+      for (let u = 0; u <= th; u += 0.5) {
+        const xx = Math.round(x + Math.cos(a) * t - Math.sin(a) * (u + bend * t * t));
+        const yy = Math.round(y + Math.sin(a) * t + Math.cos(a) * (u + bend * t * t));
+        if (!world.inside(xx, yy) || !SOIL[world.mat[yy * w + xx]!]) continue;
+        const i = yy * w + xx;
+        world.mat[i] = STONE;
+        world.tint[i] = 4;
+        // The glazed or burnished outer face is darker than the broken core.
+        world.tone[i] = clamp(Math.round((u < 0.6 ? 70 : 150) + rng.range(-25, 25)), 0, 255);
+      }
+    }
+  }
+  // Bones of small animals (a vole's jaw, a bird's leg bone).
+  for (let k = 0; k < variant.bones; k++) {
+    const x = rng.int(20, w - 21);
+    const y = world.ground[x]! + rng.int(40, 300);
+    const len = rng.range(8, 22);
+    const a = rng.range(-1.2, 1.2);
+    for (let t = -len / 2; t <= len / 2; t += 0.5) {
+      // A shaft with a knob at each end.
+      const r = Math.abs(t) > len / 2 - 2 ? 1.6 : 0.8;
+      for (let u = -r; u <= r; u += 0.5) {
+        const xx = Math.round(x + Math.cos(a) * t - Math.sin(a) * u);
+        const yy = Math.round(y + Math.sin(a) * t + Math.cos(a) * u);
+        if (!world.inside(xx, yy) || !SOIL[world.mat[yy * w + xx]!]) continue;
+        const i = yy * w + xx;
+        world.mat[i] = STONE;
+        world.tint[i] = 5;
+        world.tone[i] = clamp(Math.round(150 - u * 40 + rng.range(-15, 15)), 0, 255);
+      }
+    }
+  }
+  // Cicada nymphs: plump and curled in the soil, feeding on root sap for
+  // years before they dig up to the light.
+  for (let k = 0; k < variant.nymphs; k++) {
+    const x = rng.int(30, w - 31);
+    const y = world.ground[x]! + rng.int(50, 260);
+    if (!SOIL[world.mat[y * w + x]!]) continue;
+    for (let dy = -6; dy <= 6; dy++)
+      for (let dx = -4; dx <= 4; dx++) {
+        const d = (dx * dx) / 16 + (dy * dy) / 36;
+        const i = (y + dy) * w + x + dx;
+        if (d > 0.85 || !SOIL[world.mat[i]!]) continue;
+        world.mat[i] = PREY;
+        world.tone[i] = rng.int(160, 205);
+        world.tint[i] = 3;
+      }
   }
 
   // Shells of land snails in the loess: tiny pale spirals.

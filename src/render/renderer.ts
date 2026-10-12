@@ -155,7 +155,7 @@ export class Renderer {
       case CLAY: c = sampleRamp(PAL.clay, tone); break;
       case SUBSOIL: c = sampleRamp(PAL.subsoil, tone); break;
       case GRAVEL: c = sampleRamp(PAL.gravel, tone); break;
-      case STONE: c = sampleRamp(PAL.stone[w.tint[i]! & 3]!, tone); break;
+      case STONE: c = sampleRamp(PAL.stone[w.tint[i]! & 7] ?? PAL.stone[0]!, tone); break;
       case ROOT: {
         // Fine roots: pale threads in whatever soil they run through.
         const soil = sampleRamp(soilRamp(this.guessSoil(x, y)), 0.35 + tone * 0.3);
@@ -194,7 +194,7 @@ export class Renderer {
         break;
       case LITTER: c = w.tint[i] === 1 ? sampleRamp(PAL.twig, tone) : sampleRamp(PAL.leafLitter, tone); break;
       case FRUIT: c = fruitColor(w.tone[i]!); break;
-      case PREY: c = preyColor(w.tone[i]!); break;
+      case PREY: c = w.tint[i] === 3 ? sampleRamp(PAL.nymph, (w.tone[i]! - 150) / 60) : preyColor(w.tone[i]!); break;
       default: c = [255, 0, 255];
     }
     // Relief: lit rims on floors and the ground surface, shadowed ceilings.

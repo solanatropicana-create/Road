@@ -48,6 +48,8 @@ export class Critters {
   readonly list: Critter[] = [];
   /** Ants a bird took since the start. */
   taken = 0;
+  /** Where a bird is on the ground right now (NaN if none): foragers near it run for home. */
+  birdX = NaN;
 
   private add(c: Partial<Critter> & { kind: CritterKind; x: number; y: number }): Critter {
     const full: Critter = { vx: 0, vy: 0, dir: 1, t: 0, state: 0, timer: 0, life: 0, peck: 0, air: false, body: [], ...c };
@@ -110,6 +112,7 @@ export class Critters {
   }
 
   step(sim: Sim): void {
+    this.birdX = NaN;
     if (!this.list.length) return;
     let j = 0;
     for (const c of this.list) {
@@ -163,6 +166,7 @@ export class Critters {
       return c.y > -120 && c.x > -250 && c.x < w.w + 250;
     }
     // On the ground: hop, look about, peck.
+    this.birdX = c.x;
     if (--c.life <= 0 || sim.raining || sim.cal.daylight(sim.dayT, sim.doy) < 0.1) {
       c.state = 2;
       c.vx = c.dir * 1.2;
@@ -219,9 +223,9 @@ export class Critters {
     }
     // Larks eat ants too, though a Messor is a mouthful of hard bits and formic bites.
     for (const a of sim.colony.ants) {
-      if (a.away || Math.abs(a.x - bx) > 6 || Math.abs(a.y - by) > 8) continue;
+      if (a.away || Math.abs(a.x - bx) > 4 || Math.abs(a.y - by) > 6) continue;
       if (w.bg[a.y * w.w + a.x] !== 0) continue;
-      if (rng.chance(0.3)) {
+      if (rng.chance(0.12)) {
         sim.colony.kill(a, 'eaten by a bird');
         this.taken++;
       }

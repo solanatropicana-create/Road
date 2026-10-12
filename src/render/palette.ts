@@ -40,6 +40,10 @@ export const PAL = {
     ramp('#363d48', '#4b5461', '#646f7d', '#7f8a98', '#a0aab6', '#c2c9d1'),
     ramp('#4a3a28', '#655238', '#826c4a', '#9e875f', '#bba479', '#d6c299'),
     ramp('#6b6862', '#8a877f', '#a9a59c', '#c6c2b8', '#dedad0', '#f0ede5'),
+    // Potsherd: fired clay, a dark burnished face over a brick-red core.
+    ramp('#4a2a1e', '#6e3a24', '#8f4a2c', '#ad5d36', '#c27245', '#d38a5c'),
+    // Bone: ivory, browned by the soil.
+    ramp('#8c7f66', '#a69a80', '#bfb49b', '#d4cbb4', '#e4ddc9'),
   ],
   root: ramp('#5e4430', '#6d5139', '#7c5e44', '#8c6c51', '#9c7b5f'),
   bedrock: ramp('#2f2c29', '#3a3632', '#45403b'),
@@ -65,6 +69,8 @@ export const PAL = {
   beetle: ramp('#16130f', '#241f18', '#3a3221', '#4d4529'),
   hopper: ramp('#4f5226', '#646631', '#7a793d', '#8f8a4c'),
   worm: ramp('#7a4a4a', '#94595a', '#ad6e6c', '#c08482'),
+  // Cicada nymph: pale cream-tan, a darker back.
+  nymph: ramp('#8a7253', '#a68b66', '#bea37c', '#d4bd97'),
   fruit: ramp('#24111a', '#361822', '#48202b', '#5a2a34'),
   // Sand steppe: pale yellow quartz sand.
   sandy: ramp('#a88c5c', '#b89c68', '#c6aa76', '#d3b885', '#dfc594'),
