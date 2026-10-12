@@ -194,8 +194,8 @@ export class Renderer {
 
   // ---------------------------------------------------------------- light
 
-  private buildLight(dayT: number): void {
-    const daylight = Math.max(0, Math.sin((dayT - 0.25) * Math.PI * 2));
+  private buildLight(dayT: number, rain: number): void {
+    const daylight = Math.max(0, Math.sin((dayT - 0.25) * Math.PI * 2)) * (1 - Math.min(1, rain) * 0.35);
     const golden = Math.max(0, 1 - Math.abs(daylight - 0.25) * 4) * (daylight < 0.6 ? 1 : 0);
     const nightK = 1 - smoothstep(0, 0.35, daylight);
     const surf: RGB = [
@@ -347,6 +347,14 @@ export class Renderer {
     for (const p of sim.particles.list) {
       this.px(Math.round(p.x), Math.round(p.y), p.color);
     }
+    // Raindrops: slanted streaks, bright head fading up the tail.
+    const dropCols = [pack(214, 228, 238), pack(176, 196, 212), pack(140, 160, 178), pack(116, 132, 150)];
+    const slant = sim.weather.storm ? 0.35 : 0.12;
+    for (const d of sim.drops) {
+      for (let k = 0; k < 4; k++) {
+        this.px(Math.round(d.x - slant * k), Math.round(d.y) - k, dropCols[k]!);
+      }
+    }
   }
 
   private makeGrain(): HTMLCanvasElement {
@@ -389,11 +397,11 @@ export class Renderer {
     this.updateBase();
     this.buf.set(this.base);
     this.drawEntities(sim);
-    this.buildLight(sim.dayT);
+    this.buildLight(sim.dayT, sim.weather.rain);
     this.applyLight();
     this.wctx.putImageData(this.img, 0, 0);
 
-    this.backdrop.draw(sim.dayT, this.time, w.w, w.ground);
+    this.backdrop.draw(sim.dayT, this.time, w.w, w.ground, sim.weather.rain);
 
     const ctx = this.ctx;
     const W = this.canvas.width;
@@ -417,6 +425,11 @@ export class Renderer {
     ctx.drawImage(this.wc, 0, 0);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
 
+    // Lightning: the whole frame flashes white for a moment.
+    if (sim.flash > 0) {
+      ctx.fillStyle = `rgba(235,240,255,${(sim.flash / 7) * 0.4})`;
+      ctx.fillRect(0, 0, W, H);
+    }
     // Lens: vignette and a whisper of film grain.
     if (!this.vignette || this.vignette.width !== W || this.vignette.height !== H) this.vignette = this.makeVignette(W, H);
     ctx.drawImage(this.vignette, 0, 0);

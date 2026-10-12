@@ -11,7 +11,7 @@ export interface Particle {
 /** Purely visual specks: dust from digging, shed wings, spray. */
 export class Particles {
   readonly list: Particle[] = [];
-  max = 600;
+  max = 1500;
 
   add(p: Particle): void {
     if (this.list.length < this.max) this.list.push(p);

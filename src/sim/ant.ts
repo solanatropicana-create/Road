@@ -61,6 +61,7 @@ export class Ant {
   /** Steps spent unable to find a way to the current target. */
   private lost = 0;
   private buried = 0;
+  private drown = 0;
   /** Forager's chosen heading and how far to go before searching in earnest. */
   private fdir = 1;
   private fdist = 0;
@@ -96,7 +97,12 @@ export class Ant {
     const w = sim.world;
     const i = this.y * w.w + this.x;
     const m = w.mat[i]!;
-    if (SOLID[m] || m === WATER) {
+    if (m === WATER) {
+      this.swim(sim, i);
+      return;
+    }
+    this.drown = 0;
+    if (SOLID[m]) {
       this.unbury(sim);
       return;
     }
@@ -129,6 +135,11 @@ export class Ant {
     }
     // Hopelessly lost with a load: let it go and rethink.
     if (this.lost > 240) this.discard(sim);
+    // Rain: anyone outside empty-handed heads for shelter.
+    if (sim.raining && this.carry === Carry.None && sim.world.bg[this.y * sim.world.w + this.x] === 0) {
+      this.descend(sim, F.Rest);
+      return;
+    }
     // New jobs are taken up at home, never halfway through a trip outside.
     const home = sim.world.bg[this.y * sim.world.w + this.x] === 1;
     if (this.carry === Carry.None && ((home && sim.tick >= this.reevalAt) || this.lost > 120)) {
@@ -266,6 +277,33 @@ export class Ant {
         this.moveTo(sim, k);
         return;
       }
+    }
+  }
+
+  /** Caught in a flood: paddle toward air, preferably upward, or drown. */
+  private swim(sim: Sim, i: number): void {
+    const w = sim.world;
+    if (++this.drown > TICK_HZ * 14) {
+      sim.colony.kill(this, 'drowned');
+      return;
+    }
+    if (this.drown % 4 !== 0) return;
+    let best = -1;
+    let bs = -Infinity;
+    for (let k = 0; k < 8; k++) {
+      const n = i + DY[k]! * w.w + DX[k]!;
+      const m = w.mat[n]!;
+      if (SOLID[m]) continue;
+      const s = (m === EMPTY ? 10 : 0) - DY[k]! * 2 + sim.rng.next();
+      if (s > bs) {
+        bs = s;
+        best = k;
+      }
+    }
+    if (best >= 0) {
+      this.x += DX[best]!;
+      this.y += DY[best]!;
+      this.step++;
     }
   }
 

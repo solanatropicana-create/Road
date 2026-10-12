@@ -111,12 +111,21 @@ export class Backdrop {
   }
 
   /** dayT: 0..1 time of day. time: seconds (for sway). */
-  draw(dayT: number, time: number, worldW: number, ground: Int16Array): void {
+  draw(dayT: number, time: number, worldW: number, ground: Int16Array, rain = 0): void {
     const c = this.ctx;
     const s = this.scale;
     const W = this.canvas.width;
     const H = this.canvas.height;
     const sky = skyAt(dayT);
+    // Overcast: the sky greys and the haze thickens under rain.
+    const wet = Math.min(1, rain);
+    if (wet > 0) {
+      const grey = mixRGB(hex('#5d6670'), sky.low, 0.25);
+      sky.top = mixRGB(sky.top, mixRGB(grey, sky.top, 0.3), wet * 0.85);
+      sky.mid = mixRGB(sky.mid, grey, wet * 0.8);
+      sky.low = mixRGB(sky.low, mixRGB(grey, [200, 205, 210], 0.3), wet * 0.7);
+      sky.haze *= 1 - wet * 0.7;
+    }
     const gy = GROUND_Y * s;
 
     const g = c.createLinearGradient(0, 0, 0, gy + 6);
@@ -170,7 +179,7 @@ export class Backdrop {
       b.x += b.vx;
       if (b.x < -20) b.x = worldW + 20;
       if (b.x > worldW + 20) b.x = -20;
-      const a = b.a * (0.7 + 0.3 * Math.sin(time * 0.4 + b.phase)) * (0.25 + 0.75 * (1 - night));
+      const a = b.a * (0.7 + 0.3 * Math.sin(time * 0.4 + b.phase)) * (0.25 + 0.75 * (1 - night)) * (1 - wet * 0.8);
       const x = b.x * s;
       const y = b.y * s;
       const r = b.r * s;

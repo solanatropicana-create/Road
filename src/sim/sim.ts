@@ -3,7 +3,8 @@ import { generate, Horizons } from '../world/gen';
 import { World } from '../world/world';
 import { Plants } from '../world/plants';
 import { Physics } from '../world/physics';
-import { EMPTY, SAND, SEED, FRUIT, SOLID, REFUSE } from '../world/mat';
+import { EMPTY, SAND, SEED, FRUIT, SOLID, REFUSE, WATER } from '../world/mat';
+import { ABSORB } from '../world/moisture';
 import { Nest } from './nest';
 import { Fields, F, FIELD_COUNT } from './fields';
 import { Colony } from './colony';
@@ -15,6 +16,20 @@ import { pack, sampleRamp, PAL, mixRGB } from '../render/palette';
 import { HUMUS, LOAM, CLAY, SUBSOIL } from '../world/mat';
 
 export type Phase = 'choose' | 'founding' | 'growing' | 'failed';
+
+export interface Weather {
+  /** Current rain intensity (eases toward target). */
+  rain: number;
+  target: number;
+  until: number;
+  next: number;
+  storm: boolean;
+}
+
+export interface Drop {
+  x: number;
+  y: number;
+}
 
 export class Sim {
   readonly seed: number;
@@ -31,6 +46,12 @@ export class Sim {
   /** Cells that currently hold any trail pheromone. */
   private pherCells: number[] = [];
   tick = 0;
+  readonly weather: Weather = { rain: 0, target: 0, until: 0, next: DAY_TICKS * 2, storm: false };
+  readonly drops: Drop[] = [];
+  /** Lightning flash, counts down in ticks. */
+  flash = 0;
+  /** Messages for the UI (it drains this). */
+  readonly events: string[] = [];
   /** Day starts mid-morning. */
   readonly dayOffset = 0.32;
   seedRain = 0.4;
@@ -59,6 +80,10 @@ export class Sim {
 
   get day(): number {
     return Math.floor(this.tick / DAY_TICKS + this.dayOffset) + 1;
+  }
+
+  get raining(): boolean {
+    return this.weather.rain > 0.15;
   }
 
   get phase(): Phase {
@@ -316,7 +341,93 @@ export class Sim {
     }
     if ((this.tick & 3) === 0) this.decayPheromone();
     this.particles.step();
-    this.weather();
+    this.physics.moisture.step();
+    this.seasonal();
+    this.rain();
+    if (this.physics.moisture.collapses > 0 && this.tick % (TICK_HZ * 4) === 0) {
+      const n = this.physics.moisture.collapses;
+      this.physics.moisture.collapses = 0;
+      if (n >= 3) this.events.push(`Sodden ceilings are <b>collapsing</b> (${n} cells)`);
+    }
+  }
+
+  /** Start a shower now (or a storm). */
+  startRain(storm: boolean): void {
+    const w = this.weather;
+    w.storm = storm;
+    w.target = storm ? 2.6 : this.rng.range(0.5, 1);
+    w.until = this.tick + Math.round((storm ? this.rng.range(45, 70) : this.rng.range(30, 60)) * TICK_HZ);
+    this.events.push(storm ? 'A <b>storm</b> breaks over the meadow' : '<b>Rain</b> — the foragers hurry home');
+  }
+
+  private rain(): void {
+    const wt = this.weather;
+    if (wt.target === 0 && this.tick >= wt.next && this.phase === 'growing') this.startRain(this.rng.chance(0.25));
+    if (wt.target > 0 && this.tick >= wt.until) {
+      wt.target = 0;
+      wt.next = this.tick + Math.round(this.rng.range(DAY_TICKS * 0.9, DAY_TICKS * 2.2));
+      this.events.push('The rain stops');
+    }
+    wt.rain += (wt.target - wt.rain) * 0.01;
+    if (wt.rain < 0.01 && wt.target === 0) wt.rain = 0;
+    if (wt.storm && wt.rain > 1 && this.rng.next() < 1 / (TICK_HZ * 6)) this.flash = 7;
+    if (this.flash > 0) this.flash--;
+
+    const w = this.world;
+    const n = wt.rain * 5;
+    const spawn = Math.floor(n) + (this.rng.next() < n % 1 ? 1 : 0);
+    for (let k = 0; k < spawn; k++) this.drops.push({ x: this.rng.range(0, w.w), y: this.rng.range(-6, 0) });
+    const wind = wt.storm ? 0.35 : 0.12;
+    let j = 0;
+    for (let k = 0; k < this.drops.length; k++) {
+      const d = this.drops[k]!;
+      let alive = true;
+      // Raindrops are quick: four cells a tick, checked one at a time.
+      for (let s = 0; s < 4 && alive; s++) {
+        const px = Math.round(d.x);
+        const py = Math.round(d.y);
+        d.x += wind * 0.25;
+        d.y += 1;
+        const x = Math.round(d.x);
+        const y = Math.round(d.y);
+        if (x < 1 || x >= w.w - 1 || y >= w.h - 1) {
+          alive = false;
+          break;
+        }
+        if (y < 1) continue;
+        const i = y * w.w + x;
+        // Leaves catch a share of the rain.
+        if (w.plant[i] && this.rng.next() < 0.12) {
+          alive = false;
+          break;
+        }
+        if (w.mat[i] !== EMPTY) {
+          this.impact(py * w.w + px, i);
+          alive = false;
+        }
+      }
+      if (alive) this.drops[j++] = d;
+    }
+    this.drops.length = j;
+  }
+
+  /** A drop lands: it soaks in, or (on saturated or hard ground) pools as water. */
+  private impact(prev: number, hit: number): void {
+    const w = this.world;
+    const m = w.mat[hit]!;
+    // Ground soaks rain up to a point; past that the rain pools and runs off.
+    // Loose spoil on the crater sheds most of it toward the mouth.
+    const soak = ABSORB[m]! > 0 ? Math.max(0, 1 - w.moist[hit]! / 170) * (m === SAND ? 0.35 : 1) : 0;
+    if (this.rng.next() < soak) {
+      this.physics.moisture.add(hit, 40);
+    } else if (prev >= 0 && prev < w.size && w.mat[prev] === EMPTY && this.rng.next() < 0.7) {
+      w.set(prev, WATER, this.rng.int(0, 255), w.tint[prev]);
+    }
+    if (this.rng.next() < 0.3) {
+      const x = prev % w.w;
+      const y = (prev / w.w) | 0;
+      this.particles.add({ x, y, vx: this.rng.range(-0.4, 0.4), vy: this.rng.range(-0.5, -0.15), life: 6, gravity: 0.1, color: pack(190, 210, 225) });
+    }
   }
 
   private growNest(): void {
@@ -343,7 +454,7 @@ export class Sim {
   }
 
   /** Seeds blow in from the meadow beyond the frame; now and then a berry drops. */
-  private weather(): void {
+  private seasonal(): void {
     const w = this.world;
     if (this.tick % 150 === 0) this.gleaners();
     if (this.looseSeeds < 260 && this.rng.next() < this.seedRain / TICK_HZ) {

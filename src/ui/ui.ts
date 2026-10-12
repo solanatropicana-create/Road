@@ -59,7 +59,7 @@ export class UI {
     this.spark.width = 440;
     this.spark.height = 76;
     card.appendChild(this.spark);
-    const clock = h('div', 'clock', `<span id="day">Day 1</span><span id="time">09:00</span>`);
+    const clock = h('div', 'clock', `<span id="day">Day 1</span><span id="sky">Clear</span><span id="time">09:00</span>`);
     card.appendChild(clock);
     r.appendChild(card);
 
@@ -82,6 +82,9 @@ export class UI {
       </div>
       <div class="btns" style="margin-top:6px; grid-template-columns: 1fr;"><button class="btn" id="mark">Mark where to grow</button></div>
       <div class="queue" id="queue"></div>
+      <h3 class="eyebrow">Sandbox</h3>
+      <div class="btns"><button class="btn" id="rain">Bring rain</button><button class="btn" id="storm">Storm</button></div>
+      <div class="hint">Weather comes on its own every day or two. These let you test a nest's design now.</div>
       </div>`;
     r.appendChild(brain);
     const work = brain.querySelector('#work')!;
@@ -130,6 +133,8 @@ export class UI {
       this.markerMode = !this.markerMode;
       this.syncBrain();
     };
+    (brain.querySelector('#rain') as HTMLElement).onclick = () => this.game.sim.startRain(false);
+    (brain.querySelector('#storm') as HTMLElement).onclick = () => this.game.sim.startRain(true);
     (brain.querySelector('#collapse') as HTMLElement).onclick = () => {
       brain.classList.toggle('collapsed');
       (brain.querySelector('#collapse') as HTMLElement).textContent = brain.classList.contains('collapsed') ? 'show' : 'hide';
@@ -190,7 +195,7 @@ export class UI {
     over.id = 'over';
     r.appendChild(over);
 
-    for (const id of ['pop', 'maj', 'brood', 'food', 'day', 'time', 'queue', 'perf', 'inspect', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark']) {
+    for (const id of ['pop', 'maj', 'brood', 'food', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark']) {
       this.els[id] = r.querySelector(`#${id}`) as HTMLElement;
     }
     this.syncBrain();
@@ -364,6 +369,7 @@ export class UI {
       this.lastChambers = sim.nest.chambers.length;
       this.syncBrain();
     }
+    while (sim.events.length) this.toast(sim.events.shift()!);
     this.tooltip();
     this.refresh -= dt;
     if (this.refresh > 0) return;
@@ -377,6 +383,7 @@ export class UI {
     this.els.food!.textContent = String(col.stored);
     this.els.food!.classList.toggle('warn', col.starving);
     this.els.day!.textContent = `Day ${sim.day}`;
+    this.els.sky!.textContent = sim.weather.rain > 0.15 ? (sim.weather.storm ? 'Storm' : 'Rain') : sim.dayT < 0.23 || sim.dayT > 0.8 ? 'Night' : 'Clear';
     const mins = Math.floor(sim.dayT * 24 * 60);
     this.els.time!.textContent = `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
     this.els.perf!.textContent = `${(game.tps / TICK_HZ).toFixed(1)}× real`;

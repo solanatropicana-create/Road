@@ -4,7 +4,7 @@ import { Brood, Corpse } from './brood';
 import { Carry, Task, TaskKind, Work, WORK, ChamberKind } from './types';
 import { F } from './fields';
 import { TUNING, TICK_HZ, W } from '../config';
-import { EMPTY, SEED, FRUIT, SOLID } from '../world/mat';
+import { EMPTY, SEED, FRUIT, SOLID, WATER } from '../world/mat';
 import { clamp } from '../util/math';
 
 /** Multipliers for the colony brain's priority levels: off, low, normal, high. */
@@ -156,8 +156,20 @@ export class Colony {
     let hungry = 0;
     let loose = 0;
     const dead: Brood[] = [];
+    const world = sim.world;
     for (const b of this.brood) {
       b.age++;
+      if (!b.carried) {
+        const m = world.mat[b.y * W + b.x]!;
+        if (m === WATER || SOLID[m]) {
+          // Flooded or buried brood dies unless the water drains in time.
+          if (++b.wet > TICK_HZ * 25) {
+            dead.push(b);
+            this.deaths['brood drowned'] = (this.deaths['brood drowned'] ?? 0) + 1;
+            continue;
+          }
+        } else if (b.wet > 0) b.wet--;
+      }
       if (b.stage === 0) {
         if (b.age >= TUNING.eggTicks * sp) {
           b.stage = 1;
@@ -334,6 +346,8 @@ export class Colony {
     // and leave digging for later.
     const shortage = clamp(1 - this.stored / (adults * 2 + 12), 0, 1);
     need[Task.Forage] = 0.3 + 0.9 * shortage + (this.starving ? 0.8 : 0);
+    // Nobody goes out in the rain.
+    if (sim.raining) need[Task.Forage] = need[Task.Forage]! * 0.08;
     if (this.starving || this.stored < adults * 0.3) need[Task.Dig] = need[Task.Dig]! * 0.35;
     // Nowhere left to put seed: fewer foragers, more diggers (the granary needs finishing).
     if (f[F.Gran] === 0 && this.adults > 4) {

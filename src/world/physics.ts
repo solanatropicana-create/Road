@@ -1,6 +1,7 @@
 import { World, CHUNK } from './world';
 import { EMPTY, WATER, POWDER, SAND, REFUSE } from './mat';
 import { Rng } from '../util/rng';
+import { Moisture, ABSORB } from './moisture';
 
 /** Flag in `tint` for loose soil that has settled and holds its shape. */
 export const PACKED = 0x80;
@@ -14,11 +15,13 @@ export class Physics {
   private rng: Rng;
   private stamp: Uint8Array;
   private clock = 1;
+  readonly moisture: Moisture;
 
   constructor(world: World, rng: Rng) {
     this.world = world;
     this.rng = rng;
     this.stamp = new Uint8Array(world.size);
+    this.moisture = new Moisture(world, rng);
   }
 
   step(): void {
@@ -52,6 +55,10 @@ export class Physics {
   private cell(i: number, x: number): void {
     const w = this.world;
     const m = w.mat[i]!;
+    if (m === WATER) {
+      if (this.stamp[i] !== this.clock) this.water(i, x);
+      return;
+    }
     if (!POWDER[m] || this.stamp[i] === this.clock) return;
     const W = w.w;
     const below = i + W;
@@ -103,6 +110,58 @@ export class Physics {
         this.move(i, below + 2 * d);
       }
     }
+  }
+
+  /**
+   * Water falls, runs sideways, and soaks into whatever soil it touches.
+   * A flood in the nest drains away into the walls over a few minutes.
+   */
+  private water(i: number, x: number): void {
+    const w = this.world;
+    const W = w.w;
+    const below = i + W;
+    if (w.mat[below] === EMPTY) {
+      this.move(i, below);
+      return;
+    }
+    const dir = this.rng.next() < 0.5 ? -1 : 1;
+    // Soak in.
+    for (const n of [below, i + dir, i - dir]) {
+      const a = ABSORB[w.mat[n]!]!;
+      // Tunnel walls drink slowly, so a flood in the nest stands for a while.
+      if (a > 0 && w.moist[n]! < 236 && this.rng.next() < a * (w.bg[i] === 1 ? 0.01 : 0.05)) {
+        this.moisture.add(n, 70);
+        w.set(i, EMPTY, w.tone[i], w.tint[i]);
+        return;
+      }
+    }
+    // Run off.
+    for (const d of [dir, -dir]) {
+      if (x + d < 1 || x + d >= W - 1) continue;
+      if (w.mat[below + d] === EMPTY && w.mat[i + d] === EMPTY) {
+        this.move(i, below + d);
+        return;
+      }
+    }
+    for (const d of [dir, -dir]) {
+      let j = i;
+      for (let s = 0; s < 3; s++) {
+        const xx = (j % W) + d;
+        if (xx < 1 || xx >= W - 1 || w.mat[j + d] !== EMPTY) break;
+        j += d;
+      }
+      if (j !== i) {
+        this.move(i, j);
+        return;
+      }
+    }
+    // Puddles in the open dry off in half a minute or so.
+    if (w.bg[i] === 0 && w.mat[i - W] === EMPTY && this.rng.next() < 1 / 400) {
+      w.set(i, EMPTY, w.tone[i], w.tint[i]);
+      return;
+    }
+    // Standing water keeps soaking away slowly.
+    if (this.rng.next() < 0.3) w.wake(i);
   }
 
   private move(a: number, b: number): void {

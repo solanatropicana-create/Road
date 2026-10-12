@@ -11,6 +11,8 @@ export class Brood {
   carried = false;
   /** Fed for a major (big-headed soldier) instead of a minor worker. */
   major = false;
+  /** Ticks spent under water or buried. */
+  wet = 0;
 
   constructor(x: number, y: number) {
     this.x = x;

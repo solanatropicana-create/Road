@@ -127,15 +127,15 @@ export class Nest {
   chimney(x: number): void {
     const w = this.world;
     const g = w.ground[x]!;
-    // Deep enough to hold back the spoil heaps; open sky above that.
-    for (let y = Math.max(1, g - 22); y < g - 1; y++) {
+    // All the way up: a capped V would let spoil pile into a roof over the crater.
+    for (let y = 1; y < g - 1; y++) {
       const half = 3 + (g - 1 - y);
       for (let xx = x - half; xx <= x + half; xx++) {
         if (xx < 1 || xx >= w.w - 1) continue;
         const i = y * w.w + xx;
         if (w.mat[i] === EMPTY) w.plan[i] = 1;
-        // Whatever grew here ends up under the spoil.
-        if (w.plant[i]) w.setPlant(i, 0);
+        // Low growth right by the hole ends up under the spoil; tall stems stay.
+        if (w.plant[i] && y > g - 8) w.setPlant(i, 0);
       }
     }
   }
