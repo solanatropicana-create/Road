@@ -225,7 +225,7 @@ export class Ground {
     const rng = sim.rng;
     const cx = r.x0 + r.span * rng.range(0.3, 0.7);
     const half = Math.max(4, r.span * rng.range(0.25, 0.42));
-    const wetter = clamp((w.moist[((r.top.get(Math.round(cx)) ?? c.floorY) - 2) * w.w + Math.round(cx)]! - 150) / 100, 0, 1);
+    const wetter = clamp((w.moist[((r.top.get(Math.round(cx)) ?? c.floorY) - 2) * w.w + Math.round(cx)]! - 40) / 90, 0, 1);
     const high = rng.range(3, 6) + wetter * 4;
     let fell = 0;
     for (let x = Math.floor(cx - half); x <= Math.ceil(cx + half); x++) {
@@ -233,19 +233,34 @@ export class Ground {
       if (t === undefined) continue;
       const u = (x - cx) / half;
       const hh = Math.round(high * (1 - u * u));
+      // The arch over this column comes away...
+      const mass: { tone: number; src: number }[] = [];
       for (let k = 1; k <= hh; k++) {
         const y = t - k;
         if (y <= w.ground[x]! + 1) break;
         const i = y * w.w + x;
         const m = w.mat[i]!;
         if (HARD[m] || m === EMPTY || m === WATER || (m === SAND && w.tint[i]! & PLUG)) continue;
-        w.set(i, SAND, w.tone[i], m === SAND ? w.tint[i]! & 0x3f : m);
-        w.wake(i);
-        // The hollow is the nest's now: the fall comes down at once (spoil outside the
-        // nest never pours into it, see Physics), and the workers will clear it.
+        const src = m === SAND ? w.tint[i]! & 0x3f : m;
+        mass.push({ tone: w.tone[i]!, src });
+        // The hollow is the nest's now: the workers will clear the fall and keep it.
+        w.set(i, EMPTY, w.tone[i], src);
         sim.nest.adopt(i);
+        if (rng.chance(0.3)) sim.dust(i, src || HUMUS);
+      }
+      if (!mass.length) continue;
+      // ...and lands all at once, a heap of loose soil on the floor below: whoever is
+      // under it is buried (they cannot climb out through it as it pours).
+      let yb = t;
+      while (yb < w.h - 3 && w.mat[(yb + 1) * w.w + x] === EMPTY) yb++;
+      for (let j = 0; j < mass.length; j++) {
+        const i = (yb - j) * w.w + x;
+        if (w.mat[i] !== EMPTY) break;
+        w.set(i, SAND, mass[j]!.tone, mass[j]!.src);
+        sim.nest.adopt(i);
+        w.wake(i);
         fell++;
-        if (rng.chance(0.3)) sim.dust(i, m === SAND ? HUMUS : m);
+        if (j === mass.length - 1 && rng.chance(0.5)) sim.dust(i, mass[j]!.src || HUMUS);
       }
     }
     // (Nothing left to fall: the roof has come down to rock, or to the surface.)
