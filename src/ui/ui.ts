@@ -1265,6 +1265,12 @@ export class UI {
           game.cine.startMontage();
         }
         if (e.key === 'dormancy' && sim.colony.hadWorkers) this.yearReview();
+        // A roof coming down shakes the view, the more the nearer it is to what's on screen.
+        if ((e.key === 'caveIn' || e.key === 'caveInDead') && loc) {
+          const cam = game.cam;
+          const d = Math.hypot(loc.x - cam.x, loc.y - cam.y) * cam.zoom / Math.max(cam.screenW, cam.screenH);
+          if (d < 1.2) cam.shake((e.key === 'caveInDead' ? 9 : 6) * (1 - d / 1.2) + 1.5);
+        }
         this.note(`ev_${e.key}`, vars, { toast: true, merge: !e.kind, loc });
         if (loc) dir.notice(loc.x, loc.y, t(`ev_${e.key}`, vars), e.key);
         // Big news gets a ring on the spot, so the eye finds it.
@@ -1376,6 +1382,9 @@ export class UI {
       if (!c.ready) status = t('roomDigging', { p: Math.min(99, Math.round((100 * c.dug) / Math.max(1, c.cells.length))) });
       else if (holdsStores(c.kind)) status = c.seeds ? t('roomSeeds', { n: c.seeds }) : '';
       else if (c.kind === 'nursery') status = t('roomBrood', { n: col.brood.filter((b) => !b.carried && sim.nest.chamberAt(b.y * w.w + b.x) === c).length });
+      // A roof under strain says so, in the warning colour.
+      const strain = c.ready ? sim.ground.strain[c.id] ?? 0 : 0;
+      if (strain >= 0.15) status = `<b class="warn">${t('roomCracking', { p: Math.round(Math.min(1, strain) * 100) })}</b>${status ? ' · ' + status : ''}`;
       const tint = ZONE_TINT[c.kind]!;
       return `<button class="roomrow${c.ready ? '' : ' dig'}" data-loc="${Math.round(c.cx)},${Math.round(c.cy)}"><i style="background:rgb(${tint[0]},${tint[1]},${tint[2]})"></i><span>${t(`ch_${c.kind}`)}</span><em>${depthCm(c, w.ground)} cm</em><small>${status}</small></button>`;
     });

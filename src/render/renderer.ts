@@ -254,10 +254,13 @@ export class Renderer {
       const upOpen = !SOLID[w.mat[up]!];
       const dnOpen = !SOLID[w.mat[dn]!];
       if (upOpen) {
-        const f = w.bg[up] === 0 ? 1.16 : 1.1;
+        const f = w.bg[up] === 0 ? 1.16 : 1.14;
         c = [c[0] * f, c[1] * f, c[2] * f];
       } else if (dnOpen && w.bg[dn] === 1) {
-        c = [c[0] * 0.72, c[1] * 0.72, c[2] * 0.74];
+        c = [c[0] * 0.66, c[1] * 0.66, c[2] * 0.68];
+      } else if (x > 0 && x < w.w - 1 && ((!SOLID[w.mat[i - 1]!] && w.bg[i - 1] === 1) || (!SOLID[w.mat[i + 1]!] && w.bg[i + 1] === 1))) {
+        // The cut face of a tunnel's side wall: a thin edge, so the nest reads as hollows in the soil.
+        c = [c[0] * 0.8, c[1] * 0.8, c[2] * 0.82];
       }
     }
     const det = this.detail[i]!;
@@ -284,7 +287,7 @@ export class Renderer {
     const w = this.world;
     const src = w.tint[i]! & 0x3f || this.guessSoil(x, y);
     const tone = w.tone[i]! / 255;
-    let c = mixRGB(sampleRamp(soilRamp(src), 0.25 + tone * 0.5), BACKWALL_DARK, 0.42);
+    let c = mixRGB(sampleRamp(soilRamp(src), 0.25 + tone * 0.5), BACKWALL_DARK, 0.5);
     const z = w.zone[i]!;
     if (z) {
       const kind = this.zoneKinds[z - 1];
@@ -480,6 +483,26 @@ export class Renderer {
    * The dig plan as a survey overlay: amber dots on soil the colony means to
    * remove, and a pin where the player asked it to grow.
    */
+  /** A soft pulse over each nestmate or piece of brood buried alive, so the eye finds them under the fall. */
+  private drawBuried(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }, z: number): void {
+    const list = sim.ground.buried;
+    if (!list.length) return;
+    const ctx = this.ctx;
+    const ph = (performance.now() / 1000) * 2.4;
+    ctx.save();
+    ctx.lineWidth = Math.max(0.2, 1.3 / z);
+    for (const b of list) {
+      if (b.x < view.x0 - 4 || b.x > view.x1 + 4 || b.y < view.y0 - 4 || b.y > view.y1 + 4) continue;
+      if (!this.known(sim, b.x, b.y)) continue;
+      const k = (ph + b.id * 0.37) % 1;
+      ctx.strokeStyle = `rgba(244,206,128,${0.75 * (1 - k)})`;
+      ctx.beginPath();
+      ctx.arc(b.x + 0.5, b.y + 0.5, 1.2 + k * 3.2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   /**
    * Hairline cracks in the roof of a room under strain (see Ground): more,
    * longer and darker as the strain builds toward a cave-in.
@@ -1087,8 +1110,9 @@ export class Renderer {
     const W = this.canvas.width;
     const H = this.canvas.height;
     const z = cam.zoom * this.dpr;
-    const ox = W / 2 - cam.x * z;
-    const oy = H / 2 - cam.y * z;
+    const jolt = cam.jolt();
+    const ox = W / 2 - cam.x * z + jolt.x;
+    const oy = H / 2 - cam.y * z + jolt.y;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const sky = skyAt(solar);
     this.skyTop = sky.top;
@@ -1153,6 +1177,7 @@ export class Renderer {
     }
     this.drawPlan(sim, view, z, dt);
     this.drawCracks(sim, view, z);
+    this.drawBuried(sim, view, z);
     if (this.trails) this.drawTrails(sim, view);
     this.painter.drawCorpses(ctx, col.corpses, z, this.lightAt, view);
     this.painter.drawBrood(ctx, col.brood, z, this.lightAt, view, TUNING.pupaTicks);

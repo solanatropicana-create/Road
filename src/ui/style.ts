@@ -57,6 +57,7 @@ export const CSS = `
 #card .stat.big b { font-size: 30px; letter-spacing: -0.02em; }
 #card .stat span { font-family: var(--sans); font-size: 11.5px; color: var(--ink-faint); white-space: nowrap; }
 #card .stat b.warn { color: var(--danger); }
+.roomrow b.warn { color: var(--danger); font-weight: 600; }
 #fooddays { font-family: var(--mono); font-size: 12px; color: var(--ink-faint); white-space: nowrap; }
 #fooddays.warn { color: var(--danger); }
 #card .clock { display: flex; align-items: center; gap: 8px; padding-top: 8px; border-top: 1px solid var(--line); font-family: var(--mono); font-size: 12px; color: var(--ink-dim); white-space: nowrap; }
@@ -330,6 +331,12 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 /* --- phases: before landing there is only the meadow and the question */
 #ui.ph-choose #drawer, #ui.ph-choose #card, #ui.ph-choose #strip { display: none !important; }
 
+/* --- documentary: the panels step aside for the picture, the controls fade back */
+#card, #drawer, #inspect { transition: opacity .6s ease, transform .6s ease; }
+#bar { transition: opacity .5s ease; }
+#ui.doc #card, #ui.doc #drawer, #ui.doc #inspect { opacity: 0; transform: translateY(-8px); pointer-events: none; }
+#ui.doc #bar { opacity: .32; }
+#ui.doc #bar:hover, #ui.doc #bar:focus-within { opacity: 1; }
 /* --- cinema mode (H): a clean frame; only the caption and a way back stay */
 #cinema-exit { position: absolute; top: 12px; right: 12px; display: none; pointer-events: auto; background: var(--panel); font-size: 11px; opacity: 0.55; }
 #cinema-exit:hover { opacity: 1; }

@@ -1,11 +1,13 @@
 import type { Game } from '../main';
 import type { Ant } from '../sim/ant';
+import type { Critter } from '../sim/critters';
 import { Carry, Task } from '../sim/types';
 import { t, num } from './i18n';
 import { TICK_HZ } from '../config';
+import { SOLID } from '../world/mat';
 import { dateText } from './ui';
 
-type Shot = 'queen' | 'forager' | 'digger' | 'hauler' | 'nurse' | 'major' | 'granary' | 'wide';
+type Shot = 'queen' | 'forager' | 'digger' | 'hauler' | 'nurse' | 'major' | 'granary' | 'wide' | 'rescue' | 'shoring' | 'lasius';
 
 /**
  * Documentary camera: cuts between subjects every few seconds and glides
@@ -18,6 +20,8 @@ export class Director {
   private game: Game;
   private subject: Ant | null = null;
   private point: { x: number; y: number } | null = null;
+  /** A critter followed through a shot (a garden ant in a scuffle). */
+  private critter: Critter | null = null;
   private left = 0;
   private last: Shot | null = null;
   /** Something just happened somewhere: the next cut goes there. */
@@ -27,6 +31,11 @@ export class Director {
 
   constructor(game: Game) {
     this.game = game;
+  }
+
+  /** The ant the camera is on (marked on screen, so the caption has a face). */
+  get focus(): Ant | null {
+    return this.active ? this.subject : null;
   }
 
   toggle(): void {
@@ -57,12 +66,14 @@ export class Director {
    */
   notice(x: number, y: number, caption: string, key: string): void {
     if (!this.active) return;
-    const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds', 'neighbourMetL', 'neighbourMetR', 'youngColony', 'teamCarry', 'cutUp', 'recruitHeavy', 'tugOfWar'];
+    const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds', 'neighbourMetL', 'neighbourMetR', 'youngColony', 'teamCarry', 'cutUp', 'recruitHeavy', 'tugOfWar', 'lasiusFight', 'lasiusKill', 'lasiusCaught', 'buriedOut'];
     const wide = ['war', 'raid', 'flight', 'moleBreach', 'moleNest', 'queenKilledMole', 'toad', 'toadBack', 'lizard', 'leafFall', 'otherQueens', 'wormsUp', 'youngColonyGone', 'secondGate', 'raidYoung', 'warYoung'];
-    const zoom = close.includes(key) ? 11 : wide.includes(key) ? 3.4 : 6;
+    // A room's roof: close enough to see the cracks and the fall, wide enough for the room.
+    const room = ['caveIn', 'caveInDead', 'roofCracks', 'seepage', 'shoring'];
+    const zoom = close.includes(key) ? 11 : wide.includes(key) ? 3.4 : room.includes(key) ? 7.5 : 6;
     this.story = { x, y, caption, zoom };
     // Don't cut away from a shot that has barely started, unless it's big news.
-    if (this.ran > 2.5 || wide.includes(key)) this.left = 0;
+    if (this.ran > 2.5 || wide.includes(key) || key === 'caveIn' || key === 'caveInDead') this.left = 0;
   }
 
   update(dt: number): void {
@@ -71,9 +82,15 @@ export class Director {
     this.ran += dt;
     if (this.left <= 0 || (this.subject && !this.subject.alive)) this.cut();
     const cam = this.game.cam;
+    // A slow push in through each shot, as a camera operator would.
+    if ((this.subject || this.critter) && this.last !== 'wide') cam.tzoom = Math.min(cam.maxZoom, cam.tzoom * (1 + dt * 0.015));
     if (this.subject) {
       cam.follow = { x: this.subject.x, y: this.subject.y - 2 };
       this.caption = this.describe(this.subject);
+    } else if (this.critter) {
+      const c = this.critter;
+      if (!this.game.sim.critters.list.includes(c)) this.critter = null;
+      else cam.follow = { x: c.x, y: c.y - 2 };
     } else if (this.point) {
       cam.follow = this.point;
     }
@@ -89,6 +106,7 @@ export class Director {
       const s = this.story;
       this.story = null;
       this.subject = null;
+      this.critter = null;
       this.point = { x: s.x, y: s.y };
       this.caption = s.caption;
       cam.tzoom = Math.min(cam.maxZoom, Math.max(cam.minZoom, s.zoom));
@@ -98,7 +116,13 @@ export class Director {
     }
     const under = (a: Ant): boolean => w.bg[a.y * w.w + a.x] === 1;
     const pick = <T>(xs: T[]): T | undefined => xs[Math.floor(Math.random() * xs.length)];
+    // What is going on now weighs most: a rescue under way, a roof being shored, a scuffle at the tree.
+    const g = sim.ground;
+    const fights = sim.critters.list.filter((c) => c.kind === 'lasius' && (c.state === 1 || c.state === 4));
     const options: [Shot, number][] = [
+      ['rescue', sim.nest.rescuing && g.buried.length ? 30 : 0],
+      ['lasius', fights.length ? 12 : 0],
+      ['shoring', g.strained > 0 ? 2.5 : 0],
       ['forager', 3],
       ['digger', 2],
       ['hauler', 1.5],
@@ -110,11 +134,11 @@ export class Director {
     ];
     for (let tries = 0; tries < 12; tries++) {
       let total = 0;
-      for (const [s, wgt] of options) if (s !== this.last) total += wgt;
+      for (const [s, wgt] of options) if (s !== this.last || s === 'rescue') total += wgt;
       let r = Math.random() * total;
       let shot: Shot = 'wide';
       for (const [s, wgt] of options) {
-        if (s === this.last) continue;
+        if ((s === this.last && s !== 'rescue') || wgt <= 0) continue;
         r -= wgt;
         if (r <= 0) {
           shot = s;
@@ -123,8 +147,38 @@ export class Director {
       }
       let subject: Ant | undefined;
       let point: { x: number; y: number } | null = null;
+      let critter: Critter | null = null;
       let zoom = 8;
       switch (shot) {
+        case 'rescue': {
+          // Over the fall, where they dig: the buried one nearest the middle of it.
+          const b = g.buried[Math.floor(Math.random() * g.buried.length)];
+          if (b) {
+            point = { x: b.x, y: b.y - 3 };
+            zoom = 9;
+            const n = g.buried.length;
+            this.caption = t('dc_rescue', { n, m: col.ants.filter((a) => a.task === Task.Dig && Math.abs(a.x - b.x) < 14 && Math.abs(a.y - b.y) < 12).length });
+          }
+          break;
+        }
+        case 'lasius': {
+          critter = fights[Math.floor(Math.random() * fights.length)] ?? null;
+          zoom = 12;
+          if (critter) this.caption = t(critter.state === 4 ? 'dc_lasiusDrag' : 'dc_lasiusFight');
+          break;
+        }
+        case 'shoring': {
+          subject = pick(col.ants.filter((a) => a.shoring));
+          if (!subject) {
+            const c = sim.nest.chambers.find((r) => r.ready && (g.strain[r.id] ?? 0) >= 0.15);
+            if (c) {
+              point = { x: c.cx, y: c.floorY - c.h };
+              this.caption = t('dc_cracking', { kind: t(`ch_${c.kind}`), p: Math.round(Math.min(1, g.strain[c.id]!) * 100) });
+            }
+          }
+          zoom = 10;
+          break;
+        }
         case 'forager':
           subject = pick(col.ants.filter((a) => a.task === Task.Forage && !under(a) && a.carry === Carry.Seed)) ??
             pick(col.ants.filter((a) => a.task === Task.Forage && !under(a)));
@@ -173,12 +227,13 @@ export class Director {
           break;
         }
       }
-      if (!subject && !point) continue;
+      if (!subject && !point && !critter) continue;
       this.last = shot;
       this.subject = subject ?? null;
       this.point = point;
+      this.critter = critter;
       cam.tzoom = Math.min(cam.maxZoom, Math.max(cam.minZoom, zoom));
-      this.left = shot === 'wide' ? 8 : 10 + Math.random() * 6;
+      this.left = shot === 'wide' ? 8 : shot === 'rescue' || shot === 'lasius' ? 9 : 10 + Math.random() * 6;
       return;
     }
     this.left = 3;
@@ -197,10 +252,12 @@ export class Director {
     const below = depth > 0.3;
     if (a.away > 0) return `${who} ${a.name} · ${t('dc_away')}`;
     if (a.paralysed) return `${who} ${a.name} · ${t('dc_paralysed')}`;
+    if (a.underFall && SOLID[w.mat[a.y * w.w + a.x]!]) return `${who} ${a.name} · ${t('dc_buried')}`;
+    if (a.shoring) return `${who} ${a.name} · ${t('dc_shoring')}`;
     if (a.cpose > 0) return `${who} ${a.name} · ${t('dc_cpose')}`;
     if (a.fight > 0) return `${who} ${a.name} · ${t('dc_boxing')}`;
     if (a.sick > 0.6) return `${who} ${a.name} · ${t('dc_sick')}`;
-    if (a.haul) return `${who} ${a.name} · ${t('dc_hauling', { n: a.haul.carriers.length - 1 })}`;
+    if (a.haul) return `${who} ${a.name} · ${a.haul.carriers.length > 1 ? t('dc_hauling', { n: a.haul.carriers.length - 1 }) : t('dc_haulingAlone')}`;
     if (a.recruiting) return `${who} ${a.name} · ${t('dc_recruiting')}`;
     if (a.bound && a.carry === Carry.None) return `${who} ${a.name} · ${t('dc_bound')}`;
     if (a.alarm > TICK_HZ * 4 && a.carry === Carry.None) return `${who} ${a.name} · ${t(sim.trouble() ? 'dc_alarm' : 'dc_agitated')}`;

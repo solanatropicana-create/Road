@@ -223,7 +223,7 @@ export class Game {
     } else if (this.director.active) this.director.update(dt);
     else this.cam.follow = this.selected ? { x: this.selected.x, y: this.selected.y - 2 } : this.cam.follow;
     this.cam.update(dt);
-    this.renderer.render(this.sim, this.cam, dt, this.paused ? 0 : this.speed, this.ui.cinema ? null : this.selected);
+    this.renderer.render(this.sim, this.cam, dt, this.paused ? 0 : this.speed, this.ui.cinema ? null : this.selected ?? this.director.focus);
     this.ui.update(dt);
     // Autosave every few in-game hours (not more than every few seconds), and at least once a minute.
     const due = this.sim.tick - this.lastSaveTick >= DAY_TICKS / 6 && now - this.lastSave > 4000;

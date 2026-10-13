@@ -157,10 +157,12 @@ export class World {
   }
 
   markDirty(i: number): void {
-    // The renderer shades a cell by its vertical neighbours, so dirty those too.
+    // The renderer shades a cell by its neighbours (rims, wall shade), so dirty those too.
     this.mark1(i);
     if (i >= this.w) this.mark1(i - this.w);
     if (i + this.w < this.size) this.mark1(i + this.w);
+    if (i > 0) this.mark1(i - 1);
+    if (i + 1 < this.size) this.mark1(i + 1);
   }
 
   private mark1(i: number): void {

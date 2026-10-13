@@ -76,6 +76,14 @@ export class Ant {
   carryBrood: Brood | null = null;
   timer = 0;
   private act: Act = Act.None;
+  /** Pressing soil into a cracked roof just now (for the caption and the drawing). */
+  get shoring(): boolean {
+    return this.act === Act.Shore && this.timer > 0;
+  }
+  /** Buried alive just now (for the caption and the drawing). */
+  get underFall(): boolean {
+    return this.buried > 0;
+  }
   private actCell = -1;
   private dropDist = 0;
   private dumpDir = 1;
