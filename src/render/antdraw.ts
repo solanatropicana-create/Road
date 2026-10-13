@@ -46,6 +46,7 @@ interface Vis {
 }
 
 interface Body {
+  /** Drawing scale of a typical member of the caste; each ant's own size multiplies it (Ant.size). */
   scale: number;
   head: [number, number, number, number]; // cx, cy, rx, ry
   thorax: [number, number, number, number, number]; // + tilt
@@ -64,8 +65,9 @@ interface Body {
   span: number;
 }
 
+// About 5.2 mm from jaws to gaster: most Messor structor workers are small.
 const WORKER: Body = {
-  scale: 1,
+  scale: 0.75,
   head: [2.3, -1.4, 0.82, 0.68],
   thorax: [0.78, -1.35, 1.05, 0.5, -0.14],
   gaster: [-2.25, -1.3, 1.35, 0.95, 0.12],
@@ -136,6 +138,12 @@ const MALE: Body = {
 
 /** The drawing body for a caste. */
 const bodyOf = (caste: string): Body => (caste === 'queen' || caste === 'gyne' ? QUEEN : caste === 'soldier' ? MAJOR : caste === 'male' ? MALE : WORKER);
+
+/** An ant's length in mm as drawn, from the tips of the mandibles to the end of the gaster. */
+export function bodyLength(a: Ant): number {
+  const b = bodyOf(a.caste);
+  return (b.mouth[0] - b.gaster[0] + b.gaster[2]) * b.scale * a.size;
+}
 
 const BODY_COL = hex('#261a12');
 /**
@@ -379,7 +387,9 @@ export class AntPainter {
         const step = Math.min(dist, Math.max(nominal * dt, dist * (1 - Math.exp(-dt * 6 * Math.max(1, speed)))));
         v.x += (ex / dist) * step;
         v.y += (ey / dist) * step;
-        v.gait += (step / (a.caste === 'queen' ? QUEEN.stride : WORKER.stride)) * Math.PI;
+        const b = bodyOf(a.caste);
+        // A small ant takes more steps for the same distance.
+        v.gait += (step / (b.stride * b.scale * a.size)) * Math.PI;
       }
       v.still = dist > 0.05 || (a.timer > 0 && a.task === Task.Dig) ? 0 : v.still + dt;
       // Pose: legs toward whatever the ant grips; on the bare glass, belly
@@ -427,6 +437,7 @@ export class AntPainter {
       if (!v) continue;
       if (v.x < view.x0 - 8 || v.x > view.x1 + 8 || v.y < view.y0 - 8 || v.y > view.y1 + 8) continue;
       const body = bodyOf(a.caste);
+      const k = body.scale * a.size;
       const l = light(v.x, v.y);
       ctx.save();
       // Feet rest on the cell edge toward the surface.
@@ -437,26 +448,26 @@ export class AntPainter {
       const flip = c < 0 ? -1 : 1;
       // Partway through a turn, close enough to see it, the ant yaws as a solid.
       // Far off or curled up it stays a side profile, narrowed but never to a sliver.
-      const turning = Math.abs(s) > 0.03 && z * body.scale >= 1.6 && a.cpose === 0;
+      const turning = Math.abs(s) > 0.03 && z * k >= 1.6 && a.cpose === 0;
       const f = turning ? 1 : Math.abs(s) <= 0.03 ? flip : flip * Math.max(Math.abs(c), 0.4);
-      ctx.scale(f * body.scale, body.scale);
+      ctx.scale(f * k, k);
       const busy = a.timer > 0 ? Math.sin(this.time * 18 + a.id) * 0.12 : 0;
       if (a === selected) {
         if (turning) {
           ctx.save();
           ctx.scale(flip * Math.max(Math.abs(c), 0.55), 1);
-          this.marker(ctx, body, z);
+          this.marker(ctx, body, z * k);
           ctx.restore();
-        } else this.marker(ctx, body, z);
+        } else this.marker(ctx, body, z * k);
       }
       const wall = this.world.bg[a.y * this.world.w + a.x] === 1;
       // Standing about for a while: groom, drawing a foreleg over the antennae.
       this.groom = v.still > 1.5 && a.carry === Carry.None && a.meet === 0 ? Math.sin(this.time * 7 + a.id) : null;
       this.meeting = a.meet > 0 || a.fight > 0;
       this.airborne = a.caste === 'queen' && a.wings && Math.hypot(a.x + 0.5 - v.x, a.y + 0.5 - v.y) > 1.5;
-      if (turning) this.turning(ctx, a, body, v.gait, l, z, busy, wall, c, s);
+      if (turning) this.turning(ctx, a, body, k, v.gait, l, z, busy, wall, c, s);
       // Facing -x the near side is the other one, whose legs are half a stride out of phase.
-      else this.ant(ctx, a, body, v.gait + (c < 0 ? Math.PI : 0), l, z, busy, false, wall);
+      else this.ant(ctx, a, body, k, v.gait + (c < 0 ? Math.PI : 0), l, z, busy, false, wall);
       this.airborne = false;
       this.groom = null;
       this.meeting = false;
@@ -464,7 +475,7 @@ export class AntPainter {
     }
   }
 
-  /** A pair of brackets around the followed ant, like a field-guide callout. */
+  /** A pair of brackets around the followed ant, like a field-guide callout (z: screen pixels per body unit). */
   private marker(ctx: CanvasRenderingContext2D, b: Body, z: number): void {
     const x0 = b.gaster[0] - b.gaster[2] - 0.8;
     const x1 = b.mouth[0] + 0.8;
@@ -479,9 +490,10 @@ export class AntPainter {
     ctx.stroke();
   }
 
-  private ant(ctx: CanvasRenderingContext2D, a: Ant | null, b: Body, gait: number, l: RGB, z: number, busy: number, dead: boolean, wall = false): void {
+  /** k is the drawing scale the context is already set to (the caste's, times the ant's own size). */
+  private ant(ctx: CanvasRenderingContext2D, a: Ant | null, b: Body, k: number, gait: number, l: RGB, z: number, busy: number, dead: boolean, wall = false): void {
     const S = shapes(b);
-    const s = z * b.scale;
+    const s = z * k;
     const px = 1 / s;
     // Level of detail by on-screen size: full anatomy close up, a clean silhouette further out.
     const full = s >= 4;
@@ -564,7 +576,7 @@ export class AntPainter {
       }
       ctx.stroke();
     }
-    if (a && a.carry !== Carry.None) this.load(ctx, a, b, busy, l);
+    if (a && a.carry !== Carry.None) this.load(ctx, a, b, k, busy, l);
   }
 
   /**
@@ -576,9 +588,9 @@ export class AntPainter {
    * c and s are the yaw's cosine and sine (s signed by the way the turn goes):
    * a point x along the body and w out to the +1 side lands at x * c - w * s.
    */
-  private turning(ctx: CanvasRenderingContext2D, a: Ant, b: Body, gait: number, l: RGB, z: number, busy: number, wall: boolean, c: number, s: number): void {
-    const px = 1 / (z * b.scale);
-    const full = z * b.scale >= 4;
+  private turning(ctx: CanvasRenderingContext2D, a: Ant, b: Body, k: number, gait: number, l: RGB, z: number, busy: number, wall: boolean, c: number, s: number): void {
+    const px = 1 / (z * k);
+    const full = z * k >= 4;
     const ac = Math.abs(c);
     const flip = c < 0 ? -1 : 1;
     const big = b === QUEEN;
@@ -641,7 +653,7 @@ export class AntPainter {
       ctx.translate(b.mouth[0] * c, 0);
       ctx.scale(flip * Math.max(ac, 0.55), 1);
       ctx.translate(-b.mouth[0], 0);
-      this.load(ctx, a, b, busy, l);
+      this.load(ctx, a, b, k, busy, l);
       ctx.restore();
     };
     const face = (): void => {
@@ -894,14 +906,18 @@ export class AntPainter {
     ctx.stroke();
   }
 
-  /** Whatever the ant holds in its mandibles. */
-  private load(ctx: CanvasRenderingContext2D, a: Ant, b: Body, hb: number, l: RGB): void {
-    const mx = b.mouth[0] + hb + 0.35;
-    const my = b.mouth[1] + 0.1;
+  /** Whatever the ant holds in its mandibles, at its true size whatever the size of the ant (k: its drawing scale). */
+  private load(ctx: CanvasRenderingContext2D, a: Ant, b: Body, k: number, hb: number, l: RGB): void {
+    ctx.save();
+    ctx.translate(b.mouth[0] + hb + 0.35, b.mouth[1] + 0.1);
+    ctx.scale(1 / k, 1 / k);
+    // The load's own origin, just ahead of the jaws, in mm.
+    const mx = 0;
+    const my = 0;
     const blob = (rx: number, ry: number, col: RGB, rot = 0, dx = 0): void => {
       ctx.fillStyle = css(col, l);
       ctx.beginPath();
-      ctx.ellipse(mx + rx * 0.6 + dx, my, rx, ry, rot, 0, Math.PI * 2);
+      ctx.ellipse(rx * 0.6 + dx, 0, rx, ry, rot, 0, Math.PI * 2);
       ctx.fill();
     };
     switch (a.carry) {
@@ -910,7 +926,7 @@ export class AntPainter {
         blob(look.rx * 1.05, look.ry * 1.1, look.col, -0.3);
         ctx.fillStyle = css([255, 240, 200], l, 0.35);
         ctx.beginPath();
-        ctx.ellipse(mx + look.rx * 0.5, my - look.ry * 0.4, look.rx * 0.4, look.ry * 0.25, -0.3, 0, Math.PI * 2);
+        ctx.ellipse(look.rx * 0.5, -look.ry * 0.4, look.rx * 0.4, look.ry * 0.25, -0.3, 0, Math.PI * 2);
         ctx.fill();
         break;
       }
@@ -918,12 +934,12 @@ export class AntPainter {
         // A pellet of crumbs packed in the jaws.
         const col = mixRGB(sampleRamp(PAL.loam, a.carryTone / 255), [230, 215, 190], 0.14);
         const t = a.carryTone;
-        for (let k = 0; k < 5; k++) {
-          const ang = k * 1.9 + t * 0.07;
-          const r = k === 0 ? 0 : 0.28;
-          ctx.fillStyle = css(mixRGB(col, k % 2 ? [40, 28, 20] : [250, 236, 210], 0.12), l);
+        for (let i = 0; i < 5; i++) {
+          const ang = i * 1.9 + t * 0.07;
+          const r = i === 0 ? 0 : 0.28;
+          ctx.fillStyle = css(mixRGB(col, i % 2 ? [40, 28, 20] : [250, 236, 210], 0.12), l);
           ctx.beginPath();
-          ctx.ellipse(mx + 0.4 + Math.cos(ang) * r, my + Math.sin(ang) * r * 0.8, 0.3 - k * 0.02, 0.24, ang, 0, Math.PI * 2);
+          ctx.ellipse(mx + 0.4 + Math.cos(ang) * r, my + Math.sin(ang) * r * 0.8, 0.3 - i * 0.02, 0.24, ang, 0, Math.PI * 2);
           ctx.fill();
         }
         break;
@@ -973,9 +989,9 @@ export class AntPainter {
         ctx.strokeStyle = css([170, 150, 118], l, 0.6);
         ctx.lineWidth = 0.05;
         ctx.beginPath();
-        for (let k = 0; k < 4; k++) {
-          const sx = mx + 0.1 + k * 0.28;
-          ctx.moveTo(sx, my - 0.25 + k * 0.05);
+        for (let i = 0; i < 4; i++) {
+          const sx = mx + 0.1 + i * 0.28;
+          ctx.moveTo(sx, my - 0.25 + i * 0.05);
           ctx.quadraticCurveTo(sx + 0.12, my + 0.1, sx + 0.05, my + 0.45);
         }
         ctx.stroke();
@@ -1024,8 +1040,8 @@ export class AntPainter {
         ctx.lineWidth = 0.1;
         ctx.lineCap = 'round';
         ctx.beginPath();
-        for (let k = 0; k < 3; k++) {
-          const hx = mx + 0.8 + k * 0.3;
+        for (let i = 0; i < 3; i++) {
+          const hx = mx + 0.8 + i * 0.3;
           ctx.moveTo(hx, my);
           ctx.quadraticCurveTo(hx + 0.2, my + 0.45, hx - 0.1, my + 0.6);
         }
@@ -1048,6 +1064,7 @@ export class AntPainter {
         break;
       }
     }
+    ctx.restore();
   }
 
   // ---------------------------------------------------------------- brood and dead
@@ -1127,9 +1144,10 @@ export class AntPainter {
       const l = light(c.x, c.y);
       ctx.save();
       // On its back, legs curled up: the flip puts the back (y = -2.2) on the floor.
-      ctx.translate(c.x + 0.5, c.y + 1 - 2.2);
-      ctx.scale(((c.x + c.y) & 1) === 0 ? 1 : -1, -1);
-      this.ant(ctx, null, WORKER, 0, l, z, 0, true);
+      const k = WORKER.scale;
+      ctx.translate(c.x + 0.5, c.y + 1 - 2.2 * k);
+      ctx.scale((((c.x + c.y) & 1) === 0 ? 1 : -1) * k, -k);
+      this.ant(ctx, null, WORKER, k, 0, l, z, 0, true);
       if (c.kind === 'fungus') {
         // Mould bursting from the joints: white tufts of a muscardine fungus.
         ctx.fillStyle = css([236, 234, 222], l, 0.9);

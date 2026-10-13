@@ -305,7 +305,7 @@ export class Critters {
       target = null;
       let best = 1e9;
       for (const a of col.ants) {
-        if (a.caste !== 'worker' || a.away || a.paralysed || a.parasite > 0 || a.id <= col.firstWorkerId + 8) continue;
+        if (a.caste !== 'worker' || a.away || a.paralysed || a.parasite > 0 || a.size < 0.9 || a.size > 1.12) continue;
         if (w.bg[a.y * w.w + a.x] !== 0) continue;
         const d = Math.abs(a.x - c.x) + Math.abs(a.y - c.y);
         if (d < best && d < 260) {

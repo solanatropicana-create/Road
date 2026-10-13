@@ -34,7 +34,7 @@ Hedef şu: ekran görüntüsünün kendisi paylaşılmak istensin. Bir doğa bel
 ### 3.1 Gerçek ölçek: 1 hücre = 1 mm
 
 - Dünya 640 × 360 hücre, yani 64 × 36 cm'lik bir toprak dilimi. Bu, gerçek bir gözlem formikaryumu boyutu.
-- Minör işçi 7 mm, majör 9 mm, kraliçe 13 mm boyunda; gerçek *Messor structor* ölçüleri.
+- İşçiler 4,3–6,5 mm boyunda, çoğu küçük; kraliçenin tek başına büyüttüğü ilk işçiler (naniticler) 4 mm civarı. Majör 8,3–9,3 mm, kraliçe 10 mm. Gerçek *Messor structor* ölçüleri (işçi 3–9,5 mm, kraliçe 10–13 mm).
 - Tohum 1–2 hücre, kum tanesi 1 hücre.
 - Karınca saniyede 15 mm yürür; bu, gerçek *Messor* hızı.
 
