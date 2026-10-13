@@ -1338,6 +1338,12 @@ export class UI {
     const sim = game.sim;
     const col = sim.colony;
     const phase = sim.phase;
+    // Paused: a quiet badge says so (the bar's button is easy to miss).
+    const showPause = game.paused && (phase === 'growing' || phase === 'founding') && !game.cine.busy && !game.cine.montage;
+    if (showPause !== this.root.classList.contains('paused')) {
+      this.root.dataset.paused = t('pausedBadge');
+      this.root.classList.toggle('paused', showPause);
+    }
     // Left to watch for a while: the documentary camera takes over, like a screen saver.
     this.idle += dt;
     if (this.mode === 'watch' && phase === 'growing' && !game.director.active && !game.paused && !game.cine.busy && !game.cine.montage && !game.selected && this.idle > IDLE_DOC && !this.root.classList.contains('modal')) {
