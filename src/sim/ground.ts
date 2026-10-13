@@ -228,11 +228,15 @@ export class Ground {
     const wetter = clamp((w.moist[((r.top.get(Math.round(cx)) ?? c.floorY) - 2) * w.w + Math.round(cx)]! - 40) / 90, 0, 1);
     const high = rng.range(3, 6) + wetter * 4;
     let fell = 0;
+    const col = sim.colony;
+    const ants = col.queen && col.queen.alive ? [...col.ants, col.queen] : col.ants;
     for (let x = Math.floor(cx - half); x <= Math.ceil(cx + half); x++) {
       const t = r.top.get(x);
       if (t === undefined) continue;
       const u = (x - cx) / half;
       const hh = Math.round(high * (1 - u * u));
+      // Ants clinging to this stretch of the roof come down with it.
+      const riders = hh > 0 ? ants.filter((a) => a.x === x && a.y >= t - 1 && a.y <= t + 1 && !a.away) : [];
       // The arch over this column comes away...
       const mass: { tone: number; src: number }[] = [];
       for (let k = 1; k <= hh; k++) {
@@ -253,6 +257,7 @@ export class Ground {
       // under it is buried (they cannot climb out through it as it pours).
       let yb = t;
       while (yb < w.h - 3 && w.mat[(yb + 1) * w.w + x] === EMPTY) yb++;
+      let laid = 0;
       for (let j = 0; j < mass.length; j++) {
         const i = (yb - j) * w.w + x;
         if (w.mat[i] !== EMPTY) break;
@@ -260,8 +265,11 @@ export class Ground {
         sim.nest.adopt(i);
         w.wake(i);
         fell++;
+        laid++;
         if (j === mass.length - 1 && rng.chance(0.5)) sim.dust(i, mass[j]!.src || HUMUS);
       }
+      // The ones that rode it down end up somewhere in the heap (or on it, if it is shallow).
+      for (const a of riders) a.y = laid > 2 ? yb - rng.int(0, laid - 3) : yb - laid;
     }
     // (Nothing left to fall: the roof has come down to rock, or to the surface.)
     this.strain[c.id] = fell < 6 ? 0.5 : 0;
