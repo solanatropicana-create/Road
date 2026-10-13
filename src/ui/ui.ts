@@ -385,6 +385,7 @@ export class UI {
     view('v-plan', ICON.plan, t('plan'), t('titlePlan'), () => this.togglePlan());
     view('v-trails', ICON.trails, t('trails'), t('titleTrails'), () => this.toggleTrails());
     view('v-hide', ICON.hide, t('hidePanels'), t('titleHide'), () => this.toggleCinema());
+    view('v-sound', this.game.sound.on ? ICON.sound : ICON.mute, '', t('titleSound'), () => this.toggleSound());
     view('help-btn', ICON.gear, '', t('titleSettings'), () => {
       this.els.keys!.hidden = !this.els.keys!.hidden;
     });
@@ -524,6 +525,7 @@ export class UI {
       <dt>H</dt><dd>${t('keyH')}</dd>
       <dt>F</dt><dd>${t('keyF')}</dd>
       <dt>J</dt><dd>${t('keyJ')}</dd>
+      <dt>M</dt><dd>${t('keyM')}</dd>
       <dt>Q</dt><dd>${t('keyQ')}</dd>
       <dt>${t('keyArrows')}</dt><dd>${t('keyArrowsD')}</dd></dl>
       <div class="row langrow"><label>${t('modeLabel')}</label><div class="seg" id="modeseg">
@@ -1019,6 +1021,14 @@ export class UI {
     this.syncBar();
   }
 
+  /** Sound on or off (M). */
+  private toggleSound(): void {
+    const on = this.game.sound.toggle();
+    const b = this.root.querySelector('#v-sound');
+    if (b) b.innerHTML = on ? ICON.sound : ICON.mute;
+    this.toast(t(on ? 'soundOn' : 'soundOff'));
+  }
+
   /** Clean frame for screenshots and clips; the documentary caption stays. */
   private toggleCinema(): void {
     this.cinema = !this.cinema;
@@ -1162,6 +1172,8 @@ export class UI {
         this.toggleCinema();
       } else if (e.key === '?' || e.key === '/') {
         this.els.keys!.hidden = !this.els.keys!.hidden;
+      } else if (e.key === 'm' || e.key === 'M') {
+        this.toggleSound();
       } else if (e.key === 'j' || e.key === 'J') {
         // Jump to the latest thing worth seeing.
         const l = this.lastLoc;
@@ -1298,6 +1310,7 @@ export class UI {
         vars.queen = sim.names.queen;
         const loc = e.x !== undefined && e.y !== undefined ? { x: e.x, y: e.y } : undefined;
         if (loc) this.lastLoc = loc;
+        game.sound.event(game, e.key, loc);
         if (e.key.startsWith('season_')) this.seasonCard(e.key.slice(7));
         if (e.key === 'sealedIn' && !sim.colony.hadWorkers) {
           this.root.classList.add('montage');

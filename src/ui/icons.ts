@@ -51,6 +51,8 @@ export const ICON = {
   camera: svg(`<rect x="1.8" y="4.6" width="8.6" height="6.8" rx="1.2"/><path d="M10.4 7 14 5v6l-3.6-2"/><circle cx="4.6" cy="3.2" r="1.2"/><circle cx="7.8" cy="3.2" r="1.2"/>`),
   plan: svg(`<path d="M8 1.8v4.4" stroke-dasharray="1.2 1.6"/><rect x="2.2" y="6.4" width="11.6" height="5.6" rx="2.8" stroke-dasharray="1.4 1.6"/>`),
   trails: svg(`<path d="M1.6 11c2.2 0 2.4-4.4 4.6-4.4S8.6 10 10.8 10s2.4-5 3.6-5" stroke-dasharray="0.2 2.2" stroke-width="1.8"/>`),
+  sound: svg(`<path d="M2.5 6.2h2.2L8 3.4v9.2L4.7 9.8H2.5Z"/><path d="M10.4 5.8a3 3 0 0 1 0 4.4M12.2 4.2a5.4 5.4 0 0 1 0 7.6"/>`),
+  mute: svg(`<path d="M2.5 6.2h2.2L8 3.4v9.2L4.7 9.8H2.5Z"/><path d="M10.6 6.2l3.4 3.6M14 6.2l-3.4 3.6"/>`),
   hide: svg(`<path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/><path d="M5.5 8h5" stroke-width="1"/>`),
   help: svg(`<circle cx="8" cy="8" r="6"/><path d="M6.2 6.3c.2-1.2 1-1.8 1.9-1.8 1.1 0 1.9.7 1.9 1.7 0 1.4-1.9 1.5-1.9 3"/><circle cx="8.1" cy="11.4" r="0.35" fill="currentColor"/>`),
   sun: svg(`<circle cx="8" cy="8" r="2.8"/><path d="M8 1.6v1.6M8 12.8v1.6M1.6 8h1.6M12.8 8h1.6M3.5 3.5l1.1 1.1M11.4 11.4l1.1 1.1M3.5 12.5l1.1-1.1M11.4 4.6l1.1-1.1"/>`),

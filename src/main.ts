@@ -8,6 +8,7 @@ import { Director } from './ui/director';
 import { saveSim, loadSim, SAVE_KEY, META_KEY } from './sim/save';
 import { SITE_IDS, SiteId, siteForSeed } from './world/sites';
 import { Cinematics, MONTAGE_SPEED } from './ui/cinematics';
+import { Soundscape } from './ui/sound';
 
 /**
  * Owns the loop: a fixed-rate simulation, rendered every animation frame.
@@ -19,6 +20,8 @@ export class Game {
   cam: Camera;
   ui: UI;
   director: Director;
+  /** The slice's sound (wakes on the first click or key). */
+  readonly sound = new Soundscape();
   /** The landing sequence and the founding montage. */
   cine: Cinematics;
   speed = 1;
@@ -53,6 +56,10 @@ export class Game {
     this.cam.fit();
     this.cam.zoom = this.cam.tzoom;
     addEventListener('resize', () => this.resize());
+    // Browsers let sound start only from a gesture.
+    const wake = (): void => this.sound.wake();
+    addEventListener('pointerdown', wake);
+    addEventListener('keydown', wake);
     // Keep the colony when the tab goes away or closes.
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') void this.save();
@@ -234,6 +241,7 @@ export class Game {
     } else if (this.director.active) this.director.update(dt);
     else this.cam.follow = this.selected ? { x: this.selected.x, y: this.selected.y - 2 } : this.cam.follow;
     this.cam.update(dt);
+    this.sound.update(this, dt);
     this.renderer.render(this.sim, this.cam, dt, this.paused ? 0 : this.speed, this.ui.cinema ? null : this.selected ?? this.director.focus);
     this.ui.update(dt);
     // Autosave every few in-game hours (not more than every few seconds), and at least once a minute.
