@@ -1060,11 +1060,26 @@ export class UI {
     ctx.shadowColor = 'rgba(0,0,0,0.6)';
     ctx.shadowBlur = 6 * k;
     ctx.fillText(`Underfoot · ${label}`, 18 * k, c.height - 18 * k);
-    c.toBlob((blob) => {
+    c.toBlob(async (blob) => {
       if (!blob) return;
+      const filename = `underfoot-${sim.seed}-${sim.tick}.png`;
+      // In the claude.ai viewer a page cannot download by itself: the viewer is offered the file.
+      const host = (window as unknown as { claude?: { use(n: string): Promise<{ save(r: { filename: string; data: Blob }): Promise<unknown> } | null> } }).claude;
+      if (host?.use) {
+        const dl = await host.use('downloads').catch(() => null);
+        if (dl) {
+          try {
+            await dl.save({ filename, data: blob });
+            this.toast(t('snapSaved'));
+          } catch {
+            // declined, or not available here: nothing more to do
+          }
+          return;
+        }
+      }
       const a = document.createElement('a');
       a.href = URL.createObjectURL(blob);
-      a.download = `underfoot-${sim.seed}-${sim.tick}.png`;
+      a.download = filename;
       document.body.appendChild(a);
       a.click();
       a.remove();
