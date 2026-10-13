@@ -125,7 +125,8 @@ export class Director {
     const options: [Shot, number][] = [
       ['rescue', sim.nest.rescuing && g.buried.length ? 30 : 0],
       ['lasius', fights.length ? 12 : 0],
-      ['shoring', g.strained > 0 ? 2.5 : 0],
+      // (A roof only just cracking is not much to see; one near giving way, or shorers at work, is.)
+      ['shoring', col.ants.some((a) => a.shoring) ? 2 : sim.nest.chambers.some((c) => c.ready && (g.strain[c.id] ?? 0) >= 0.35) ? 1.2 : 0],
       ['critter', 1.5],
       ['mouth', 1],
       ['tree', sim.tree && sim.critters.count('lasius') > 0 ? 0.8 : 0],
