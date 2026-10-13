@@ -41,3 +41,10 @@ export const TASK_LABEL: Record<TaskKind, string> = {
 export type Caste = 'worker' | 'soldier' | 'queen' | 'gyne' | 'male';
 
 export type ChamberKind = 'queen' | 'nursery' | 'granary' | 'rest';
+
+/**
+ * Rooms where seed is kept. Granaries first, but a young nest piles its seed
+ * by the queen, and an overflowing harvest spills into the resting rooms:
+ * real Messor nests have seed in most of their chambers. Never the nursery.
+ */
+export const holdsStores = (kind: ChamberKind): boolean => kind !== 'nursery';

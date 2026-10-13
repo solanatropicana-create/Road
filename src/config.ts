@@ -42,8 +42,10 @@ export const TUNING = {
   workerLife: [DAY_TICKS * 50, DAY_TICKS * 95] as const,
   soldierLife: [DAY_TICKS * 60, DAY_TICKS * 110] as const,
 
-  // --- food (seeds). One seed feeds one adult for this many ticks.
-  adultSeedTicks: TICK_HZ * 300,
+  // --- food (seeds). One seed feeds one adult for this many ticks (about half
+  // a seed a week in the warmth: harvester workers live on very little; most
+  // of the harvest goes into brood, young queens and the winter store).
+  adultSeedTicks: TICK_HZ * 600,
   // A founding queen lives for months on her own body: she eats little.
   queenSeedTicks: TICK_HZ * 150,
   starveTicks: TICK_HZ * 60,

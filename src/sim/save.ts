@@ -43,6 +43,8 @@ const SKIP: Record<string, string[]> = {
   Sim: ['fields', 'src', 'events', 'flyers'],
   Physics: ['stamp'],
   Colony: ['occ'],
+  // The nest planner's search buffers: scratch, refilled before each use.
+  Nest: ['planDist', 'g', 'seen', 'from'],
 };
 
 type Enc = number | string | boolean | null | { r: number } | { n: string } | { u: 1 };
@@ -206,7 +208,12 @@ function upgrade(sim: Sim): void {
   // Saves from before alarm, temperament, the gate queue, the second gate and the searcher's heading.
   const ants = [...sim.colony.ants, ...sim.colony.alates, ...(o.neighbours ?? (o.neighbour ? [o.neighbour] : [])).flatMap((nb) => nb.ants)];
   for (const a of ants) {
-    const x = a as unknown as { alarm?: number; zeal?: number; sent?: boolean; waiting?: boolean; lastDX?: number };
+    const x = a as unknown as { alarm?: number; zeal?: number; sent?: boolean; waiting?: boolean; lastDX?: number; exitX?: number };
+    x.exitX ??= a.x;
+    const st = a as unknown as { stallX?: number; stallY?: number; stallT?: number };
+    st.stallX ??= a.x;
+    st.stallY ??= a.y;
+    st.stallT ??= 0;
     if (x.alarm === undefined) x.alarm = 0;
     if (x.lastDX === undefined) x.lastDX = 0;
     if (x.sent === undefined) x.sent = false;
@@ -218,11 +225,12 @@ function upgrade(sim: Sim): void {
   col.returns ??= 0;
   col.harvestLeft ??= 0;
   col.harvestRight ??= 0;
-  const nest = sim.nest as unknown as { gateX?: number; gateShaft?: number[] };
+  const nest = sim.nest as unknown as { gateX?: number; gateShaft?: number[]; gateFrom?: number };
   if (nest.gateX === undefined) {
     nest.gateX = -1;
     nest.gateShaft = [];
   }
+  nest.gateFrom ??= -1;
   // Saves from before the birds were taken out: drop any lark still visiting.
   const cl = sim.critters.list as { kind: string }[];
   for (let k = cl.length - 1; k >= 0; k--) if (cl[k]!.kind === 'lark') cl.splice(k, 1);
@@ -263,6 +271,7 @@ export async function loadSim(blob: string): Promise<{ sim: Sim; extra: unknown 
   s.flyers = [];
   (sim.physics as unknown as { stamp: Uint8Array }).stamp = new Uint8Array(w.size);
   (sim.colony as unknown as { occ: Int32Array | null }).occ = null;
+  Object.assign(sim.nest, { planDist: new Uint8Array(w.size), g: new Float32Array(w.size), seen: new Uint32Array(w.size), from: new Int32Array(w.size) });
   upgrade(sim);
   for (let f = 0; f < FIELD_COUNT; f++) (sim as unknown as { buildField(f: number): void }).buildField(f);
   w.dirtyAll = true;

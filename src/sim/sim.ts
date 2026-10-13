@@ -10,7 +10,7 @@ import { Fields, F, FIELD_COUNT, FAR } from './fields';
 import { Colony } from './colony';
 import { Ant } from './ant';
 import { Particles } from './particles';
-import { Task } from './types';
+import { Task, holdsStores } from './types';
 import { TUNING, TICK_HZ, DAY_TICKS, GROUND_Y } from '../config';
 import { pack, sampleRamp, PAL, mixRGB, SEED_TONE } from '../render/palette';
 import { HUMUS, LOAM, CLAY, SUBSOIL } from '../world/mat';
@@ -575,7 +575,21 @@ export class Sim {
           for (const i of c.floor) if (((i / w.w) | 0) >= lim && entr[i]! >= door + 5 && entr[i] !== FAR) { push(i); n++; }
           if (n === 0) for (const i of c.floor) if (((i / w.w) | 0) >= lim) push(i);
         }
-
+        // No granary with room: seed is piled where there is space. First on
+        // the queen's floor, to either side of her (a founding nest's cache),
+        // then along the back of the resting rooms.
+        if (n === 0) {
+          for (const c of nest.chambers) {
+            if (!c.ready) continue;
+            if (c.kind === 'queen' && c.seeds < Math.min(28, c.capacity * 0.6)) {
+              for (const i of c.floor) if (Math.abs((i % w.w) - c.cx) > c.w * 0.28) push(i);
+            } else if (c.kind === 'rest' && c.seeds < c.capacity * 0.4) {
+              let door = FAR;
+              for (const i of c.floor) door = Math.min(door, entr[i]!);
+              for (const i of c.floor) if (entr[i]! >= door + 6 && entr[i] !== FAR) push(i);
+            }
+          }
+        }
         break;
       }
       case F.Store:
@@ -606,7 +620,7 @@ export class Sim {
         for (const c of col.corpses) if (!c.carried && w.bg[c.y * w.w + c.x] === 1) push(c.y * w.w + c.x);
         for (const c of nest.chambers) {
           // Husks wait on the floor of whichever room holds the stores.
-          const store = col.husks > 0 && c.ready && (c.kind === 'granary' || c.kind === 'queen');
+          const store = col.husks > 0 && c.ready && holdsStores(c.kind);
           if (store) for (const i of c.floor) push(i);
           for (const i of c.cells) {
             if (w.mat[i] !== REFUSE) continue;

@@ -1,6 +1,7 @@
 import type { Sim } from './sim';
 import { F, FAR } from './fields';
-import { Carry, CarryKind, Task, TaskKind, Caste } from './types';
+import { Carry, CarryKind, Task, TaskKind, Caste, holdsStores } from './types';
+import { intruderNear } from './underground';
 import type { Brood } from './brood';
 import type { Neighbour } from './rivals';
 import type { Carcass } from './carcass';
@@ -151,6 +152,12 @@ export class Ant {
   /** Forager's chosen heading and how far to go before searching in earnest. */
   private fdir = 1;
   private fdist = 0;
+  /** Where the forager came out of the nest (the walk out is measured from here). */
+  private exitX = 0;
+  /** Where and when a searching forager last made headway (to notice when it is stuck). */
+  private stallX = 0;
+  private stallY = 0;
+  private stallT = 0;
   reevalAt = 0;
   alive = true;
   /** Why it died ('old age', 'starvation', 'drowned'), for the life card. */
@@ -278,6 +285,15 @@ export class Ant {
     if (this.sick > 0.6) {
       this.leaveToDie(sim);
       return;
+    }
+    // Something in the tunnels (a centipede, thief ants at a breach, a mole
+    // cricket): whoever has caught the alarm and has her jaws free runs at it.
+    if (this.alarm > 0 && this.carry === Carry.None && this.age > DAY_TICKS) {
+      const foe = intruderNear(sim.critters.list, this.x, this.y, 40);
+      if (foe) {
+        this.approach(sim, foe.x, foe.y);
+        return;
+      }
     }
     // Neighbours attacking: foragers, idlers and majors turn out to defend.
     // Only those the alarm has reached turn out; it spreads from ant to ant.
@@ -862,7 +878,7 @@ export class Ant {
     if (m !== SEED && m !== FRUIT && m !== PREY) return false;
     // Seeds already in a store are not "found" food.
     const c = sim.nest.chamberAt(n);
-    return !c || (c.kind !== 'granary' && c.kind !== 'queen');
+    return !c || !holdsStores(c.kind);
   }
 
   private doForage(sim: Sim): void {
@@ -980,8 +996,12 @@ export class Ant {
     this.bound = null;
     if (this.fdist === 0) {
       // Just out of the nest: pick a heading and how far to walk before searching.
-      this.fdir = sim.rng.chance(0.5) ? -1 : 1;
+      // Out on the side of the crater she climbed: the mouth between the two
+      // rims is a hole she would have to cross to go the other way.
+      const side = Math.sign(this.x - sim.nest.gateNear(this.x));
+      this.fdir = side !== 0 ? side : sim.rng.chance(0.5) ? -1 : 1;
       this.fdist = sim.rng.int(30, Math.round(sim.colony.reach));
+      this.exitX = this.x;
     }
     const food = this.findAdjacent(sim, (n) => this.isForageFood(sim, n));
     if (food >= 0) {
@@ -993,7 +1013,7 @@ export class Ant {
     if (++this.search > TUNING.forageGiveUpTicks * this.speed + this.fdist / this.speed) {
       this.search = 0;
       // Nothing out there: the colony's scouts range further next time.
-      sim.colony.reach = Math.min(sim.world.w * 0.9, sim.colony.reach * 1.15);
+      sim.colony.reach = Math.min(sim.world.w * 0.9, sim.colony.reach * 1.05);
       // Came back empty-handed: next time, wait for word at the gate.
       this.sent = false;
       this.task = Task.Idle;
@@ -1096,6 +1116,30 @@ export class Ant {
     else this.wander(sim);
   }
 
+  /** One step through the tunnels toward a point (an intruder), crowding in once there. */
+  private approach(sim: Sim, tx: number, ty: number): void {
+    const w = sim.world;
+    const i = this.y * w.w + this.x;
+    const fields = sim.fields;
+    if (Math.abs(this.x - tx) + Math.abs(this.y - ty) <= 2) {
+      this.wander(sim, true);
+      return;
+    }
+    let bestK = -1;
+    let bestS = Infinity;
+    for (let k = 0; k < 8; k++) {
+      if (!fields.canStep(i, k)) continue;
+      const n = i + fields.off[k]!;
+      const s = Math.hypot((n % w.w) - tx, ((n / w.w) | 0) - ty) + sim.rng.next() * 0.8;
+      if (s < bestS) {
+        bestS = s;
+        bestK = k;
+      }
+    }
+    if (bestK >= 0) this.moveTo(sim, bestK);
+    else this.wander(sim, true);
+  }
+
   /** One step along the ground toward column tx (into tunnels only if allowed). */
   private toward(sim: Sim, tx: number, under: boolean): void {
     const w = sim.world;
@@ -1194,7 +1238,7 @@ export class Ant {
           const m = w.mat[n];
           if (m !== SEED && m !== FRUIT) return false;
           const c = sim.nest.chamberAt(n);
-          return !!c && (c.kind === 'granary' || c.kind === 'queen');
+          return !!c && holdsStores(c.kind);
         });
         if (cell >= 0) {
           this.carry = carryOf(w.mat[cell]!);
@@ -1351,19 +1395,35 @@ export class Ant {
     const fields = sim.fields;
     const entr = fields.dist[F.Entr]!;
     const here = entr[i]!;
-    // Heading out: walk away from home (along a trail if there is one) until far
-    // enough, then search the area. Trails are followed by direction, not by peak:
-    // all trails meet at the mouth, so their strongest scent is right at home.
-    const outbound = here !== FAR && here < this.fdist;
+    // Going nowhere (a wall, a gap, a hollow in the spoil): turn round.
+    if (Math.abs(this.x - this.stallX) + Math.abs(this.y - this.stallY) > 3) {
+      this.stallX = this.x;
+      this.stallY = this.y;
+      this.stallT = sim.tick;
+    } else if (sim.tick - this.stallT > TICK_HZ * 2.5) {
+      this.fdir = -this.fdir;
+      this.lastDX = -this.lastDX;
+      this.stallT = sim.tick;
+    }
+    // Heading out: walk the chosen way (along a trail if there is one) until far
+    // enough from the gate she left by, then search the area. Measured from that
+    // gate, not from home in general: with two gates the ground between them is
+    // as far from home as it gets, and a forager walking "away from home" would
+    // stop there and go round in circles. Trails are followed by direction, not
+    // by peak: all trails meet at the mouth, so their strongest scent is at home.
+    const outbound = here !== FAR && Math.abs(this.x - this.exitX) < this.fdist;
     let trailOut = false;
     if (outbound) {
       for (let k = 0; k < 8; k++) {
         const n = i + fields.off[k]!;
-        if (entr[n]! > here && entr[n] !== FAR && sim.pher[n]! > 0.3) trailOut = true;
+        if (DX[k] === this.fdir && sim.pher[n]! > 0.3) trailOut = true;
       }
     }
     let total = 0;
-    const climbing = !SOLID[w.mat[i + w.w]!];
+    // An open nest cell underfoot is a hole (a mouth still being dug), not a stem:
+    // a searcher there climbs back out rather than clinging on above it.
+    const hole = (c: number): boolean => w.mat[c] === EMPTY && w.bg[c] === 1;
+    const climbing = !SOLID[w.mat[i + w.w]!] && !hole(i + w.w);
     const weights = [0, 0, 0, 0, 0, 0, 0, 0];
     for (let k = 0; k < 8; k++) {
       if (!fields.canStep(i, k)) continue;
@@ -1375,9 +1435,10 @@ export class Ant {
       const p = sim.pher[n]!;
       let s = 0.15;
       if (outbound) {
-        s *= outward ? 2 : inward ? 0.08 : 0.6;
-        if (outward) s += p * 3;
-        if (!trailOut) s *= DX[k] === this.fdir ? 3 : DX[k] === -this.fdir ? 0.3 : 1;
+        const ahead = DX[k] === this.fdir;
+        s *= ahead ? 2 : DX[k] === -this.fdir ? 0.08 : 0.6;
+        if (ahead) s += p * 3;
+        if (!trailOut) s *= ahead ? 3 : 1;
       } else {
         s *= outward ? 1.1 : inward ? 0.75 : 1;
         s += p * (outward ? 1.5 : 0.4);
@@ -1394,8 +1455,10 @@ export class Ant {
       else if (DX[k] === this.lastDX) s *= 1.6;
       // Harvesters mostly glean fallen seed; climbing stems is the exception,
       // and a forager up a stem with nothing in reach climbs back down.
-      if (!SOLID[w.mat[n + w.w]!]) s *= DY[k]! < 0 ? 0.25 : 0.6;
+      if (hole(n + w.w)) s *= DY[k]! > 0 ? 0.05 : 1;
+      else if (!SOLID[w.mat[n + w.w]!]) s *= DY[k]! < 0 ? 0.25 : 0.6;
       if (climbing) s *= DY[k]! > 0 ? 3 : DY[k]! < 0 ? 0.3 : 1;
+      else if (hole(i + w.w)) s *= DY[k]! < 0 ? 4 : 1;
       weights[k] = s;
       total += s;
     }
@@ -1484,7 +1547,7 @@ export class Ant {
           const m = w.mat[n]!;
           if (m !== SEED && m !== FRUIT && m !== PREY) return false;
           const c = sim.nest.chamberAt(n);
-          return !!c && (c.kind === 'granary' || c.kind === 'queen');
+          return !!c && holdsStores(c.kind);
         });
         if (cell >= 0) {
           this.carry = carryOf(w.mat[cell]!);
@@ -1528,7 +1591,7 @@ export class Ant {
         this.carryTint = w.tint[cell] === SPROUT ? SPROUT : 0;
         w.set(cell, EMPTY, w.tone[cell], w.tint[cell]);
         this.dropDist = 0;
-      } else if (col.husks > 0 && room && (room.kind === 'granary' || room.kind === 'queen')) {
+      } else if (col.husks > 0 && room && holdsStores(room.kind)) {
         // Chaff goes out in bundles: a few husks to a trip.
         col.husks -= Math.min(3, col.husks);
         this.carry = Carry.Refuse;

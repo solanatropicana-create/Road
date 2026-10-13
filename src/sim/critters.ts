@@ -3,6 +3,7 @@ import type { Ant } from './ant';
 import { EMPTY, SEED, SOIL, SOLID, WATER } from '../world/mat';
 import { TICK_HZ, DAY_TICKS } from '../config';
 import { clamp } from '../util/math';
+import { spawnUnderground, thief, centipede, moleCricket } from './underground';
 
 /**
  * The other animals of the slice, above and below ground:
@@ -22,8 +23,9 @@ import { clamp } from '../util/math';
  *            Attaephilus molitori, a tiny beetle known only from Messor
  *            structor nests in the dry grasslands near Vienna and in Moravia.
  *   antlion – an antlion larva at the bottom of its sand pit.
+ *   thief, centipede, molecricket – enemies that come through the soil (see underground.ts).
  */
-export type CritterKind = 'hopper' | 'beetle' | 'worm' | 'spider' | 'phorid' | 'woodlouse' | 'cricket' | 'beetlet' | 'antlion';
+export type CritterKind = 'hopper' | 'beetle' | 'worm' | 'spider' | 'phorid' | 'woodlouse' | 'cricket' | 'beetlet' | 'antlion' | 'thief' | 'centipede' | 'molecricket';
 
 export interface Critter {
   kind: CritterKind;
@@ -45,13 +47,13 @@ export interface Critter {
   peck: number;
   /** In the air (a hop or a flight). */
   air: boolean;
-  /** Worm: the cells its body lies along, head first. */
+  /** Worm, centipede: the cells its body lies along, head first. Thief ants: their gallery, from its start. Mole cricket: its gallery, newest first. */
   body: number[];
   /** Colour variant (spider: below 90 a young one). */
   tone: number;
   /** Spider: the ant it is holding. Phorid: the ant it is stalking. */
   prey?: Ant | null;
-  /** Antlion: the pit's centre and radius. */
+  /** Antlion: the pit's centre and radius. Thief ants: the nursery they dig toward (px, pr = x, y). Mole cricket: px, the column it heads for. */
   px?: number;
   pr?: number;
 }
@@ -60,7 +62,7 @@ const HOPPER_MONTH = [0, 0, 0, 0, 0.2, 0.8, 1, 1, 0.7, 0.2, 0, 0];
 
 export class Critters {
   readonly list: Critter[] = [];
-  private add(c: Partial<Critter> & { kind: CritterKind; x: number; y: number }): Critter {
+  add(c: Partial<Critter> & { kind: CritterKind; x: number; y: number }): Critter {
     const full: Critter = { vx: 0, vy: 0, dir: 1, t: 0, state: 0, timer: 0, life: 0, peck: 0, air: false, body: [], tone: 0, ...c };
     this.list.push(full);
     return full;
@@ -73,7 +75,7 @@ export class Critters {
   }
 
   /** Surface: the empty cell just above the ground and whatever lies on it. */
-  private top(sim: Sim, x: number): number {
+  top(sim: Sim, x: number): number {
     const w = sim.world;
     const xx = clamp(Math.round(x), 1, w.w - 2);
     let y = w.ground[xx]!;
@@ -119,6 +121,8 @@ export class Critters {
     }
     // Nest guests move in as the colony grows.
     if (nest.founded && sim.tick % (TICK_HZ * 60) < Critters.PERIOD) this.guests(sim);
+    // Enemies through the soil.
+    spawnUnderground(sim, this);
     // Earthworms in the topsoil when it is cool and damp (not in summer drought or frost).
     if (air > 4 && air < 17 && this.count('worm') < 2 && rng.chance(0.05)) {
       const x = rng.int(30, w.w - 31);
@@ -147,6 +151,9 @@ export class Critters {
         case 'cricket':
         case 'beetlet': keep = this.guest(sim, c); break;
         case 'antlion': keep = this.antlion(sim, c); break;
+        case 'thief': keep = thief(sim, c); break;
+        case 'centipede': keep = centipede(sim, c, this); break;
+        case 'molecricket': keep = moleCricket(sim, c); break;
       }
       if (keep) this.list[j++] = c;
     }

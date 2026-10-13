@@ -104,6 +104,8 @@ export class Nest {
   /** A second gate being dug up from the nest (its mouth column), or -1, and its shaft. */
   gateX = -1;
   private gateShaft: number[] = [];
+  /** The nest cell the second gate's shaft starts from (the inside end). */
+  private gateFrom = -1;
 
   /** The column of the mouth nearest x (spoil and the dying go out from whichever gate they used). */
   gateNear(x: number): number {
@@ -157,24 +159,87 @@ export class Nest {
       const shaft: number[] = [];
       for (const i of path) this.stampDisc(i % w.w, (i / w.w) | 0, 1.8, shaft);
       this.stampDisc(x, g - 1, 1.6, shaft, 3);
+      this.clearMouth(x, shaft);
       this.gateX = x;
       this.gateShaft = shaft;
+      this.gateFrom = best;
       this.chimney(x);
       return true;
     }
     return false;
   }
 
-  /** The second gate is dug through: it becomes an entrance. True once, when it opens. */
+  /**
+   * Spoil, chaff or litter already lying over a new mouth: claim it for the
+   * plan, so the diggers clear it like any other soil in the way.
+   */
+  private clearMouth(x: number, out: number[]): void {
+    const w = this.world;
+    const g = w.ground[x]!;
+    for (let y = g - 1; y >= Math.max(2, g - 24); y--) {
+      for (let xx = x - 2; xx <= x + 2; xx++) {
+        const i = y * w.w + xx;
+        const m = w.mat[i]!;
+        if (w.plan[i] || w.bg[i] === 1 || (m !== SAND && m !== REFUSE && m !== LITTER)) continue;
+        w.plan[i] = 1;
+        this.planCells.push(i);
+        out.push(i);
+      }
+    }
+  }
+
+  /**
+   * Is there open air all the way from the inside end of a shaft up through
+   * its mouth? A walk through empty cells in a box round the mouth, ending
+   * above the highest a spoil heap can stand.
+   */
+  private mouthOpen(x: number, from: number): boolean {
+    const w = this.world;
+    const g = w.ground[x]!;
+    const fx = from % w.w;
+    const fy = (from / w.w) | 0;
+    const x0 = Math.max(1, Math.min(x, fx) - 30);
+    const x1 = Math.min(w.w - 2, Math.max(x, fx) + 30);
+    const y0 = Math.max(1, g - 26);
+    const y1 = Math.min(w.h - 2, Math.max(fy, g) + 3);
+    const seen = new Set<number>([from]);
+    const queue = [from];
+    while (queue.length) {
+      const i = queue.pop()!;
+      const iy = (i / w.w) | 0;
+      if (iy <= g - 18 && w.bg[i] === 0) return true;
+      for (const n of [i - 1, i + 1, i - w.w, i + w.w]) {
+        const nx = n % w.w;
+        const ny = (n / w.w) | 0;
+        if (nx < x0 || nx > x1 || ny < y0 || ny > y1 || seen.has(n) || SOLID[w.mat[n]!]) continue;
+        seen.add(n);
+        queue.push(n);
+      }
+    }
+    return false;
+  }
+
+  /**
+   * The second gate is dug through: it becomes an entrance. True once, when
+   * it opens. A mouth still capped by spoil does not count (ants outside would
+   * crowd onto the cap with no way in); the cap is claimed for digging instead.
+   */
   gateOpened(): boolean {
     if (this.gateX < 0) return false;
     const w = this.world;
     let left = 0;
     for (const i of this.gateShaft) if (SOLID[w.mat[i]!]) left++;
     if (left > Math.max(2, this.gateShaft.length * 0.04)) return false;
+    let from = this.gateFrom;
+    if (from < 0) for (const i of this.gateShaft) if (from < 0 || i > from) from = i;
+    if (from >= 0 && !this.mouthOpen(this.gateX, from)) {
+      this.clearMouth(this.gateX, this.gateShaft);
+      return false;
+    }
     this.entrances.push(w.idx(this.gateX, w.ground[this.gateX]!));
     this.gateX = -1;
     this.gateShaft = [];
+    this.gateFrom = -1;
     return true;
   }
 
@@ -342,7 +407,9 @@ export class Nest {
     if (!w.plan[i]) return false;
     const m = w.mat[i]!;
     if (w.sealed && m === SAND && w.tint[i]! & PLUG) return false;
-    if (m === SEED || m === FRUIT || m === PREY || m === REFUSE) return w.zone[i] === 0 && w.bg[i] === 1;
+    if (m === SEED || m === FRUIT || m === PREY) return w.zone[i] === 0 && w.bg[i] === 1;
+    // Chaff in a tunnel, or heaped over a mouth the plan keeps open.
+    if (m === REFUSE) return w.zone[i] === 0;
     return HARDNESS[m]! > 0;
   }
 

@@ -2,6 +2,7 @@ import type { Critter } from '../sim/critters';
 import type { Carcass } from '../sim/carcass';
 import type { World } from '../world/world';
 import { RGB, hex } from './palette';
+import { clamp } from '../util/math';
 
 type Light = (x: number, y: number) => RGB;
 
@@ -29,6 +30,12 @@ const LOUSE = { body: hex('#ece6d8'), edge: hex('#b4a994'), leg: hex('#d8cfbb') 
 const CRICKET = { body: hex('#7c5a38'), dark: hex('#45301e'), pale: hex('#b89870') };
 const BEETLET = { body: hex('#9a4c24'), dark: hex('#552812'), leg: hex('#b06a3a') };
 const ANTLION = { jaw: hex('#8a6a40'), head: hex('#6b5232') };
+// Solenopsis fugax: tiny, pale amber, shining.
+const THIEF = { body: hex('#c99a45'), dark: hex('#7a5524'), leg: hex('#b08440') };
+// Lithobius forficatus: glossy chestnut plates, paler legs.
+const CENTI = { body: hex('#7a3a1e'), dark: hex('#45200f'), leg: hex('#b0703e'), head: hex('#5a2a14') };
+// Gryllotalpa: brown, with a golden velvet down on the pronotum.
+const MOLE = { body: hex('#6e4a2c'), dark: hex('#3e2816'), velvet: hex('#a07a4a'), wing: hex('#5a4630'), belly: hex('#9a7a56'), leg: hex('#7a5232') };
 
 /**
  * The other animals, drawn over the slice at screen resolution like the
@@ -37,7 +44,7 @@ const ANTLION = { jaw: hex('#8a6a40'), head: hex('#6b5232') };
 export function drawCritters(ctx: CanvasRenderingContext2D, list: Critter[], world: World, light: Light, view: { x0: number; y0: number; x1: number; y1: number }): void {
   for (const c of list) {
     const pad = 40;
-    if (c.kind !== 'worm' && (c.x < view.x0 - pad || c.x > view.x1 + pad || c.y < view.y0 - pad || c.y > view.y1 + pad)) continue;
+    if (c.kind !== 'worm' && c.kind !== 'thief' && c.kind !== 'centipede' && (c.x < view.x0 - pad || c.x > view.x1 + pad || c.y < view.y0 - pad || c.y > view.y1 + pad)) continue;
     switch (c.kind) {
       case 'hopper': hopper(ctx, c, light); break;
       case 'beetle': beetle(ctx, c, light); break;
@@ -48,6 +55,9 @@ export function drawCritters(ctx: CanvasRenderingContext2D, list: Critter[], wor
       case 'cricket': cricket(ctx, c, light); break;
       case 'beetlet': beetlet(ctx, c, light); break;
       case 'antlion': antlion(ctx, c, light); break;
+      case 'thief': thiefAnts(ctx, c, world, light); break;
+      case 'centipede': centipede(ctx, c, world, light, view); break;
+      case 'molecricket': moleCricket(ctx, c, light); break;
     }
   }
 }
@@ -784,6 +794,300 @@ function antlion(ctx: CanvasRenderingContext2D, c: Critter, light: Light): void 
       ctx.fill();
     }
   }
+  ctx.restore();
+}
+
+/** One tiny ant, 2.2 mm, pointing along (dx, dy); `egg`: carrying one. */
+function tinyAnt(ctx: CanvasRenderingContext2D, x: number, y: number, dx: number, dy: number, t: number, l: RGB, egg: boolean): void {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(Math.atan2(dy, dx));
+  const g = Math.sin(t * 0.9) * 0.18;
+  ctx.strokeStyle = css(THIEF.leg, l);
+  ctx.lineWidth = 0.08;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  for (let k = 0; k < 3; k++) {
+    const hx = 0.15 - k * 0.22;
+    const s = (k === 1 ? -g : g);
+    ctx.moveTo(hx, 0);
+    ctx.lineTo(hx + 0.25 + s, 0.45);
+    ctx.moveTo(hx, 0);
+    ctx.lineTo(hx + 0.25 - s, -0.45);
+  }
+  ctx.moveTo(0.75, 0);
+  ctx.quadraticCurveTo(1.0, 0.3, 1.25, 0.35);
+  ctx.moveTo(0.75, 0);
+  ctx.quadraticCurveTo(1.0, -0.3, 1.25, -0.35);
+  ctx.stroke();
+  ctx.fillStyle = css(THIEF.body, l);
+  ctx.beginPath();
+  ctx.ellipse(-0.75, 0, 0.5, 0.36, 0, 0, Math.PI * 2);
+  ctx.ellipse(0.05, 0, 0.32, 0.18, 0, 0, Math.PI * 2);
+  ctx.ellipse(0.62, 0, 0.27, 0.24, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = css(THIEF.dark, l, 0.5);
+  ctx.beginPath();
+  ctx.ellipse(-0.85, 0, 0.3, 0.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  glint(ctx, -0.7, -0.12, 0.22, 0.07, 0, l, 0.5);
+  if (egg) {
+    ctx.fillStyle = css([242, 236, 220], l);
+    ctx.beginPath();
+    ctx.ellipse(1.15, 0, 0.32, 0.24, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/**
+ * A raiding party of thief ants: a few 2 mm workers along their gallery,
+ * at the face they are digging, at the breach, or filing home with eggs.
+ */
+function thiefAnts(ctx: CanvasRenderingContext2D, c: Critter, world: World, light: Light): void {
+  const g = c.body;
+  if (!g.length) return;
+  const W = world.w;
+  const l = light(c.x, c.y);
+  // Where the party is along the gallery (its index), and which way they face.
+  let at = g.length - 1;
+  if (c.state >= 2 && c.timer < 0) at = Math.max(0, g.length - 1 + c.timer);
+  const home = c.state >= 2;
+  for (let k = 0; k < 4; k++) {
+    const j = clamp(at + (home ? k * 3 : -k * 3) + Math.round(Math.sin(c.t * 0.05 + k) * 1.2), 0, g.length - 1);
+    const j2 = clamp(j + (home ? -1 : 1), 0, g.length - 1);
+    const i = g[j]!;
+    const i2 = g[j2]!;
+    const x = (i % W) + 0.5;
+    const y = ((i / W) | 0) + 0.5;
+    let dx = (i2 % W) - (i % W);
+    let dy = ((i2 / W) | 0) - ((i / W) | 0);
+    if (dx === 0 && dy === 0) dx = c.dir;
+    tinyAnt(ctx, x, y, dx, dy, c.t + k * 7, l, home && c.tone > k);
+  }
+}
+
+/**
+ * Lithobius: a flat ribbon of glossy plates along its path, a pair of legs
+ * to each, long antennae ahead and the long last legs trailing.
+ */
+function centipede(ctx: CanvasRenderingContext2D, c: Critter, world: World, light: Light, view: { x0: number; y0: number; x1: number; y1: number }): void {
+  const b = c.body;
+  if (b.length < 2) return;
+  const W = world.w;
+  const hx = b[0]! % W;
+  const hy = (b[0]! / W) | 0;
+  if (hx < view.x0 - 40 || hx > view.x1 + 40 || hy < view.y0 - 40 || hy > view.y1 + 40) return;
+  const l = light(hx, hy);
+  // A smoothed spine through the trail of cells.
+  const pts: [number, number][] = [];
+  for (let k = 0; k < b.length; k++) {
+    const a = b[Math.max(0, k - 1)]!;
+    const m = b[k]!;
+    const z = b[Math.min(b.length - 1, k + 1)]!;
+    pts.push([((a % W) + (m % W) * 2 + (z % W)) / 4 + 0.5, (((a / W) | 0) + ((m / W) | 0) * 2 + ((z / W) | 0)) / 4 + 0.5]);
+  }
+  // Walk the spine at even spacing for the 15 segments.
+  const seg: [number, number, number][] = [];
+  let acc = 0;
+  let k = 0;
+  const step = 1.45;
+  let px = pts[0]![0];
+  let py = pts[0]![1];
+  seg.push([px, py, 0]);
+  while (seg.length < 16 && k < pts.length - 1) {
+    const [x1, y1] = pts[k + 1]!;
+    const d = Math.hypot(x1 - px, y1 - py);
+    if (acc + d >= step) {
+      const f = (step - acc) / (d || 1);
+      px += (x1 - px) * f;
+      py += (y1 - py) * f;
+      seg.push([px, py, 0]);
+      acc = 0;
+    } else {
+      acc += d;
+      px = x1;
+      py = y1;
+      k++;
+    }
+  }
+  while (seg.length < 16) {
+    const [ax, ay] = seg[seg.length - 1]!;
+    const [bx, by] = seg[Math.max(0, seg.length - 2)]!;
+    const dx = ax - bx || -c.dir;
+    const dy = ay - by;
+    const m = Math.hypot(dx, dy) || 1;
+    seg.push([ax + (dx / m) * step, ay + (dy / m) * step, 0]);
+  }
+  for (let j = 0; j < seg.length; j++) {
+    const a = seg[Math.max(0, j - 1)]!;
+    const z = seg[Math.min(seg.length - 1, j + 1)]!;
+    seg[j]![2] = Math.atan2(a[1] - z[1], a[0] - z[0]);
+  }
+  ctx.lineCap = 'round';
+  // Legs: one pair per segment, rippling in a wave down the body.
+  ctx.strokeStyle = css(CENTI.leg, l);
+  ctx.lineWidth = 0.14;
+  ctx.beginPath();
+  for (let j = 1; j < seg.length; j++) {
+    const [x, y, a] = seg[j]!;
+    const nx = -Math.sin(a);
+    const ny = Math.cos(a);
+    const wave = Math.sin(c.t * 0.6 - j * 0.9) * 0.45;
+    const len = j === seg.length - 1 ? 3.2 : 1.25;
+    const back = j === seg.length - 1 ? -2.6 : wave;
+    for (const sd of [-1, 1]) {
+      ctx.moveTo(x, y);
+      ctx.lineTo(x + nx * sd * len * 0.6 + Math.cos(a) * back * 0.4, y + ny * sd * len * 0.6 + Math.sin(a) * back * 0.4);
+      ctx.lineTo(x + nx * sd * len + Math.cos(a) * (back - 0.2), y + ny * sd * len + Math.sin(a) * (back - 0.2));
+    }
+  }
+  ctx.stroke();
+  // The plates, alternately long and short, from tail to head.
+  for (let j = seg.length - 1; j >= 1; j--) {
+    const [x, y, a] = seg[j]!;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(a);
+    // Flat plates, wider than long, the long and short ones alternating.
+    const wide = (j % 2 === 0 ? 1.15 : 0.95) * (j > 12 ? 0.85 : 1);
+    ctx.fillStyle = css(CENTI.body, l);
+    outline(ctx, [[0.85, -wide * 0.8], [0.85, wide * 0.8], [-0.75, wide], [-0.75, -wide]]);
+    ctx.fill();
+    ctx.strokeStyle = css(CENTI.dark, l, 0.85);
+    ctx.lineWidth = 0.14;
+    ctx.beginPath();
+    ctx.moveTo(-0.7, -wide * 0.9);
+    ctx.lineTo(-0.7, wide * 0.9);
+    ctx.stroke();
+    glint(ctx, 0.05, -wide * 0.4, 0.45, 0.12, 0, l, 0.32);
+    ctx.restore();
+  }
+  // Head, poison claws, antennae.
+  const [x0, y0, a0] = seg[0]!;
+  ctx.save();
+  ctx.translate(x0, y0);
+  ctx.rotate(a0);
+  ctx.fillStyle = css(CENTI.head, l);
+  ctx.beginPath();
+  ctx.ellipse(0.2, 0, 1.0, 0.95, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = css(CENTI.dark, l);
+  ctx.lineWidth = 0.16;
+  ctx.beginPath();
+  ctx.moveTo(0.9, 0.5);
+  ctx.quadraticCurveTo(1.6, 0.4, 1.5, 0.05);
+  ctx.moveTo(0.9, -0.5);
+  ctx.quadraticCurveTo(1.6, -0.4, 1.5, -0.05);
+  ctx.stroke();
+  ctx.strokeStyle = css(CENTI.leg, l);
+  ctx.fillStyle = css(CENTI.leg, l);
+  const sw = Math.sin(c.t * 0.3) * 0.6;
+  antenna(ctx, 0.9, -0.4, 3.5, -1.8 + sw, 6.0, -1.0 + sw, 0.1, 10);
+  antenna(ctx, 0.9, 0.4, 3.5, 1.8 - sw, 6.0, 1.0 - sw, 0.1, 10);
+  ctx.restore();
+}
+
+/**
+ * The mole cricket, 4 cm, side on along its heading: a small head, the great
+ * velvet pronotum, shovel forelegs with their teeth, short wing covers over a
+ * soft ringed abdomen, the hind wings rolled into points, two long cerci.
+ */
+function moleCricket(ctx: CanvasRenderingContext2D, c: Critter, light: Light): void {
+  const l = light(c.x, c.y);
+  ctx.save();
+  ctx.translate(c.x + 0.5, c.y + 0.5);
+  const a = Math.atan2(c.vy, c.vx || c.dir);
+  const flip = Math.cos(a) < 0 ? -1 : 1;
+  ctx.rotate(flip < 0 ? a + Math.PI : a);
+  ctx.scale(flip, 1);
+  ctx.translate(0, 2.8);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const dig = Math.sin(c.t * 0.35);
+  // Far shovel.
+  ctx.fillStyle = css(MOLE.dark, l, 0.9);
+  outline(ctx, [[2.6, -1.6], [5.2, -0.6 + dig * 0.4], [6.2, 0.3 + dig * 0.4], [4.6, 0.6], [2.8, -0.6]]);
+  ctx.fill();
+  // Cerci.
+  ctx.strokeStyle = css(MOLE.dark, l);
+  ctx.lineWidth = 0.35;
+  ctx.beginPath();
+  ctx.moveTo(-23, -2.6);
+  ctx.quadraticCurveTo(-27, -3.6, -30.5, -3.0);
+  ctx.moveTo(-23, -2.2);
+  ctx.quadraticCurveTo(-27, -1.8, -30, -0.8);
+  ctx.stroke();
+  // Hind and middle legs.
+  ctx.fillStyle = css(MOLE.leg, l);
+  leg(ctx, [[-9, -1.5], [-12.5, -3.6], [-14.5, 0.2], [-16.2, 0.4]], 1.4, 0.5);
+  leg(ctx, [[-3, -1.4], [-4.4, -0.8], [-5.6, 0.3], [-6.8, 0.3]], 0.8, 0.4);
+  // Abdomen: soft, ringed, tapering.
+  outline(ctx, [[-23.5, -2.5], [-21, -5.4], [-12, -6.6], [-5, -6.2], [-4, -1.8], [-10, -0.6], [-19, -0.9]]);
+  litFill(ctx, MOLE.belly, l, -6.6, -0.6, 1.2, 0.75);
+  ctx.strokeStyle = css(MOLE.dark, l, 0.4);
+  ctx.lineWidth = 0.18;
+  ctx.beginPath();
+  for (let k = 0; k < 7; k++) {
+    const sx = -6 - k * 2.4;
+    ctx.moveTo(sx, -0.8);
+    ctx.quadraticCurveTo(sx - 0.6, -3.6, sx + 0.1, -6.2 + k * 0.25);
+  }
+  ctx.stroke();
+  // Hind wings rolled into points, past the abdomen.
+  ctx.fillStyle = css(MOLE.wing, l, 0.9);
+  outline(ctx, [[-6, -6.4], [-16, -6.9], [-25.5, -5.8], [-24, -5.0], [-14, -5.6], [-6, -5.4]]);
+  ctx.fill();
+  // Wing covers: short, veined.
+  outline(ctx, [[-4.2, -6.8], [-9, -7.3], [-14.5, -6.6], [-14.2, -4.6], [-8, -4.4], [-4, -4.8]]);
+  litFill(ctx, MOLE.wing, l, -7.3, -4.4, 1.35, 0.8);
+  ctx.strokeStyle = css(MOLE.dark, l, 0.55);
+  ctx.lineWidth = 0.12;
+  ctx.beginPath();
+  ctx.moveTo(-4.4, -6.2);
+  ctx.quadraticCurveTo(-9, -6.6, -14, -6.0);
+  ctx.moveTo(-6, -7.0);
+  ctx.lineTo(-7, -4.6);
+  ctx.moveTo(-9.5, -7.1);
+  ctx.lineTo(-10.2, -4.5);
+  ctx.moveTo(-12.4, -6.9);
+  ctx.lineTo(-12.8, -4.6);
+  ctx.stroke();
+  // Pronotum: a big velvet shield.
+  outline(ctx, [[-5.2, -2.4], [-5.4, -6.4], [-2, -8.0], [2.6, -7.8], [4.6, -5.6], [4.4, -2.0], [0, -1.2]]);
+  litFill(ctx, MOLE.body, l, -8.0, -1.2, 1.45, 0.7);
+  ctx.fillStyle = css(MOLE.velvet, l, 0.35);
+  ctx.beginPath();
+  ctx.ellipse(-0.6, -6.4, 4.0, 1.1, -0.05, 0, Math.PI * 2);
+  ctx.fill();
+  // Head: small, low, with the eye and short antennae.
+  outline(ctx, [[4.2, -2.0], [4.4, -5.0], [6.4, -5.4], [8.0, -4.0], [7.8, -2.0], [5.8, -1.4]]);
+  litFill(ctx, MOLE.body, l, -5.4, -1.4, 1.35, 0.7);
+  ctx.fillStyle = css([24, 16, 10], l);
+  ctx.beginPath();
+  ctx.ellipse(6.4, -4.2, 0.55, 0.45, 0, 0, Math.PI * 2);
+  ctx.fill();
+  glint(ctx, 6.3, -4.4, 0.18, 0.12, 0, l, 0.6);
+  ctx.strokeStyle = css(MOLE.dark, l);
+  ctx.fillStyle = css(MOLE.dark, l);
+  antenna(ctx, 7.6, -4.4, 9.4, -6.2 + dig * 0.3, 11.6, -5.4, 0.18, 9);
+  // The near shovel: broad tibia with four teeth, scooping.
+  ctx.save();
+  ctx.translate(3.2, -1.8);
+  ctx.rotate(0.25 + dig * 0.3);
+  ctx.fillStyle = css(MOLE.leg, l);
+  outline(ctx, [[-0.6, -0.6], [1.6, -1.0], [3.2, -0.4], [3.4, 0.9], [1.0, 1.0], [-0.6, 0.6]]);
+  litFill(ctx, MOLE.leg, l, -1.0, 1.0, 1.3, 0.7);
+  ctx.fillStyle = css(MOLE.dark, l);
+  for (let k = 0; k < 4; k++) {
+    ctx.beginPath();
+    ctx.moveTo(3.0 - k * 0.55, 0.85);
+    ctx.lineTo(3.25 - k * 0.55, 1.8);
+    ctx.lineTo(2.75 - k * 0.55, 0.95);
+    ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
   ctx.restore();
 }
 

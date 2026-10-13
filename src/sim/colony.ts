@@ -2,7 +2,7 @@ import type { Sim } from './sim';
 import { Ant } from './ant';
 import { Brood, Corpse } from './brood';
 import type { Carcass } from './carcass';
-import { Carry, Task, TaskKind, Work, WORK, ChamberKind } from './types';
+import { Carry, Task, TaskKind, Work, WORK, ChamberKind, holdsStores } from './types';
 import { F } from './fields';
 import { TUNING, TICK_HZ, DAY_TICKS } from '../config';
 import { devRate, metabolism } from './calendar';
@@ -97,6 +97,13 @@ export class Colony {
   scoutChance = 0.002;
   /** Loads brought in through the gates lately (decays over a minute or so). */
   returns = 0;
+  /**
+   * Seed coming in, per week (a running average over the last week or two).
+   * The queen's laying follows it: a colony raises only the brood its
+   * harvest can feed, not whatever the stores would stretch to for a month.
+   */
+  income = 0;
+  private lastDelivered = 0;
 
   /**
    * A forager comes in through the gate with a load and taps the foragers
@@ -234,6 +241,14 @@ export class Colony {
     b.age = -1;
   }
 
+  /** Brood taken away whole (stolen, eaten by an intruder or in a famine): gone from the nest. */
+  takeBrood(b: Brood, cause: string): void {
+    this.removeBrood(b);
+    const k = this.brood.indexOf(b);
+    if (k >= 0) this.brood.splice(k, 1);
+    this.deaths[cause] = (this.deaths[cause] ?? 0) + 1;
+  }
+
   feedings(b: Brood): number {
     // Sexuals are big: a young queen takes far more food than a worker.
     return TUNING.larvaFeedings + (b.major ? 2 : 0) + (b.sex === 1 ? 3 : b.sex === 2 ? 1 : 0);
@@ -323,8 +338,11 @@ export class Colony {
         if (b.age >= TUNING.eggTicks * sp) {
           b.stage = 1;
           b.age = 0;
-          const majors = this.majors;
-          b.major = adults > 20 && majors < adults * this.majorShare && sim.rng.chance(0.6);
+          // Count the majors already on their way (larvae and pupae), not only the adults,
+          // or a burst of brood overshoots the share.
+          let majors = this.majors;
+          for (const o of this.brood) if (o.major && o.stage > 0) majors++;
+          b.major = adults > 20 && majors < (adults + this.brood.length * 0.5) * this.majorShare && sim.rng.chance(0.6);
         } else if (!b.carried && sim.nest.chamberAt(b.y * this.w + b.x)?.kind !== 'nursery') loose++;
       } else if (b.stage === 1) {
         const req = this.feedings(b);
@@ -422,15 +440,42 @@ export class Colony {
       else if (b.stage === 0) eggs++;
     }
     if (adults > 0 && this.stored + this.reserve * 0.5 < (larvae + eggs * 0.7) * 1.5 + adults * 0.4 + 3) return;
-    // From August the stores must also see the colony, and the brood that will
-    // hatch into it, through the winter.
-    if (adults > 0 && doy > 212 && this.stored + this.reserve < (adults + larvae + eggs) * 4) return;
+    // Look ahead: the brood already in the nest will soon be workers that eat.
+    // Lay only while the stores, topped up by the harvest, would feed that
+    // bigger colony for some weeks (fewer on High breeding, more on Low).
+    if (adults >= 8 && this.runway(larvae, eggs) < [12, 7, 4][this.breeding]!) return;
+    // From June the queen lays with the winter in mind: the stores, and what
+    // the harvest should still bring in before it ends, must see the colony
+    // and all the brood that will hatch into it through to spring.
+    if (adults > 0 && doy > 150) {
+      let pupae = 0;
+      for (const b of this.brood) if (b.stage === 2) pupae++;
+      const weeksLeft = Math.max(0, (280 - doy) / 7);
+      const heads = adults + pupae + larvae + eggs + this.alates.length * 1.5;
+      if (this.stored + this.reserve + this.income * weeksLeft * 0.5 < heads * 3) return;
+    }
     if (adults === 0 && this.born === 0 && this.brood.length >= 8) return;
     const spot = this.freeFloorNear(sim, q.x, q.y, 6);
     if (spot < 0) return;
     const egg = new Brood(spot % this.w, (spot / this.w) | 0);
     if (sexual) egg.sex = sim.rng.chance(0.3) ? 1 : 2;
     this.placeBrood(egg, spot % this.w, (spot / this.w) | 0);
+  }
+
+  /**
+   * Weeks the food on hand would last the colony as it will be once today's
+   * brood has hatched, net of what the foragers bring in (Infinity if the
+   * harvest covers it).
+   */
+  runway(larvae: number, eggs: number): number {
+    let pupae = 0;
+    for (const b of this.brood) if (b.stage === 2) pupae++;
+    const meta = metabolism(this.nestTemp);
+    const perAdult = (DAY_TICKS / TUNING.adultSeedTicks) * meta;
+    const heads = this.adults + pupae + larvae * 0.9 + eggs * 0.8 + this.alates.length * 1.5;
+    const use = heads * perAdult + larvae * 0.9 + (this.queen?.alive ? (DAY_TICKS / TUNING.queenSeedTicks) * meta : 0);
+    const net = use - this.income * 0.85;
+    return net <= 0 ? Infinity : (this.stored + this.reserve) / net;
   }
 
   private freeFloorNear(sim: Sim, x: number, y: number, r: number): number {
@@ -468,7 +513,7 @@ export class Colony {
     let n = 0;
     let wet = 0;
     for (const c of sim.nest.chambers) {
-      if (c.kind !== 'granary' && c.kind !== 'queen') continue;
+      if (!holdsStores(c.kind)) continue;
       for (const i of c.cells) {
         const m = w.mat[i]!;
         if (m !== SEED && m !== FRUIT && m !== PREY) continue;
@@ -508,14 +553,17 @@ export class Colony {
   private consume(sim: Sim): void {
     const adults = this.adults;
     if (adults === 0) return;
-    // Cold ants eat little: through the winter rest the stores last.
-    const meta = metabolism(this.nestTemp);
+    // Cold ants eat little, and in the winter rest (diapause) less again:
+    // that is what lets the autumn's stores last until spring.
+    const meta = metabolism(this.nestTemp) * (sim.dormant ? 0.5 : 1);
     this.need += ((adults + this.alates.length * 1.5) / TUNING.adultSeedTicks + (this.queen?.alive ? 1 / TUNING.queenSeedTicks : 0)) * meta;
     while (this.need >= 1) {
       this.need -= 1;
       if (this.eatOne(sim)) this.hunger = Math.max(0, this.hunger - 0.5);
       // Early on the queen feeds her daughters from her own fat (trophic eggs).
       else if (this.reserve > 0) this.reserve--;
+      // Famine: the nurses eat eggs, then the youngest larvae, before any worker starves.
+      else if (this.eatBrood(sim)) this.hunger = Math.max(0, this.hunger - 0.5);
       else this.hunger++;
     }
     this.starving = this.hunger > 1;
@@ -523,12 +571,25 @@ export class Colony {
       if (++this.starveTimer >= TUNING.starveTicks / (1 + this.hunger * 0.15)) {
         this.starveTimer = 0;
         this.hunger = Math.max(0, this.hunger - 2);
-        // The oldest go first.
-        let victim: Ant | null = null;
-        for (const a of this.ants) if (!victim || a.ageFrac > victim.ageFrac) victim = a;
+        // Whoever has least left in her crop; not always the old foragers,
+        // or a hungry colony would lose the very ants that bring food home.
+        const victim = this.ants.length ? this.ants[sim.rng.int(0, this.ants.length - 1)]! : null;
         if (victim) this.kill(victim, 'starvation');
       }
     } else this.starveTimer = 0;
+  }
+
+  /** Eat an egg, or failing that the youngest larva. False if there is no brood to eat. */
+  private eatBrood(sim: Sim): boolean {
+    let pick: Brood | null = null;
+    for (const b of this.brood) {
+      if (b.carried || b.stage === 2 || b.sex) continue;
+      if (!pick || b.stage < pick.stage || (b.stage === pick.stage && b.age < pick.age)) pick = b;
+    }
+    if (!pick) return false;
+    this.takeBrood(pick, 'brood eaten in famine');
+    sim.noteYearly('famineBrood', { x: pick.x, y: pick.y });
+    return true;
   }
 
   // ---------------------------------------------------------------- work
@@ -735,6 +796,12 @@ export class Colony {
       this.updateDemand(sim);
     }
     if (sim.tick % 150 === 75) this.exposure(sim);
+    // The harvest rate, sampled every twelfth of a week (not through the winter rest).
+    if (sim.tick % Math.round(DAY_TICKS / 12) === 0) {
+      const rate = (this.delivered - this.lastDelivered) * 12;
+      this.lastDelivered = this.delivered;
+      if (!sim.dormant) this.income = this.income * 0.94 + rate * 0.06;
+    }
     this.consume(sim);
     if (this.queen?.alive) this.queen.tick(sim);
     // Who stands where, so ants that meet head-on can stop and touch antennae.

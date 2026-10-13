@@ -15,11 +15,11 @@ import { AntPainter } from '../render/antdraw';
 import { drawCritters, drawCarcasses } from '../render/critterdraw';
 import { TUNING } from '../config';
 
-const W = 1200;
+const W = 2400;
 const H = 120;
 const GROUND = 60;
 /** Left half of the little world is open ground under the sky, right half is inside the nest. */
-const SPLIT = 600;
+const SPLIT = 1200;
 
 const world = new World(W, H);
 for (let x = 0; x < W; x++) {
@@ -121,6 +121,30 @@ critter('beetlet', 'Attaephilus beetle (nest guest)', 'beetlet', true, 1);
   subjects[subjects.length - 1]!.x = x;
   subjects[subjects.length - 1]!.y = GROUND + 10;
 }
+{
+  // Thief ants filing along a hair-thin gallery in the tunnel's floor.
+  const x = place(true);
+  const gal: number[] = [];
+  for (let k = 0; k < 40; k++) gal.push((GROUND - 1 - Math.round(k * 0.35)) * W + x - 20 + k);
+  critter('thief', 'Thief ants raiding (Solenopsis fugax, 2 mm)', 'thief', true, 4, { body: gal, state: 0, x: x + 19, y: GROUND - 15 });
+  subjects[subjects.length - 1]!.x = x + 12;
+  subjects[subjects.length - 1]!.y = GROUND - 10;
+  const x2 = place(true);
+  const gal2: number[] = [];
+  for (let k = 0; k < 40; k++) gal2.push((GROUND - 1 - Math.round(k * 0.35)) * W + x2 - 20 + k);
+  critter('thief-home', 'Thief ants going home with eggs', 'thief', true, 4, { body: gal2, state: 2, timer: -6, tone: 3, x: x2, y: GROUND - 8 });
+  subjects[subjects.length - 1]!.x = x2 + 8;
+  subjects[subjects.length - 1]!.y = GROUND - 8;
+}
+{
+  const x = place(true);
+  const body: number[] = [];
+  for (let k = 0; k < 26; k++) body.push((GROUND - 1) * W + x + 10 - k);
+  critter('centipede', 'Centipede (Lithobius, 25 mm)', 'centipede', true, 4, { body, state: 1, x: x + 10, y: GROUND - 1 });
+  subjects[subjects.length - 1]!.x = x;
+  subjects[subjects.length - 1]!.y = GROUND - 2;
+}
+critter('molecricket', 'Mole cricket (Gryllotalpa, 40 mm)', 'molecricket', true, 10, { vx: 1, vy: 0, state: 0 }, -10);
 for (const kind of ['hopper', 'beetle', 'worm'] as const) {
   const x = place(false);
   const c = new Carcass(kind, x, GROUND - 1, 120, 1);
