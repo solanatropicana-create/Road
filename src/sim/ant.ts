@@ -155,7 +155,7 @@ export class Ant {
   private fdir = 1;
   private fdist = 0;
   /** A nurse taking an unneeded meal back to the store. */
-  private returning = false;
+  returning = false;
   /** Where the forager came out of the nest (the walk out is measured from here). */
   private exitX = 0;
   /** Where and when a searching forager last made headway (to notice when it is stuck). */
@@ -341,6 +341,8 @@ export class Ant {
     }
     // Rain, cold or midday heat: anyone outside empty-handed heads for shelter.
     if (sim.forageWeather < 0.05 && this.carry === Carry.None && sim.world.bg[this.y * sim.world.w + this.x] === 0) {
+      // (The search is over: on the lip of the mouth she goes on in, not back out.)
+      this.fdist = 0;
       this.descend(sim, F.Rest);
       return;
     }
@@ -1038,6 +1040,9 @@ export class Ant {
       this.fdir = side !== 0 ? side : sim.rng.chance(0.5) ? -1 : 1;
       this.fdist = sim.rng.int(30, Math.round(sim.colony.reach));
       this.exitX = this.x;
+      this.stallX = this.x;
+      this.stallY = this.y;
+      this.stallT = sim.tick;
     }
     const food = this.findAdjacent(sim, (n) => this.isForageFood(sim, n));
     if (food >= 0) {
@@ -1459,7 +1464,10 @@ export class Ant {
     // An open nest cell underfoot is a hole (a mouth still being dug), not a stem:
     // a searcher there climbs back out rather than clinging on above it.
     const hole = (c: number): boolean => w.mat[c] === EMPTY && w.bg[c] === 1;
-    const climbing = !SOLID[w.mat[i + w.w]!] && !hole(i + w.w);
+    // A steep bank of soil beside her is a wall to walk up (a crater's side
+    // grows steep as the mound grows), not a stem to keep off.
+    const bank = (c: number): boolean => SOLID[w.mat[c - 1]!] === 1 || SOLID[w.mat[c + 1]!] === 1 || SOLID[w.mat[c - 1 + w.w]!] === 1 || SOLID[w.mat[c + 1 + w.w]!] === 1;
+    const climbing = !SOLID[w.mat[i + w.w]!] && !hole(i + w.w) && !bank(i);
     const weights = [0, 0, 0, 0, 0, 0, 0, 0];
     for (let k = 0; k < 8; k++) {
       if (!fields.canStep(i, k)) continue;
@@ -1495,7 +1503,7 @@ export class Ant {
       // Harvesters mostly glean fallen seed; climbing stems is the exception,
       // and a forager up a stem with nothing in reach climbs back down.
       if (hole(n + w.w)) s *= DY[k]! > 0 ? 0.05 : 1;
-      else if (!SOLID[w.mat[n + w.w]!]) s *= DY[k]! < 0 ? 0.25 : 0.6;
+      else if (!SOLID[w.mat[n + w.w]!] && !bank(n)) s *= DY[k]! < 0 ? 0.25 : 0.6;
       if (climbing) s *= DY[k]! > 0 ? 3 : DY[k]! < 0 ? 0.3 : 1;
       else if (hole(i + w.w)) s *= DY[k]! < 0 ? 4 : 1;
       weights[k] = s;
@@ -1568,7 +1576,7 @@ export class Ant {
     if (moveBrood) {
       if (this.descend(sim, F.Egg) === Step.Arrived) {
         const b = col.broodAt(i);
-        if (b && !b.sex) {
+        if (b) {
           col.liftBrood(b);
           this.carryBrood = b;
           this.carry = b.stage === 0 ? Carry.Egg : b.stage === 1 ? Carry.Larva : Carry.Pupa;

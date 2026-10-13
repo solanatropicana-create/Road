@@ -46,9 +46,41 @@ function carve(sim: Sim, i: number): void {
   w.set(i, EMPTY, w.tone[i], w.tint[i] || w.mat[i]);
 }
 
+/**
+ * Before a gallery is walled off, the workers out in it (chasing the intruder)
+ * come back to the nest side of the breach; otherwise the plug shuts them in.
+ */
+function recall(sim: Sim, at: number): void {
+  const w = sim.world;
+  const ax = at % w.w;
+  const ay = (at / w.w) | 0;
+  let home = -1;
+  let hd = Infinity;
+  for (let dy = -6; dy <= 6; dy++) {
+    for (let dx = -6; dx <= 6; dx++) {
+      const i = (ay + dy) * w.w + ax + dx;
+      if (!nestOpen(sim, i) || !w.walk[i]) continue;
+      const d = dx * dx + dy * dy;
+      if (d < hd) {
+        hd = d;
+        home = i;
+      }
+    }
+  }
+  if (home < 0) return;
+  for (const a of sim.colony.ants) {
+    if (a.away || Math.abs(a.x - ax) > 90 || Math.abs(a.y - ay) > 90) continue;
+    const i = a.y * w.w + a.x;
+    if (w.bg[i] !== 1 || w.plan[i] || w.mat[i] !== EMPTY) continue;
+    a.x = home % w.w;
+    a.y = (home / w.w) | 0;
+  }
+}
+
 /** The workers wall a breach off: the gallery's last cells by the nest are packed with soil. */
 function plug(sim: Sim, cells: number[], n: number): void {
   const w = sim.world;
+  if (cells.length) recall(sim, cells[0]!);
   let done = 0;
   for (const i of cells) {
     if (done >= n) break;
@@ -61,6 +93,7 @@ function plug(sim: Sim, cells: number[], n: number): void {
 /** Wall off a wide gallery: discs of packed soil along its first cells. */
 function plugRound(sim: Sim, centres: number[], r: number): void {
   const w = sim.world;
+  if (centres.length) recall(sim, centres[0]!);
   for (const c of centres) {
     const cx = c % w.w;
     const cy = (c / w.w) | 0;

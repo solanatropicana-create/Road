@@ -614,11 +614,10 @@ export class Sim {
         // nursery, and brood in a nursery much colder (or hotter) than the best.
         if (this.fields.sourceCount[F.Nurse] === 0) break;
         for (const b of col.brood) {
-          if (b.carried || b.restUntil > this.tick || b.sex) continue;
+          if (b.carried || b.restUntil > this.tick) continue;
           const i = b.y * w.w + b.x;
           const room = nest.chamberAt(i);
           if (room?.kind !== 'nursery') {
-            // The young queens and males sit apart; workers' brood goes to the nursery.
             push(i);
             continue;
           }

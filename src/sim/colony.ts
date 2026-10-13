@@ -795,7 +795,8 @@ export class Colony {
       consider(depth, warm);
       const r = devRate(sim.soilT(depth) + warm);
       this.roomRate[c.id] = r;
-      if (c.kind === 'nursery') nurseryBest = Math.max(nurseryBest, r);
+      // (Only a nursery with room counts: a full warm one is no place to carry brood to.)
+      if (c.kind === 'nursery' && c.floor.some((i) => !this.broodCell[i])) nurseryBest = Math.max(nurseryBest, r);
       deep += depth;
       n++;
     }
@@ -843,7 +844,7 @@ export class Colony {
       const i = a.y * sim.world.w + a.x;
       occ[i] = k + 1;
       this.occCells.push(i);
-      if (a.task === Task.Nurse && (a.carry === Carry.Seed || a.carry === Carry.Fruit || a.carry === Carry.Prey)) meals++;
+      if (a.task === Task.Nurse && !a.returning && (a.carry === Carry.Seed || a.carry === Carry.Fruit || a.carry === Carry.Prey)) meals++;
     }
     this.mealsCarried = meals;
     if (sim.tick % 5 === 0) this.spreadAlarm(sim);
