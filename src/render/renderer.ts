@@ -305,7 +305,10 @@ export class Renderer {
     let solids = 0;
     if (SOLID[w.mat[i - 1]!]) solids++;
     if (SOLID[w.mat[i + 1]!]) solids++;
-    const f = 1 - solids * 0.06 - up * 0.07 + (SOLID[w.mat[i + w.w]!] ? 0.05 : 0);
+    // Hollows have depth: the back wall is in shadow where the walls close in, open in the middle.
+    let near = 0;
+    for (const d of [-w.w - 1, -w.w + 1, w.w - 1, w.w + 1, -2, 2, -2 * w.w, 2 * w.w]) if (SOLID[w.mat[i + d]!]) near++;
+    const f = 1 - solids * 0.07 - up * 0.07 - near * 0.025 + (SOLID[w.mat[i + w.w]!] ? 0.05 : 0);
     return [c[0] * f, c[1] * f, c[2] * f];
   }
 
