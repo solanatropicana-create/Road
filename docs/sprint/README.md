@@ -292,6 +292,14 @@ Hedef: oyunu açıp izleyen birinin keyif alması. Olgun kolonilerden (node'da �
   - Oda kartı ve oda listesi tavan gerilimini ve desteği gösteriyor.
   - Karınca seçmek daha toleranslı.
   - Yıl özetine "toprak altı" (çöken tavan, sağ çıkarılan) ve "ağaçta" (bahçe karıncalarıyla itişme) satırları eklendi.
+- **Denge.** Sonbaharda ağacın altına düşen kanatlı tohumlar toplayıcıları gövdenin dibine çekiyordu. Bir haritada yılın kayıplarının yarısından fazlası bahçe karıncalarındandı (64 işçi). Saldırı ve ölüm olasılığı düşürüldü.
+- **Son ölçüm (8 harita, 160 hafta):**
+  - 8/8 koloni hayatta, açlıktan ölen işçi 0, 8/8'de evlilik uçuşu.
+  - Son nüfus 96–414 işçi.
+  - Bahçe karıncalarına giden: ağaçlı haritalarda 3 yılda 4–45 işçi (önceki turda 21–81).
+  - Göçükte ölen: 3 yılda harita başına 0–72 işçi.
+  - Bir harita (96 işçi) ikinci yazında az yavruladı. Bu turlar arasında oynayan, daha önce de görülen bir seyir (aynı harita 301 ve 562 işçiye de çıkmıştı); bu gecenin değişikliklerinden gelmiyor.
+- **Testler.** Oyuncu testi 0 bulgu; izleme testi (kuruluş, ilk işçiler, bir yıl sonra) ışınlanma, takılma, leş sıçraması yok.
 - **Yakalanan hatalar.**
   - Gömülü yavru kimliği negatif olduğu için nabız halkasının yarıçapı negatife düşüyor, çizim istisna atıp oyunu donduruyordu. Düzeltildi. Kare döngüsü artık bir sonraki kareyi her şeyden önce istiyor, tek karelik bir çizim hatası koloniyi durduramaz.
   - Tıklanabilir bildirimler günlük bağlantısının stilini alıp tek satıra yayılıyordu. Düzeltildi.
