@@ -1348,6 +1348,8 @@ export class UI {
       this.applyPhase(phase);
       if (phase === 'growing' && was === 'founding') {
         this.note('j_firstWorkers', undefined, { toast: true });
+        // Once, as the colony comes to life: how to watch it.
+        setTimeout(() => this.toast(t('tipKeys'), 9000), 6500);
         // The moment to act (or to start watching): open the panel (except on phones) and point at the camera.
         this.openTab(this.mode === 'guide' ? 'guide' : 'colony');
         setTimeout(() => this.toast(t(this.mode === 'guide' ? 'tipBrainAwake' : 'tipWatchAwake'), 9000), 1800);
