@@ -264,7 +264,39 @@ Toprak artık yalnızca kazılan bir malzeme değil, çökebilen bir yapı (`src
 - Göçükte ölen: 3 yılda harita başına 0–46 işçi ve 0–7 yavru.
 - Ağaçlı dört haritada bahçe karıncalarına giden: 3 yılda 21–81 işçi. Bu kayıplar komşu savaşları ve kertenkelelerle aynı mertebede ve koloniler yine de büyüyor.
 
-## 9. Sıradaki (öneri)
+## 9. Gece cilası: seyir zevki, ses, kullanım kolaylığı
+
+Hedef: oyunu açıp izleyen birinin keyif alması. Olgun kolonilerden (node'da üretilip tarayıcıya yüklenen kayıtlarla) gündüz, gece, alacakaranlık, yağmur, sonbahar ve kar altında ekran görüntüleri alındı ve kusurlar tek tek düzeltildi.
+
+- **Belgesel modu.**
+  - Paneller kenara çekiliyor, alt çubuk soluklaşıyor, ölçek çubuğu gizleniyor.
+  - Kameradaki karınca işaretleniyor. Her çekimde ağır bir yaklaşma var.
+  - Yeni çekimler: göçük altındaki kurtarma, tavan destekleme, ağacın dibindeki kavga, yuva ağzı, ağaç ve bahçe karıncaları, kesitin diğer hayvanları, yuvanın trafiğini akış gibi gösteren hızlandırılmış çekim.
+  - Büyük anlar (göçük, kavga, kurbağa, savaş, uçuş) film ne kadar hızlı akarsa aksın 1×'te oynuyor; altyazı bunu belirtiyor.
+  - İzleme modunda bir buçuk dakika dokunulmazsa belgesel ekran koruyucu gibi kendiliğinden başlıyor.
+- **Ses (kayıt yok, anında üretiliyor).**
+  - Rüzgârla nefes alan çayır, yağmur, şimşekten sonra gök gürültüsü.
+  - Yaz gecelerinde cırcır böcekleri, öğle sıcağında çekirgeler, kanatlı karınca sürüsünün vızıltısı.
+  - Toprak altında her şey boğuklaşıyor, yakın çekimde kazıcıların tıkırtısı duyuluyor. Göçük ekranın sağından ya da solundan gelen derin bir gümbürtü.
+  - Kısık, kendiliğinden üretilen bir müzik katmanı: gündüz açık, gece minör, toprak altında bir oktav aşağıda. Ayarlardan ayrıca kapatılabiliyor. Sesin tamamı M tuşuyla kapanıyor.
+  - Seviyeler tarayıcıda ölçüldü (ortam yaklaşık −30 dBFS, yağmur −22, göçük tepe 0,3–0,5).
+- **Görsellik.**
+  - Tünellerin yan duvarlarına ince bir kesik yüz kenarı çizildi, arka duvar koyulaştı: yuva mimarisi daha iyi okunuyor.
+  - Çatlaklar ışık alan dudaklı yarıklar olarak çiziliyor. Yuva içindeki gevşek dolgu sıkışmış duvardan açık.
+  - Gömülenler toprağın altında soluk silüet ve üzerlerinde nabız halkası olarak görünüyor. Yakındaki göçük ekranı hafifçe sarsıyor.
+  - Ot kökü ağı uzaktan daha sakin. Kar kesiti artık bir kar örtüsü: üstte parlak, tabana doğru mavimsi, ayrı yağışların katmanlarıyla.
+  - Evlilik uçuşu açılışı tüm kesit yerine çayırı ve sürüyü çerçeveliyor.
+- **Kullanım kolaylığı.**
+  - J son olaya atlıyor, Q kraliçeye gidiyor, ok tuşları ve WASD kaydırıyor, Esc belgeselden de çıkıyor.
+  - Yeri olan bildirime tıklayınca oraya gidiliyor.
+  - Oda kartı ve oda listesi tavan gerilimini ve desteği gösteriyor.
+  - Karınca seçmek daha toleranslı.
+  - Yıl özetine "toprak altı" (çöken tavan, sağ çıkarılan) ve "ağaçta" (bahçe karıncalarıyla itişme) satırları eklendi.
+- **Yakalanan hatalar.**
+  - Gömülü yavru kimliği negatif olduğu için nabız halkasının yarıçapı negatife düşüyor, çizim istisna atıp oyunu donduruyordu. Düzeltildi. Kare döngüsü artık bir sonraki kareyi her şeyden önce istiyor, tek karelik bir çizim hatası koloniyi durduramaz.
+  - Tıklanabilir bildirimler günlük bağlantısının stilini alıp tek satıra yayılıyordu. Düzeltildi.
+
+## 10. Sıradaki (öneri)
 
 1. **Ağacın devamı:** yaprak biti kolonileri, kabuk altında kışlayan böcekler; *Lasius* ile yol paylaşımı (bir kayıptan sonra toplayıcıların gövde dibinden kaçınması).
 2. **Majörler değirmenci olsun:** Tohumu kırıp "karınca ekmeği" yapsınlar.
