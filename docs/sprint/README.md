@@ -112,7 +112,29 @@ Yeniden çizilenler:
 - Telefonda takip kartı ile bildirimler ve ölçek çubuğu artık çakışmıyor.
 - Başlıktaki saat satırında sıcaklık taşıp kesiliyordu; hava durumunu zaten simge gösterdiği için kelime kaldırıldı (üstüne gelince yazıyor).
 
-## 4. Sıradaki (öneri)
+## 4. Sabah turu: organik yuva, kazıp çıkma, büyük yırtıcılar
+
+Sabah gelen geri bildirim: odalar fazla kusursuz, sıkışan karıncalar kazıp çıkmıyor, koloniyi gerçekten bitirebilecek tehlikeler yok.
+
+**Yuva neden kusursuzdu?** Yuvada bir "mimar" var: her 3 saniyede bir sıradaki odayı düzgün bir elips olarak plana işaretliyor, işçiler yalnızca bu hücreleri kazıyordu. Sonuç ortada tek kuyu, iki yanda simetrik ve eşit aralıklı odalardan oluşan bir "çam ağacı"ydı. Şimdi:
+- Odalar loblu ve yamuk: iki ölçekte çıkıntı, bir ucu yüksek, tavanı düzensiz, tabanı düz.
+- Dolan oda (kreş, ambar, dinlenme) yarı yarıya ihtimalle yeni oda açmak yerine yanına bir lob eklenerek genişliyor.
+- Tüneller kıvrılıyor, genişleyip daralıyor. Kuyu ara sıra bir odanın ucundan dallanıyor, odalar başka odaların ucuna da eklenebiliyor.
+- Kazacak bir şey yokken ara sıra kör keşif galerileri kazılıyor; işçiler duvarları ve tavanları kullandıkça kemiriyor.
+- İkinci kapı her kolonide 55–110 işçi arasında rastgele bir eşikte açılıyor (önceden sabit 120).
+
+**Kazıp çıkma.** Kraliçe odasına ve dinlenme odalarına yolu kalmayan işçi (tohum yığını, çökme) birkaç saniye sonra kraliçeye doğru toprağı ya da tohumu kazarak yol açıyor. Testte tohum duvarıyla kapatılan 6 işçi 20 saniyede çıktı.
+
+**Büyük yırtıcılar.**
+- *Yeşil kurbağa:* alacakaranlıkta kalabalık bir koloninin (80+ işçi) yolunun yanına oturuyor, toplayıcıları diliyle tek tek yutuyor ve yuvayı hatırladıkça geri geliyor. Üstüne yeterince alarmlı işçi çıkarsa sıçrayıp gidiyor. İlk sürümü 28 işçilik bir koloniyi iki haftada bitirdi, ayarlandı.
+- *Kum kertenkelesi:* sıcak günlerde höyükte güneşleniyor, geçen toplayıcılara atılıyor.
+- *Köstebek (nadir):* kesiti baştan sona geçiyor. Önündeki toprağı açıp arkasını kapatıyor. Yuvanın dışında iz koyu bir toprak şeridi olarak kalıyor, yuvanın içinde odaları gevşek toprakla dolduruyor ve işçiler onları yeniden kazıyor. Yolundaki yavruları yiyor, kraliçeye denk gelirse onu öldürebiliyor. İlk sürümde arkasında bıraktığı gevşek kum yuvaya akıyor, iz zincirleme plana katılıp 13.000 hücrelik sahte kazı işi doğuruyordu; düzeltildi.
+
+Bu turda bir kural daha eklendi: Temmuz ortasından sonraki yavru, gelecek hasada değil eldeki stoğa göre yetiştiriliyor. Daha önce 360 işçilik bir koloni Temmuz'da 183 yumurta bırakıp kışa 600 işçiyle girdi ve 178'ini açlıktan kaybetti.
+
+**Son ölçüm (aynı 8 harita, 160 hafta, hepsi bu değişikliklerle):** 8/8 koloni 4. yılın baharında hayatta, 8/8'de iki evlilik uçuşu, **açlıktan ölen işçi 0**, zirve 255–545 işçi. Harita başına kayıplar: kurbağa 6–45, kertenkele 5–42, köstebek 5 haritada 6–30 işçi ve 4 haritada 8–83 yavru, komşu savaşları 31–129. Kraliçeyi köstebek bu 8 haritanın hiçbirinde öldürmedi; risk gerçek ama nadir.
+
+## 5. Sıradaki (öneri)
 
 1. **Majörler değirmenci olsun:** Tohumu kırıp "karınca ekmeği" yapsınlar, larvalar ekmekle beslensin. Böylece majör ayarı gerçek bir ekonomi kararı olur.
 2. **Bahar darboğazı:** Büyük kolonilerde (400+ işçi) kış stoğu Nisan'da bitiyor, bahar tohumu da az. Gerçek *Messor* kolonileri sonbaharda çok daha fazla depolar; ambar kapasitesi ve sonbahar hasadı buna göre ayarlanmalı.
