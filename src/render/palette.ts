@@ -39,7 +39,8 @@ export const PAL = {
     ramp('#3e3d40', '#575659', '#727175', '#908f93', '#b3b2b4', '#cfcecf'),
     ramp('#363d48', '#4b5461', '#646f7d', '#7f8a98', '#a0aab6', '#c2c9d1'),
     ramp('#4a3a28', '#655238', '#826c4a', '#9e875f', '#bba479', '#d6c299'),
-    ramp('#6b6862', '#8a877f', '#a9a59c', '#c6c2b8', '#dedad0', '#f0ede5'),
+    // Limestone: pale, but a weathered grey-beige, never white.
+    ramp('#5e5a52', '#757067', '#8c867b', '#a19a8d', '#b3ac9e', '#c2bbac'),
     // Potsherd: fired clay, a dark burnished face over a brick-red core.
     ramp('#4a2a1e', '#6e3a24', '#8f4a2c', '#ad5d36', '#c27245', '#d38a5c'),
     // Bone: ivory, browned by the soil.

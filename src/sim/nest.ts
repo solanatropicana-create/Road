@@ -452,6 +452,28 @@ export class Nest {
         this.digSpots.push(spot);
       }
     }
+    // Rooms the colony needs come first: while a nursery, granary or the royal
+    // chamber is being dug, nobody starts on a resting room.
+    let urgent = false;
+    for (const i of this.frontier) {
+      const c = this.chamberAt(i);
+      if (c && !c.ready && c.kind !== 'rest') {
+        urgent = true;
+        break;
+      }
+    }
+    if (urgent) {
+      let j = 0;
+      for (let k = 0; k < this.frontier.length; k++) {
+        const c = this.chamberAt(this.frontier[k]!);
+        if (c && !c.ready && c.kind === 'rest') continue;
+        this.frontier[j] = this.frontier[k]!;
+        this.digSpots[j] = this.digSpots[k]!;
+        j++;
+      }
+      this.frontier.length = j;
+      this.digSpots.length = j;
+    }
     this.openCells = open;
     this.pendingCells = pending;
     // Planned work that nobody can reach (cut off by a slump, a pile of stores):
