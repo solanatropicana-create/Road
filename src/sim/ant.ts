@@ -152,6 +152,8 @@ export class Ant {
   /** Forager's chosen heading and how far to go before searching in earnest. */
   private fdir = 1;
   private fdist = 0;
+  /** A nurse taking an unneeded meal back to the store. */
+  private returning = false;
   /** Where the forager came out of the nest (the walk out is measured from here). */
   private exitX = 0;
   /** Where and when a searching forager last made headway (to notice when it is stuck). */
@@ -1483,6 +1485,7 @@ export class Ant {
     if (this.carryBrood) {
       const r = this.descend(sim, F.Nurse);
       if (r === Step.Arrived && col.broodCell[i] === 0) {
+        this.carryBrood.restUntil = sim.tick + Math.round(DAY_TICKS / 12);
         col.placeBrood(this.carryBrood, this.x, this.y);
         this.carryBrood = null;
         this.carry = Carry.None;
@@ -1497,6 +1500,10 @@ export class Ant {
       return;
     }
     if (isFood(this.carry)) {
+      if (this.returning) {
+        this.putBack(sim);
+        return;
+      }
       const r = this.descend(sim, F.Larva);
       if (r === Step.Arrived) {
         // Insect is what larvae grow on: a piece counts as a double meal.
@@ -1504,40 +1511,42 @@ export class Ant {
           this.carry = Carry.None;
           this.feedMiss = 0;
         } else if (++this.feedMiss > 30) {
-          // Whoever was hungry here has been fed by now: share it out mouth to mouth.
-          col.reserve++;
-          this.carry = Carry.None;
+          // Whoever was hungry here has been fed by now: back to the store with it.
+          this.returning = true;
           this.feedMiss = 0;
         } else this.wander(sim, true);
       } else if (r === Step.Failed && sim.fields.sourceCount[F.Larva] === 0) {
-        // No one hungry any more: share it out mouth to mouth (it was already
-        // harvested once, so it doesn't count as a new delivery).
-        col.reserve++;
-        this.carry = Carry.None;
+        // No one hungry any more: back to the store with it.
+        this.returning = true;
       }
       return;
     }
     const f = sim.fields.sourceCount;
-    if (f[F.Egg]! > 0 && f[F.Nurse]! > 0) {
+    // Fetch food only while the hungry outnumber the meals already on their way.
+    // (When stores run low the workers eat first; the larvae wait.)
+    const feedMore = col.hungryLarvae > col.mealsCarried && col.foodForBrood;
+    // Carry brood to the best nursery: new eggs always; moving the rest waits
+    // while larvae are going hungry.
+    const moveBrood = f[F.Egg]! > 0 && f[F.Nurse]! > 0 && (!feedMore || f[F.Larva]! === 0 || sim.rng.chance(0.4));
+    if (moveBrood) {
       if (this.descend(sim, F.Egg) === Step.Arrived) {
         const b = col.broodAt(i);
-        if (b && b.stage === 0) {
+        if (b && !b.sex) {
           col.liftBrood(b);
           this.carryBrood = b;
-          this.carry = Carry.Egg;
+          this.carry = b.stage === 0 ? Carry.Egg : b.stage === 1 ? Carry.Larva : Carry.Pupa;
+          if (b.stage > 0) sim.noteYearly('broodMoved', { x: this.x, y: this.y });
         } else this.wander(sim, true);
       }
       return;
     }
-    // Fetch food only while the hungry outnumber the meals already on their way.
-    // (When stores run low the workers eat first; the larvae wait.)
-    const feedMore = col.hungryLarvae > col.mealsCarried && col.foodForBrood;
     if (feedMore && f[F.Larva]! > 0 && f[F.Store]! === 0 && col.reserve > 0) {
       // No stores yet: take food from the shared crops by the queen.
       if (this.descend(sim, F.Royal) === Step.Arrived) {
         col.reserve--;
         this.carry = Carry.Seed;
         this.carryTone = sim.rng.int(0, 255);
+        this.returning = false;
       }
       return;
     }
@@ -1552,6 +1561,7 @@ export class Ant {
         if (cell >= 0) {
           this.carry = carryOf(w.mat[cell]!);
           this.carryTone = w.tone[cell]!;
+          this.returning = false;
           w.set(cell, EMPTY, w.tone[cell], w.tint[cell]);
         } else this.wander(sim, true);
       }
@@ -1563,6 +1573,21 @@ export class Ant {
       this.startAct(Act.Rest, -1, sim.rng.int(TICK_HZ * 2, TICK_HZ * 6));
       if (f[F.Egg] === 0 && f[F.Larva] === 0) this.reevalAt = 0;
     }
+  }
+
+  /** Take a meal nobody needed back to a store (into the shared crops only if there is no room anywhere). */
+  private putBack(sim: Sim): void {
+    const w = sim.world;
+    const i = this.y * w.w + this.x;
+    const useGran = sim.fields.sourceCount[F.Gran]! > 0;
+    const r = useGran ? this.descend(sim, F.Gran) : Step.Failed;
+    if (r === Step.Arrived && SOLID[w.mat[i + w.w]!] && w.mat[i] === EMPTY) {
+      w.set(i, matOf(this.carry), this.carryTone, 0);
+      this.stepAside(sim);
+    } else if (r === Step.Moved && this.lost <= 150) return;
+    else sim.colony.reserve += rations(this.carry);
+    this.carry = Carry.None;
+    this.returning = false;
   }
 
   private doClean(sim: Sim): void {

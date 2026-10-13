@@ -15,6 +15,8 @@ export class Brood {
   sex: 0 | 1 | 2 = 0;
   /** Ticks spent under water or buried. */
   wet = 0;
+  /** Set down by a nurse: not moved again before this tick (no shuttling back and forth). */
+  restUntil = 0;
 
   constructor(x: number, y: number) {
     this.x = x;

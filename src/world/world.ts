@@ -226,10 +226,18 @@ export class World {
     const y = (i - x) / this.w;
     const cx = (x / CHUNK) | 0;
     const cy = (y / CHUNK) | 0;
-    for (let dy = -1; dy <= 1; dy++) {
+    // A grain moves at most two cells a tick, so a neighbouring chunk only
+    // needs waking when the change is within two cells of its edge.
+    const lx = x - cx * CHUNK;
+    const ly = y - cy * CHUNK;
+    const x0 = lx <= 2 ? -1 : 0;
+    const x1 = lx >= CHUNK - 3 ? 1 : 0;
+    const y0 = ly <= 2 ? -1 : 0;
+    const y1 = ly >= CHUNK - 3 ? 1 : 0;
+    for (let dy = y0; dy <= y1; dy++) {
       const yy = cy + dy;
       if (yy < 0 || yy >= this.ch) continue;
-      for (let dx = -1; dx <= 1; dx++) {
+      for (let dx = x0; dx <= x1; dx++) {
         const xx = cx + dx;
         if (xx < 0 || xx >= this.cw) continue;
         this.nextActive[yy * this.cw + xx] = 1;

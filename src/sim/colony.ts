@@ -177,6 +177,15 @@ export class Colony {
    * the heat), so this is the best temperature the nest offers right now.
    */
   broodTemp = 20;
+  /**
+   * Development rate (0..1) in each finished room right now, by chamber id:
+   * brood grows at the temperature of the room it lies in, so where the
+   * nurses keep it matters. The best nursery's rate is kept too.
+   */
+  roomRate: Record<number, number> = {};
+  bestNurseryRate = 0;
+  /** Rate for brood lying outside any room (a tunnel, the founding burrow). */
+  private looseRate = 0.5;
   /** Temperature where most of the colony sits (food use and ageing). */
   nestTemp = 15;
   /** Id of the first worker (the nanitics are the handful after it). */
@@ -286,15 +295,20 @@ export class Colony {
 
   private advanceBrood(sim: Sim): void {
     const sp = this.speedup();
-    // Development-ticks gained this tick: full speed only in the warmth.
-    const rate = devRate(this.broodTemp);
+    // Development-ticks gained this tick: full speed only in the warmth, at
+    // the temperature of the room each one lies in.
+    const best = devRate(this.broodTemp);
     const adults = this.adults;
     let hungry = 0;
     let loose = 0;
     const dead: Brood[] = [];
     const world = sim.world;
     for (const b of this.brood) {
-      b.age += rate;
+      if (b.carried) b.age += best;
+      else {
+        const room = sim.nest.chamberAt(b.y * this.w + b.x);
+        b.age += room ? (this.roomRate[room.id] ?? best) : this.looseRate;
+      }
       if (!b.carried) {
         // Set down on top of another (its carrier died, a lost load): it would
         // lie hidden under that one, never fed. Move it alongside.
@@ -452,8 +466,11 @@ export class Colony {
       for (const b of this.brood) if (b.stage === 2) pupae++;
       const weeksLeft = Math.max(0, (280 - doy) / 7);
       const heads = adults + pupae + larvae + eggs + this.alates.length * 1.5;
-      if (this.stored + this.reserve + this.income * weeksLeft * 0.5 < heads * 3) return;
+      if (this.stored + this.reserve + this.income * weeksLeft * 0.5 < heads * 4) return;
     }
+    // An established colony stops raising brood at the end of summer (what is
+    // laid now would only eat into the winter store); a young one keeps going.
+    if (doy > 244 && adults >= 30) return;
     if (adults === 0 && this.born === 0 && this.brood.length >= 8) return;
     const spot = this.freeFloorNear(sim, q.x, q.y, 6);
     if (spot < 0) return;
@@ -764,21 +781,28 @@ export class Colony {
         best = t;
       }
     };
+    let nurseryBest = -1;
     for (const c of sim.nest.chambers) {
       if (!c.ready) continue;
       const depth = c.floorY - w.ground[Math.round(c.cx)]!;
       // A flat stone over the room soaks up the sun and warms it (Messor nest under stones for this).
-      consider(depth, sim.stoneWarmth(Math.round(c.cx), Math.round(c.cy)));
+      const warm = sim.stoneWarmth(Math.round(c.cx), Math.round(c.cy));
+      consider(depth, warm);
+      const r = devRate(sim.soilT(depth) + warm);
+      this.roomRate[c.id] = r;
+      if (c.kind === 'nursery') nurseryBest = Math.max(nurseryBest, r);
       deep += depth;
       n++;
     }
+    const q = this.queen;
+    const qDepth = q ? Math.max(5, q.y - w.ground[q.x]!) : 20;
+    this.looseRate = devRate(sim.soilT(qDepth));
     if (n === 0) {
-      const q = this.queen;
-      const depth = q ? Math.max(5, q.y - w.ground[q.x]!) : 20;
-      consider(depth);
-      deep = depth;
+      consider(qDepth);
+      deep = qDepth;
       n = 1;
     }
+    this.bestNurseryRate = nurseryBest;
     this.broodTemp = best;
     this.nestTemp = sim.soilT(deep / n);
   }

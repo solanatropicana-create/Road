@@ -598,8 +598,11 @@ export class Sim {
         }
         break;
       case F.Nurse:
+        // The nurseries where brood grows fastest right now (sun-warmed near
+        // the top on a cool morning, deeper in the midday heat).
         for (const c of nest.chambers) {
           if (c.kind !== 'nursery' || !c.ready) continue;
+          if ((col.roomRate[c.id] ?? 1) < col.bestNurseryRate - 0.15) continue;
           for (const i of c.floor) if (!col.broodCell[i]) push(i);
         }
         break;
@@ -607,11 +610,19 @@ export class Sim {
         for (const b of col.brood) if (col.isHungry(b)) push(b.y * w.w + b.x);
         break;
       case F.Egg: {
+        // Brood to carry: eggs the queen has just laid, brood lying outside a
+        // nursery, and brood in a nursery much colder (or hotter) than the best.
         if (this.fields.sourceCount[F.Nurse] === 0) break;
         for (const b of col.brood) {
-          if (b.stage !== 0 || b.carried) continue;
+          if (b.carried || b.restUntil > this.tick || b.sex) continue;
           const i = b.y * w.w + b.x;
-          if (nest.chamberAt(i)?.kind !== 'nursery') push(i);
+          const room = nest.chamberAt(i);
+          if (room?.kind !== 'nursery') {
+            // The young queens and males sit apart; workers' brood goes to the nursery.
+            push(i);
+            continue;
+          }
+          if ((col.roomRate[room.id] ?? 1) < col.bestNurseryRate - 0.3) push(i);
         }
         break;
       }

@@ -220,7 +220,12 @@ function upgrade(sim: Sim): void {
     if (x.waiting === undefined) x.waiting = false;
     if (x.zeal === undefined) x.zeal = a.id % 4 === 0 ? 0.25 : 0.75;
   }
-  const col = sim.colony as unknown as { scoutChance?: number; returns?: number; harvestLeft?: number; harvestRight?: number };
+  const col = sim.colony as unknown as { scoutChance?: number; returns?: number; harvestLeft?: number; harvestRight?: number; roomRate?: Record<number, number>; bestNurseryRate?: number; looseRate?: number; income?: number; lastDelivered?: number };
+  col.roomRate ??= {};
+  col.bestNurseryRate ??= 0;
+  col.looseRate ??= 0.5;
+  col.income ??= 0;
+  col.lastDelivered ??= sim.colony.delivered;
   col.scoutChance ??= 0.002;
   col.returns ??= 0;
   col.harvestLeft ??= 0;
