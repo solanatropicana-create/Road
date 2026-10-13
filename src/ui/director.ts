@@ -1,13 +1,14 @@
 import type { Game } from '../main';
 import type { Ant } from '../sim/ant';
 import type { Critter } from '../sim/critters';
+import type { Neighbour } from '../sim/rivals';
 import { Carry, Task } from '../sim/types';
 import { t, num } from './i18n';
 import { TICK_HZ } from '../config';
 import { SOLID } from '../world/mat';
 import { dateText } from './ui';
 
-type Shot = 'queen' | 'forager' | 'digger' | 'hauler' | 'nurse' | 'major' | 'granary' | 'wide' | 'rescue' | 'shoring' | 'lasius' | 'critter' | 'mouth' | 'tree' | 'lapse';
+type Shot = 'queen' | 'forager' | 'digger' | 'hauler' | 'nurse' | 'major' | 'granary' | 'wide' | 'rescue' | 'shoring' | 'lasius' | 'critter' | 'mouth' | 'tree' | 'lapse' | 'rival';
 
 /**
  * Documentary camera: cuts between subjects every few seconds and glides
@@ -22,6 +23,8 @@ export class Director {
   private point: { x: number; y: number } | null = null;
   /** A critter followed through a shot (a garden ant in a scuffle). */
   private critter: Critter | null = null;
+  /** A neighbour's worker followed through a raid or a battle. */
+  private rival: Ant | null = null;
   private left = 0;
   private last: Shot | null = null;
   /** Something just happened somewhere: the next cut goes there. */
@@ -35,7 +38,7 @@ export class Director {
 
   /** The ant the camera is on (marked on screen, so the caption has a face). */
   get focus(): Ant | null {
-    return this.active ? this.subject : null;
+    return this.active ? (this.subject ?? this.rival) : null;
   }
 
   toggle(): void {
@@ -86,7 +89,7 @@ export class Director {
     if (this.left <= 0 || (this.subject && !this.subject.alive)) this.cut();
     const cam = this.game.cam;
     // A slow push in through each shot, as a camera operator would.
-    if ((this.subject || this.critter) && this.last !== 'wide') cam.tzoom = Math.min(cam.maxZoom, cam.tzoom * (1 + dt * 0.015));
+    if ((this.subject || this.critter || this.rival) && this.last !== 'wide') cam.tzoom = Math.min(cam.maxZoom, cam.tzoom * (1 + dt * 0.015));
     if (this.subject) {
       cam.follow = { x: this.subject.x, y: this.subject.y - 2 };
       this.caption = this.describe(this.subject);
@@ -94,9 +97,22 @@ export class Director {
       const c = this.critter;
       if (!this.game.sim.critters.list.includes(c)) this.critter = null;
       else cam.follow = { x: c.x, y: c.y - 2 };
+    } else if (this.rival) {
+      const r = this.rival;
+      const nb = this.game.sim.neighbours.find((n) => n.ants.includes(r));
+      if (!r.alive || !nb) this.rival = null;
+      else {
+        cam.follow = { x: r.x, y: r.y - 2 };
+        this.caption = this.rivalCaption(nb, r);
+      }
     } else if (this.point) {
       cam.follow = this.point;
     }
+  }
+
+  private rivalCaption(nb: Neighbour, r: Ant): string {
+    if (nb.war > 0) return t('dc_war', { ours: nb.warDead.ours, theirs: nb.warDead.theirs });
+    return t(r.carry !== Carry.None ? 'dc_raidOut' : 'dc_raidIn');
   }
 
   private cut(): void {
@@ -110,6 +126,7 @@ export class Director {
       this.story = null;
       this.subject = null;
       this.critter = null;
+      this.rival = null;
       this.point = { x: s.x, y: s.y };
       this.caption = s.caption;
       cam.tzoom = Math.min(cam.maxZoom, Math.max(cam.minZoom, s.zoom));
@@ -122,12 +139,15 @@ export class Director {
     // What is going on now weighs most: a rescue under way, a roof being shored, a scuffle at the tree.
     const g = sim.ground;
     const fights = sim.critters.list.filter((c) => c.kind === 'lasius' && (c.state === 1 || c.state === 4));
+    // A raid on the granary or a battle with the neighbours, while it lasts.
+    const trouble = sim.neighbours.filter((nb) => (nb.war > 0 || nb.raid > 0) && nb.ants.length);
     const options: [Shot, number][] = [
+      ['rival', trouble.length ? 14 : 0],
       ['rescue', sim.nest.rescuing && g.buried.length ? 30 : 0],
       ['lasius', fights.length ? 12 : 0],
       // (A roof only just cracking is not much to see; one near giving way, or shorers at work, is.)
       ['shoring', col.ants.some((a) => a.shoring) ? 2 : sim.nest.chambers.some((c) => c.ready && (g.strain[c.id] ?? 0) >= 0.35) ? 1.2 : 0],
-      ['lapse', col.adults > 25 && !sim.dormant ? 0.7 : 0],
+      ['lapse', col.adults > 25 && !sim.dormant && !trouble.length && !fights.length && !sim.nest.rescuing ? 0.7 : 0],
       ['critter', 1.5],
       ['mouth', 1],
       ['tree', sim.tree && sim.critters.count('lasius') > 0 ? 0.8 : 0],
@@ -142,11 +162,11 @@ export class Director {
     ];
     for (let tries = 0; tries < 12; tries++) {
       let total = 0;
-      for (const [s, wgt] of options) if (s !== this.last || s === 'rescue') total += wgt;
+      for (const [s, wgt] of options) if (s !== this.last || s === 'rescue' || s === 'rival') total += wgt;
       let r = Math.random() * total;
       let shot: Shot = 'wide';
       for (const [s, wgt] of options) {
-        if ((s === this.last && s !== 'rescue') || wgt <= 0) continue;
+        if ((s === this.last && s !== 'rescue' && s !== 'rival') || wgt <= 0) continue;
         r -= wgt;
         if (r <= 0) {
           shot = s;
@@ -156,6 +176,7 @@ export class Director {
       let subject: Ant | undefined;
       let point: { x: number; y: number } | null = null;
       let critter: Critter | null = null;
+      let rival: Ant | null = null;
       let zoom = 8;
       switch (shot) {
         case 'rescue': {
@@ -166,6 +187,20 @@ export class Director {
             zoom = 9;
             const n = g.buried.length;
             this.caption = t('dc_rescue', { n, m: col.ants.filter((a) => a.task === Task.Dig && Math.abs(a.x - b.x) < 14 && Math.abs(a.y - b.y) < 12).length });
+          }
+          break;
+        }
+        case 'rival': {
+          const nb = trouble[Math.floor(Math.random() * trouble.length)];
+          if (nb) {
+            // Ours among theirs: one that has come onto our side of things.
+            const near = nb.ants.filter((a) => a.alive && sim.fog.at(a.x, a.y, w.ground[a.x]!) > 0.5);
+            const r = near[Math.floor(Math.random() * near.length)];
+            if (r) {
+              rival = r;
+              zoom = 9;
+              this.caption = this.rivalCaption(nb, r);
+            }
           }
           break;
         }
@@ -279,13 +314,14 @@ export class Director {
           break;
         }
       }
-      if (!subject && !point && !critter) continue;
+      if (!subject && !point && !critter && !rival) continue;
       this.last = shot;
       this.subject = subject ?? null;
       this.point = point;
       this.critter = critter;
+      this.rival = rival;
       cam.tzoom = Math.min(cam.maxZoom, Math.max(cam.minZoom, zoom));
-      this.left = shot === 'wide' || shot === 'lapse' ? 8 : shot === 'rescue' || shot === 'lasius' ? 9 : 10 + Math.random() * 6;
+      this.left = shot === 'wide' || shot === 'lapse' ? 8 : shot === 'rescue' || shot === 'lasius' || shot === 'rival' ? 9 : 10 + Math.random() * 6;
       return;
     }
     this.left = 3;
