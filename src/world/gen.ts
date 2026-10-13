@@ -21,7 +21,7 @@ export interface Generated {
   plants: Plants;
   horizons: Horizons;
   variant: Variant;
-  /** Cells to start wet (ground water near the bottom). */
+  /** Cells to start wet (none now: the water table is soaked by the sim, see SoilLife). */
   wet: number[];
   /** Where a tree stands (trunk centre x, may be off the slice), or null. */
   tree: { x: number; r: number } | null;
@@ -303,7 +303,6 @@ export function generate(seed: number, siteId: SiteId): Generated {
     for (let x = 0; x < w; x++) {
       const top = waterLine(world, noise, variant.waterTable, x);
       waterTop[x] = top;
-      for (let y = Math.max(top, 0); y < h - 3; y++) if (SOIL[world.mat[y * w + x]!]) wet.push(y * w + x);
     }
   }
 

@@ -170,7 +170,11 @@ Geri bildirim: "Skip" tuşuna basılamıyor, kraliçe toprağı taşımıyor (h�
 - Teknik "cihaz" görünümü (her yerde monospace, köşe çentikleri, büyük harf etiketler) kaldırıldı.
 - Yerine sıcak koyu kartlar, 14 px köşe, tek amber vurgu ve çukur bir iz içinde hap düğmeler geldi. Sayılar eşit genişlikli sans, belgesel altyazıları serif italik.
 
-**Ölçüm:** (aşağıda)
+**Ölçüm (aynı 8 harita, 160 hafta, bu turun bütün değişiklikleriyle):** 8/8 koloni 4. yılın baharında hayatta, **açlıktan ölen işçi 0**, 8/8'de evlilik uçuşu (1–100 kanatlı), zirve 236–729 işçi. 1x seyir testinde (90 sn × 3 aşama) ışınlanan toprak **0** (önceden 236), kenar dışına bırakılan yük 0, birden küçülen leş 0, takılan karınca 0. Oyuncu testinde laptop ve telefonda 0 bulgu. Masaüstünde iki bulgu vardı: 720p başlık ekranında dil düğmeleri taşıyordu, başlık sıkılaştırıldı. Telefonda ölçek çubuğu açık panelin üstüne biniyordu, gizlendi.
+
+Yolda yakalanan iki şey:
+- Taban suyu ilk sürümde nem modelinin listesine giriyordu (yüz binlerce hücre her tick dolaşılıyordu) ve simülasyon 17 kat yavaşlamıştı. Artık sabit tutuluyor.
+- Test çalışırken kaynak dosyayı düzenleyince geliştirme sunucusu sayfayı yeniliyor ve test "çöküyor". Oyuncu testi artık sayfanın kendiliğinden yenilendiğini ayrıca raporluyor.
 
 ## 6. Sıradaki (öneri)
 

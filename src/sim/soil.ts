@@ -1,5 +1,6 @@
 import type { Sim } from './sim';
 import type { Hollow } from '../world/gen';
+import type { World } from '../world/world';
 import { EMPTY, ROOT, SOIL, PREY, HUMUS } from '../world/mat';
 import { DAY_TICKS } from '../config';
 
@@ -46,17 +47,32 @@ export class SoilLife {
     if (doy > 190 && doy < 230 && sim.rng.chance(((sim.variant.grubs ?? 0) + 1) / 40)) this.grub(sim);
   }
 
-  /** Below the water table the soil stays soaked: higher after the spring thaw, lower by late summer. */
+  /**
+   * Below the water table the soil stays soaked: higher after the spring
+   * thaw, lower by late summer. (Set straight into the soil, not through the
+   * moisture model: hundreds of thousands of soaked cells would swamp it.)
+   */
   private water(sim: Sim, doy: number): void {
     const top = this.waterTop;
     if (!top) return;
-    const w = sim.world;
-    const rise = Math.round(30 * Math.cos(((doy - 75) / 365) * Math.PI * 2));
-    const m = sim.physics.moisture;
+    SoilLife.soak(sim.world, top, Math.round(30 * Math.cos(((doy - 75) / 365) * Math.PI * 2)));
+  }
+
+  /** Soak the soil below the table (raised by `rise` cells); the band it has sunk out of dries to damp. */
+  static soak(w: World, top: Int16Array, rise: number): void {
+    const set = (i: number, v: number): void => {
+      if (w.moist[i]! >> 4 !== v >> 4) w.markDirty(i);
+      w.moist[i] = v;
+    };
     for (let x = 0; x < w.w; x++) {
-      for (let y = Math.max(w.ground[x]! + 20, top[x]! - rise); y < w.h - 3; y++) {
+      const line = Math.max(w.ground[x]! + 20, top[x]! - rise);
+      for (let y = Math.max(w.ground[x]! + 20, top[x]! - 30); y < line; y++) {
         const i = y * w.w + x;
-        if (SOIL[w.mat[i]!] && w.moist[i]! < 210) m.add(i, 210 - w.moist[i]!);
+        if (SOIL[w.mat[i]!] && w.moist[i]! > 150) set(i, 150);
+      }
+      for (let y = line; y < w.h - 3; y++) {
+        const i = y * w.w + x;
+        if (SOIL[w.mat[i]!] && w.moist[i]! < 210) set(i, 210);
       }
     }
   }

@@ -26,6 +26,8 @@ const { chromium } = require('playwright');
 const [out = 'shots/playertest', url = 'http://127.0.0.1:5173/'] = process.argv.slice(2);
 mkdirSync(out, { recursive: true });
 const findings = [];
+/** What the test was doing last (to tell what made the page reload). */
+let step = '';
 const note = (state, kind, what, detail = '') => findings.push({ state, kind, what, detail });
 
 /** In the page: audit every visible control. */
@@ -130,6 +132,7 @@ async function audit(page, state) {
 
 /** Click a control with the real mouse at its centre (fails loudly if something else is on top). */
 async function click(page, state, selector) {
+  step = `${state} click ${selector}`;
   const el = await page.$(selector);
   if (!el) {
     note(state, 'missing control', selector);
@@ -156,6 +159,7 @@ async function click(page, state, selector) {
 const fastForward = (page, ticks) => page.evaluate((n) => window.game.advance(n), ticks);
 
 async function run(vp) {
+  const S = (s) => `${vp.name}:${s}`;
   const browser = await chromium.launch({ args: ['--use-gl=swiftshader', '--enable-unsafe-swiftshader'] });
   const ctx = await browser.newContext(vp.mobile ? { viewport: { width: vp.w, height: vp.h }, isMobile: true, hasTouch: true, deviceScaleFactor: 2 } : { viewport: { width: vp.w, height: vp.h } });
   const page = await ctx.newPage();
@@ -163,11 +167,16 @@ async function run(vp) {
   page.on('pageerror', (e) => errors.push(String(e)));
   page.on('console', (m) => m.type() === 'error' && errors.push(m.text()));
   await page.goto(url, { waitUntil: 'load' });
+  // Past the setup, the page should never navigate by itself.
+  let ready = false;
+  page.on('framenavigated', (f) => {
+    if (ready && f === page.mainFrame()) note(S('page'), 'PAGE RELOADED', f.url(), step);
+  });
   await page.evaluate(() => localStorage.clear());
   await page.goto(`${url}?seed=4242`, { waitUntil: 'load' });
   await page.waitForFunction(() => !!window.game, null, { timeout: 20000 });
   await page.waitForTimeout(800);
-  const S = (s) => `${vp.name}:${s}`;
+  ready = true;
 
   // Title screen, then the mode is picked with the mouse.
   await audit(page, S('title'));
@@ -213,6 +222,7 @@ async function run(vp) {
   if (speeds.length) {
     for (const b of speeds) {
       const box = await b.boundingBox();
+      step = `speed button ${await b.getAttribute('data-speed')}`;
       if (box) await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
       await page.waitForTimeout(150);
     }
@@ -227,6 +237,7 @@ async function run(vp) {
 
   // A year on: the review at the start of the winter rest.
   for (let k = 0; k < 160 && !(await page.evaluate(() => getComputedStyle(document.querySelector('#review')).display !== 'none' && document.querySelector('#review').getBoundingClientRect().width > 0)); k++) {
+    step = `fast-forward to the review, round ${k}`;
     await fastForward(page, 1800);
     await page.waitForTimeout(80);
   }
@@ -252,11 +263,13 @@ async function run(vp) {
   await browser.close();
 }
 
+// SIZES=laptop,phone runs only those.
+const only = process.env.SIZES ? process.env.SIZES.split(',') : null;
 for (const vp of [
   { name: 'desktop', w: 1440, h: 900 },
   { name: 'laptop', w: 1280, h: 720 },
   { name: 'phone', w: 400, h: 820, mobile: true },
-]) {
+].filter((v) => !only || only.includes(v.name))) {
   try {
     await run(vp);
   } catch (e) {

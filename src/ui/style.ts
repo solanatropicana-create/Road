@@ -311,6 +311,22 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .title-foot .seg button { padding: 4px 10px; }
 #ui.titled #bar, #ui.titled #keys, #ui.titled #toasts, #ui.titled #caption { display: none !important; }
 
+/* Shorter screens (a 720p laptop): the title compacts so it all fits without scrolling. */
+@media (max-height: 820px) and (min-width: 761px) {
+  #title .inner { padding: 12px 0; }
+  #title .logo .logo-ant { width: 48px; height: 48px; }
+  #title .wordmark { font-size: clamp(40px, 6.4vw, 64px); margin: 0 0 4px; }
+  #title .tagline { font-size: 17px; }
+  #title .modes { margin: 16px 0 12px; gap: 12px; }
+  .mode { padding: 14px 18px 13px; }
+  .mode h3 { font-size: 21px; margin: 6px 0 4px; }
+  .mode p { font-size: 12.5px; line-height: 1.45; }
+  .sitecard { padding: 11px 10px; margin-bottom: 10px; }
+  .sitedesc { font-size: 12.5px; }
+  .traits { margin-top: 8px; gap: 5px; }
+  .traits li { padding: 3px 9px; }
+}
+
 /* --- phases: before landing there is only the meadow and the question */
 #ui.ph-choose #drawer, #ui.ph-choose #card, #ui.ph-choose #strip { display: none !important; }
 
@@ -362,6 +378,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
   #winter { bottom: 112px; }
   #bar .lbl { display: none; }
   #scale { top: auto; bottom: 176px; right: 12px; }
+  /* The open sheet covers that corner: the scale bar steps aside. */
+  #ui:has(#drawer:not(.collapsed):not([hidden])) #scale { display: none; }
   /* While an ant is followed its card holds the top; news drops below it. */
   #inspect[style*="block"] ~ #toasts { top: 210px; }
   #title .modes { grid-template-columns: 1fr; margin-top: 20px; }

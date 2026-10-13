@@ -188,7 +188,8 @@ export class Sim {
     this.cal.tOffset = gen.variant.exposure * 1.5;
     this.cal.heat = SITES[site].surfaceHeat;
     this.physics = new Physics(this.world, this.rng);
-    for (const i of gen.wet) this.physics.moisture.add(i, 215);
+    // The water table: soaked from the start (and kept so by SoilLife).
+    if (gen.waterTop) SoilLife.soak(this.world, gen.waterTop, 0);
     // Before the landing the whole meadow can be scanned, but only the top of the soil.
     Object.assign(this.view, { x0: 0, x1: this.world.w, y1: GROUND_Y + 240 });
     Object.assign(this.viewGoal, this.view);
