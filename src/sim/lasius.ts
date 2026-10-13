@@ -127,7 +127,7 @@ export function lasius(sim: Sim, c: Critter, cz: Critters): boolean {
   for (const a of col.ants) {
     if (a.away || a.paralysed || a.fight > 0 || a.rival) continue;
     if (Math.abs(a.x - c.x) > 2 || Math.abs(a.y - c.y) > 3 || w.bg[a.y * w.w + a.x] !== 0) continue;
-    if (!rng.chance(d < TURF ? 0.06 : 0.025)) continue;
+    if (!rng.chance(d < TURF ? 0.045 : 0.015)) continue;
     c.state = 1;
     c.prey = a;
     c.dir = a.x >= c.x ? 1 : -1;
@@ -165,7 +165,7 @@ function resolve(sim: Sim, c: Critter, cz: Critters): boolean {
   let allies = 0;
   for (const o of cz.list) if (o !== c && o.kind === 'lasius' && o.state !== 2 && Math.abs(o.x - c.x) < 8) allies++;
   const major = a.caste === 'soldier';
-  const pDie = clamp(0.14 + 0.1 * allies - 0.06 * helpers - (major ? 0.12 : 0), 0.02, 0.6);
+  const pDie = clamp(0.1 + 0.08 * allies - 0.05 * helpers - (major ? 0.08 : 0), 0.02, 0.5);
   const pKill = clamp(0.35 + 0.12 * helpers + (major ? 0.3 : 0) - 0.06 * allies, 0.1, 0.9);
   const r = rng.next();
   c.prey = null;
