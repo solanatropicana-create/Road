@@ -108,7 +108,7 @@ export class Sim {
   /** Grasshoppers, ground beetles, earthworms, spiders, nest guests. */
   readonly critters = new Critters();
   /** What the year brought, for the review at the start of the winter rest. */
-  private yearStart = { born: 0, deaths: {} as Record<string, number>, flown: 0 };
+  private yearStart: { born: number; deaths: Record<string, number>; flown: number; caveIns?: number; rescued?: number; skirmishes?: number } = { born: 0, deaths: {}, flown: 0 };
   readonly yearCount = { wars: 0, raids: 0, peak: 0 };
   /** The queen's name (from the site's own region) and the colony's (from the place it chose). */
   names = { queen: '', colony: '' };
@@ -843,7 +843,7 @@ export class Sim {
    * nuptial flight, since the last review. (Called by the field notes when
    * the colony goes into its winter rest.)
    */
-  closeYear(): { year: number; born: number; deaths: [string, number][]; flown: number; wars: number; raids: number; peak: number } {
+  closeYear(): { year: number; born: number; deaths: [string, number][]; flown: number; wars: number; raids: number; peak: number; caveIns: number; rescued: number; skirmishes: number } {
     const c = this.colony;
     const s = this.yearStart;
     const deaths: [string, number][] = [];
@@ -852,8 +852,13 @@ export class Sim {
       if (d > 0) deaths.push([k, d]);
     }
     deaths.sort((a, b) => b[1] - a[1]);
-    const out = { year: this.cal.year(this.simDays), born: c.born - s.born, deaths, flown: c.flown.total - s.flown, wars: this.yearCount.wars, raids: this.yearCount.raids, peak: Math.max(this.yearCount.peak, c.adults) };
-    this.yearStart = { born: c.born, deaths: { ...c.deaths }, flown: c.flown.total };
+    // (Saves from before the soil could fail have no ground counts in the year's start.)
+    const g = { caveIns: this.ground.caveIns, rescued: this.ground.rescued, skirmishes: this.critters.lasiusFights };
+    const out = {
+      year: this.cal.year(this.simDays), born: c.born - s.born, deaths, flown: c.flown.total - s.flown, wars: this.yearCount.wars, raids: this.yearCount.raids, peak: Math.max(this.yearCount.peak, c.adults),
+      caveIns: g.caveIns - (s.caveIns ?? 0), rescued: g.rescued - (s.rescued ?? 0), skirmishes: g.skirmishes - (s.skirmishes ?? 0),
+    };
+    this.yearStart = { born: c.born, deaths: { ...c.deaths }, flown: c.flown.total, ...g };
     this.yearCount.wars = 0;
     this.yearCount.raids = 0;
     this.yearCount.peak = c.adults;

@@ -1666,6 +1666,8 @@ export class UI {
     ];
     if (y.wars || y.raids) rows.push([t('rvNeighbours'), t('rvNeighboursV', { w: y.wars, r: y.raids })]);
     if (y.flown) rows.push([t('rvFlown'), String(y.flown)]);
+    if (y.caveIns || y.rescued) rows.push([t('rvGround'), t('rvGroundV', { c: y.caveIns, r: y.rescued })]);
+    if (y.skirmishes) rows.push([t('rvTree'), t('rvTreeV', { n: y.skirmishes })]);
     const el = this.els.review!;
     el.innerHTML = `<div class="eyebrow">${t('yearN', { n: y.year })}${sim.names.colony ? ` · ${t(sim.names.colony)}` : ''}</div><h2>${t('rvTitle')}</h2>
       <dl>${rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl>
