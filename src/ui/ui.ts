@@ -89,6 +89,8 @@ const MAT_KEYS = ['air', 'humus', 'loam', 'clay', 'subsoil', 'gravel', 'stone', 
 export class UI {
   /** Panels hidden for a clean frame (H); the documentary caption stays. */
   cinema = false;
+  /** Where the latest located event happened (J jumps there). */
+  private lastLoc: { x: number; y: number } | null = null;
   /** Watch: the colony runs itself. Guide: the player is the colony brain. */
   mode: Mode = 'watch';
   /** The title screen's question has been answered (or a colony resumed). */
@@ -520,7 +522,10 @@ export class UI {
       <dt>P</dt><dd>${t('keyP')}</dd>
       <dt>T</dt><dd>${t('keyT')}</dd>
       <dt>H</dt><dd>${t('keyH')}</dd>
-      <dt>F</dt><dd>${t('keyF')}</dd></dl>
+      <dt>F</dt><dd>${t('keyF')}</dd>
+      <dt>J</dt><dd>${t('keyJ')}</dd>
+      <dt>Q</dt><dd>${t('keyQ')}</dd>
+      <dt>${t('keyArrows')}</dt><dd>${t('keyArrowsD')}</dd></dl>
       <div class="row langrow"><label>${t('modeLabel')}</label><div class="seg" id="modeseg">
         <button data-mode="watch" class="${this.mode === 'watch' ? 'on' : ''}">${t('modeWatch')}</button><button data-mode="guide" class="${this.mode === 'guide' ? 'on' : ''}">${t('modeGuide')}</button></div></div>
       <div class="row langrow"><label>${t('language')}</label><div class="seg" id="lang">
@@ -1157,8 +1162,39 @@ export class UI {
         this.toggleCinema();
       } else if (e.key === '?' || e.key === '/') {
         this.els.keys!.hidden = !this.els.keys!.hidden;
+      } else if (e.key === 'j' || e.key === 'J') {
+        // Jump to the latest thing worth seeing.
+        const l = this.lastLoc;
+        if (l) {
+          if (game.director.active) game.director.stop();
+          game.selected = null;
+          const c = game.cam;
+          c.follow = null;
+          c.tx = l.x;
+          c.ty = l.y;
+          c.tzoom = Math.max(c.tzoom, 6);
+        }
+      } else if (e.key === 'q' || e.key === 'Q') {
+        const q = game.sim.colony.queen;
+        if (q && q.alive) {
+          if (game.director.active) game.director.stop();
+          game.selected = q;
+          game.cam.tzoom = Math.max(game.cam.tzoom, 9);
+        }
+      } else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'd', 'w', 's', 'A', 'D', 'W', 'S'].includes(e.key)) {
+        if (game.director.active) game.director.stop();
+        game.selected = null;
+        const k = e.key.toLowerCase();
+        const step = 140;
+        const dx = k === 'arrowleft' || k === 'a' ? step : k === 'arrowright' || k === 'd' ? -step : 0;
+        const dy = k === 'arrowup' || k === 'w' ? step : k === 'arrowdown' || k === 's' ? -step : 0;
+        game.cam.follow = null;
+        game.cam.tx -= dx / game.cam.tzoom;
+        game.cam.ty -= dy / game.cam.tzoom;
+        e.preventDefault();
       } else if (e.key === 'Escape') {
         this.els.keys!.hidden = true;
+        if (game.director.active) game.director.stop();
         game.selected = null;
         if (this.cinema) this.toggleCinema();
         this.markerMode = false;
@@ -1261,6 +1297,7 @@ export class UI {
         if (e.what) vars.what = t(`what_${e.what}`);
         vars.queen = sim.names.queen;
         const loc = e.x !== undefined && e.y !== undefined ? { x: e.x, y: e.y } : undefined;
+        if (loc) this.lastLoc = loc;
         if (e.key.startsWith('season_')) this.seasonCard(e.key.slice(7));
         if (e.key === 'sealedIn' && !sim.colony.hadWorkers) {
           this.root.classList.add('montage');
