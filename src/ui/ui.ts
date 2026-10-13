@@ -1263,12 +1263,14 @@ export class UI {
       return;
     }
     let best: Ant | null = null;
-    let bd = (8 / game.cam.zoom) ** 2 + 6;
+    // Generous: ants are small and quick, a click a little off should still catch one.
+    let bd = (22 / game.cam.zoom) ** 2 + 9;
     const col = sim.colony;
     const all = col.queen ? [col.queen, ...col.ants] : col.ants;
     for (const a of all) {
-      if (!a.alive) continue;
-      const d = (a.x - p.x) ** 2 + (a.y - 2 - p.y) ** 2;
+      if (!a.alive || a.away) continue;
+      // (Drawn standing on its cell, so the body is a little above it.)
+      const d = (a.x + 0.5 - p.x) ** 2 + Math.min((a.y - 1.5 - p.y) ** 2, (a.y + 0.5 - p.y) ** 2);
       if (d < bd) {
         bd = d;
         best = a;
