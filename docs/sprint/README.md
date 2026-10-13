@@ -6,16 +6,17 @@
 
 **Kısa cevap: sprint başında hayır, şimdi büyük ölçüde evet.**
 
-Sprint başında oyunu hiç dokunmadan, 8 farklı haritada 2 oyun yılı (110 hafta) kendi başına çalıştırdık:
+Sprint başında oyunu hiç dokunmadan, 8 farklı haritada 2 oyun yılı (110 hafta) kendi başına çalıştırdık. Sprint sonunda aynı 8 haritayı 3 yıldan uzun (160 hafta, 4. yılın Mayıs'ı) çalıştırdık:
 
-| | Sprint başı | Ara ölçüm (4 harita, 3 yıl) |
+| | Sprint başı (8 harita, 2 yıl) | Sprint sonu (8 harita, 3+ yıl) |
 |---|---|---|
-| 2. yılı çıkaran koloni | 0 / 8 (3'ü öldü, 5'i çöktü) | 4 / 4 (biri 2. sonbaharda yarıya indi) |
-| Evlilik uçuşu yapan koloni | 0 / 8 | 3 / 4 (11–17 kanatlı birey, 3. baharda) |
-| Açlıktan ölen işçi (harita başına) | 170–280 | 57–337 (çoğu 3. yılın kışında) |
+| Hayatta kalan koloni | 0 / 8 (3'ü öldü, 5'i çöktü) | **8 / 8** (hepsi 4. yılın baharında, kraliçesiyle) |
+| Evlilik uçuşu yapan koloni | 0 / 8 | **8 / 8** (her biri 3. ve 4. yılın baharında; harita başına 43–136 kanatlı) |
+| Zirve nüfus | — | 391–850 işçi |
+| Açlıktan ölen işçi (harita başına) | 170–280 | **0** (8 haritanın hepsinde) |
 | Ambarda görünen tohum (1. yıl sonbahar) | 0–8 (hepsi görünmez rezervde) | 100–450 |
 
-Ara ölçümden sonra 3. yıl kışındaki çöküşler için işçi tüketimi yarıya indirildi ve kraliçeye kışı hesaba katan bir kural eklendi; 8 haritalık son ölçüm bu belgeye eklenecek.
+"Hayatta kalan" burada koloninin 4. yılın baharına kraliçesi ve yüzlerce işçisiyle çıkması demek. Ölümler artık açlıktan değil dünyanın kendisinden geliyor: komşu kolonilerle savaşlar (harita başına 17–326 işçi), kırkayak (12–32), parazit sinek (12–30), örümcek (5–12), mantar, kaybolan toplayıcılar, yaşlılık; hırsız karıncalar 12–44 yavru çalıyor. Ölçüm için `scripts/econ.ts` her haftayı tek satırda yazıyor: işçi, yavru, ambar, gelir, gider, toplayıcıların nerede olduğu, uçuş havası.
 
 Çöküşün sebebi tek bir şey değildi. Sırayla bulunan sorunlar:
 
@@ -28,6 +29,15 @@ Ara ölçümden sonra 3. yıl kışındaki çöküşler için işçi tüketimi y
 7. **Kışa hazırlık yoktu.** Kalabalık koloniler sonbaharda stoğu yazın yiyip bitiriyordu.
 8. **Çimlenme 10 saniye sürüyordu.** Islanan 48 tohumun 45'i 10 saniyede filizleniyordu. Karıncaların tohumu güneşe çıkarıp kurutma davranışı hiç devreye giremiyordu.
 9. **Majör sayısı taşıyordu.** Ayar %12 iken majörler %33'e çıkıyordu (larva ve pupalar sayılmıyordu).
+
+Gece boyunca 8 haritalık uzun koşular ve bir kod incelemesi altı sorun daha buldu:
+
+10. **İki krater arası tuzak.** Koloni ikinci kapıyı açınca, iki kapının arasına çıkan her toplayıcı hem sağdaki hem soldaki kraterde geri dönüyordu: arama yapan karınca yuva hücresine adım atmıyordu, kraterin dibi ise tünel ağzından başka bir şey değil. Bir koloni 230 toplayıcıyla haftada 80 tohum taşıyordu (1. yılda toplayıcı başına 10, şimdi 0,4); iki kapı arasındaki şeritte tohum çoktan bitmişti, 2 dakikada 5 tohum geliyordu. Artık arayan karınca kapının ağzını dudağından geçiyor: aynı anda 38, iyi havada dakikada 70–85 tohum.
+11. **Yumurtanın gelecekteki ağzı.** Kraliçe "stok kaç hafta yeter" hesabında yumurtaları yarım yetişkin sayıyordu; oysa bir ay sonra larva olup en çok yiyen onlar oluyor. Hesap artık yumurtayı gelecek ayın larvası sayıyor. Haziran'dan sonraki kış hesabı da kalan sezonun gelirini olduğu gibi stoğa ekliyor, o sürede yenecek olanı düşmüyordu: 480 işçilik bir koloni yaz hasadını geldikçe yedi, kışa boş girdi (237 açlık ölümü). Gelirin tamamen yeneceğini varsayan ilk düzeltme ise küçük kolonilerin büyümesini boğdu (yazın her yeni işçi yediğinden fazlasını getirir). Doğru sinyal kapasite çıktı: hasat, mevcut işçilerin bakımını karşılamıyorsa koloni kesitin besleyebileceği sınıra gelmiştir ve kraliçe o yaz yeni işçi yetiştirmez.
+12. **Kışın kapıda kalanlar.** Kış başında kapı 40 saniye sonra tıkanıyordu; uzaktaki toplayıcılar yetişemiyor, 30–100 işçi bütün kış ikinci kapının tıkacının üstünde bekliyordu. Ana kapıda da tıkaç, genişletilmiş kuyunun tamamını kapatmıyordu: çöpçüler kışın bile dışarı çıkıyordu. Şimdi kış kapanışı dışarıdakiler için 2 dakikaya kadar bekliyor, tıkaç ağzın tamamını kapatıyor, yine de kalan olursa ağzına gelen karıncayı içeridekiler alıyor.
+13. **Danaburnunun bitmeyen galerisi.** İşi biten danaburnu kesitten çıkmıyor, haftalarca rastgele kazıyordu: bir haritada toprağın altında 51.000 hücrelik bir boşluk açmış, yuvanın iç alanları bu boşluğa taşıp oyunu 6 kat yavaşlatmıştı. Artık işi bitince kısa sürede kesitten çıkıyor (galerileri üç boyutlu, bizim kesitimiz onların tek bir düzlemi). Eski galeriler birkaç hafta içinde üstten dökülen toprakla doluyor ve **krotovina** olarak kalıyor: açık renkli toprakta koyu, koyu toprakta açık bir iz. Toprağın kendi tarihi oluyor.
+14. **Dikleşen krater.** Koloni büyüdükçe kapının etrafındaki höyük 2–3 cm'ye çıkıyor, krater duvarları dikleşiyor. Toplayıcıları bitki saplarından uzak tutan kural ("altında zemin olmayan hücre = sap") dik duvarı da sap sanıyordu: tırmanmayı cezalandırıp aşağı inmeyi ödüllendiriyordu. 300 işçilik bir kolonide toplayıcılar dakikalarca krater dibinde gidip geliyor, dakikada 6–18 tohum geliyordu. Yanında toprak duvar olan hücre artık duvar sayılıyor: aynı anda dakikada 30–63 tohum.
+15. **Bağımsız kod incelemesi.** Sprint farkını ayrı bir ajan hata için okudu, dört gerçek bulgu çıktı ve düzeltildi: dolu ama sıcak bir kreş yavru taşımayı ve kraliçenin yumurtlamasını durduruyordu (artık yalnız yeri olan kreşler sayılıyor); kraliçe adayı ve erkek yavrular hiç taşınmıyor, kraliçenin yanını tıkıyordu; yağmurda kapının dudağındaki toplayıcı içeri girmek yerine geri çıkıyordu; düşman galerisi tıkanırken içinde kalan işçiler orada hapsoluyordu (artık önce geri çağrılıyorlar).
 
 ### Koloni ne kadarını kendisi karar veriyor?
 
@@ -52,7 +62,7 @@ Merkezi kısımlar kötü değil ama girdileri zayıftı. Bu sprintte yumurtlama
 Tepeli toygar simülasyondan, çizimden, kartlardan ve metinlerden çıkarıldı. Eski kayıtlarda kalan bir kuş yüklemede siliniyor. Kurucu kraliçeleri öldüren tek şey kuştu. Bunun yerine açıkta kalan kraliçeler artık "sıcak ve avcı böcek" yüzünden ölüyor.
 
 ### Koloni hayatta kalıyor
-Yukarıdaki dokuz sorunun hepsi düzeltildi:
+Yukarıdaki sorunların hepsi düzeltildi (10–15 numaralılar yukarıda anlatıldı). İlk dokuz için:
 
 - Kapı ancak gerçekten dışarıya açılınca kapı sayılıyor. Ağzını kapatan toprak kazı planına giriyor.
 - Toplayıcı yönünü çıktığı kenara göre seçiyor ve 2,5 saniye ilerleyemezse dönüyor.
@@ -69,6 +79,15 @@ Yukarıdaki dokuz sorunun hepsi düzeltildi:
 - **Danaburnu (*Gryllotalpa*):** Nemli lös sahalarında geceleri 7 mm genişliğinde galeriler kazıyor. Yuvayı delerse odaya toprak döküyor ve yavru yiyor. Sokulunca geri çekiliyor, işçiler galerisini duvarla kapatıyor.
 
 Üçü de alarm sistemine bağlı: alarmı alan işçi tehdide koşuyor ve bu yeni bir yerel karar.
+
+### Yavrular en sıcak kreşe taşınıyor (yeni)
+Her yavru artık kendi odasının sıcaklığında gelişiyor. Hemşireler yavruyu (yumurta, larva, pupa) o anda en hızlı gelişeceği kreşe taşıyor: serin sabahta güneşin ısıttığı üst odalara, öğle sıcağında aşağıdakilere. Taşınan yavru bir süre dinlendiriliyor ki hemşireler onu sürekli bir oraya bir buraya götürmesin. İhtiyaç olmayan yiyeceği taşıyan hemşire onu ambara geri koyuyor.
+
+### Kazı önceliği
+Kreş ya da ambar yarım kaldıysa dinlenme odası bekliyor. Koloni önce ihtiyacı olan odayı bitiriyor.
+
+### İşçiler gerçek boyda (diğer daldan)
+Diğer sohbetin "Workers shrink to real Messor structor size" değişikliği bu dala birleştirildi: işçiler 4,3–6,5 mm, ilk (nanitik) işçiler 4,2 mm'nin altında, majörler 8,3–9,3 mm. Taşınan yükler her boyda karıncanın çenesinde kendi gerçek boyunda kalıyor.
 
 ### Görseller tek tek yeniden çizildi
 `sheet.html` adında bir varlık sayfası eklendi. Oyundaki her canlı ve nesne tek başına, üç yakınlıkta çiziliyor. Böylece her biri ayrı ayrı değerlendirilebiliyor (`node scripts/sheet.mjs çıktı.png`).
@@ -91,12 +110,12 @@ Yeniden çizilenler:
 - Saat çizgisindeki performans göstergesi ayarlara taşındı. Duraklatınca "oynat" simgesi çıkıyor. "?" düğmesi "ayarlar" oldu.
 - Yemek tahmini 3,4 kat şişkindi (gün/hafta karışıklığı), düzeltildi.
 - Telefonda takip kartı ile bildirimler ve ölçek çubuğu artık çakışmıyor.
+- Başlıktaki saat satırında sıcaklık taşıp kesiliyordu; hava durumunu zaten simge gösterdiği için kelime kaldırıldı (üstüne gelince yazıyor).
 
 ## 4. Sıradaki (öneri)
 
-1. **Yavru göçü:** Her yavru kendi hücresinin sıcaklığında gelişsin. Hemşireler yavruyu gün içinde sıcak üst odalarla serin alt odalar arasında taşısın. Bu, gerçek ve gözle görülür bir günlük ritim verir.
-2. **Majörler değirmenci olsun:** Tohumu kırıp "karınca ekmeği" yapsınlar, larvalar ekmekle beslensin. Böylece majör ayarı gerçek bir ekonomi kararı olur.
+1. **Majörler değirmenci olsun:** Tohumu kırıp "karınca ekmeği" yapsınlar, larvalar ekmekle beslensin. Böylece majör ayarı gerçek bir ekonomi kararı olur.
+2. **Bahar darboğazı:** Büyük kolonilerde (400+ işçi) kış stoğu Nisan'da bitiyor, bahar tohumu da az. Gerçek *Messor* kolonileri sonbaharda çok daha fazla depolar; ambar kapasitesi ve sonbahar hasadı buna göre ayarlanmalı.
 3. **Derin kış odaları** ve gerçek taban suyu. Ardından toprağın 85-95 cm'ye büyütülmesi.
 4. **Akarlar:** Temasla yayılan, tımarla temizlenen bir parazit.
-5. **Kazı önceliği:** Kreş ve ambar, dinlenme odalarından önce bitsin.
-6. **Sondan sonra:** Steam için masaüstü paketi (Tauri), yerel fontlar, Steam Deck testi.
+5. **Sondan sonra:** Steam için masaüstü paketi (Tauri), yerel fontlar, Steam Deck testi.

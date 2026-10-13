@@ -64,7 +64,7 @@ function critter(id: string, label: string, kind: CritterKind, under: boolean, h
 }
 
 // ---- ants
-ant('worker', 'Minor worker (7 mm)', 'worker', false);
+ant('worker', 'Minor worker (4.3–6.5 mm)', 'worker', false);
 ant('worker-seed', 'Worker carrying a seed', 'worker', false, (a) => { a.carry = Carry.Seed; a.carryTone = 120; });
 ant('worker-soil', 'Worker carrying soil', 'worker', true, (a) => { a.carry = Carry.Soil; a.carryTone = 90; a.task = Task.Dig; });
 ant('worker-larva', 'Nurse carrying a larva', 'worker', true, (a) => { a.carry = Carry.Larva; a.task = Task.Nurse; });
