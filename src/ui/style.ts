@@ -343,6 +343,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #bar { transition: opacity .5s ease; }
 #ui.doc #card, #ui.doc #drawer, #ui.doc #inspect { opacity: 0; transform: translateY(-8px); pointer-events: none; }
 #ui.doc #bar { opacity: .32; }
+#ui::before { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 1.2s ease; background: radial-gradient(ellipse 75% 70% at 50% 48%, transparent 55%, rgba(8,5,3,0.42) 100%); }
+#ui.doc::before { opacity: 1; }
 #ui.doc #scale { opacity: 0; transition: opacity .6s ease; }
 #ui.doc #bar:hover, #ui.doc #bar:focus-within { opacity: 1; }
 /* --- cinema mode (H): a clean frame; only the caption and a way back stay */
