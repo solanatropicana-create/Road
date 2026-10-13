@@ -91,6 +91,8 @@ const MAT_KEYS = ['air', 'humus', 'loam', 'clay', 'subsoil', 'gravel', 'stone', 
 export class UI {
   /** Panels hidden for a clean frame (H); the documentary caption stays. */
   cinema = false;
+  /** The documentary's current shot, by its caption's head (for the fade between shots). */
+  private lastShot = '';
   /** Seconds since the player last touched anything. */
   private idle = 0;
   /** Where the latest located event happened (J jumps there). */
@@ -1371,7 +1373,17 @@ export class UI {
     if (dir.active) {
       const line = dir.caption + (game.slowed ? ` <span class="slowtag">${t('slowTag')}</span>` : '');
       const el = cap.querySelector('.line') as HTMLElement;
-      if (el.innerHTML !== line) el.innerHTML = line;
+      if (el.innerHTML !== line) {
+        // A new shot (not just the ant moving on a few millimetres): the line fades in.
+        const shot = dir.caption.split(' · ').slice(0, 2).join(' · ');
+        if (shot !== this.lastShot) {
+          this.lastShot = shot;
+          el.classList.remove('fresh');
+          void el.offsetWidth;
+          el.classList.add('fresh');
+        }
+        el.innerHTML = line;
+      }
     }
     while (sim.events.length) {
       const e = sim.events.shift()!;

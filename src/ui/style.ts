@@ -164,6 +164,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #caption { position: absolute; left: 22px; bottom: 84px; display: none; pointer-events: none; max-width: min(560px, calc(100vw - 44px)); }
 #caption .line { font-family: var(--serif); font-style: italic; font-size: 17px; line-height: 1.4; color: var(--ink); margin-top: 4px; text-shadow: 0 1px 8px rgba(0,0,0,0.85), 0 0 2px rgba(0,0,0,0.9); }
 #caption .eyebrow { color: var(--accent); text-shadow: 0 1px 6px rgba(0,0,0,0.85); }
+#caption .line.fresh { animation: capin .7s ease; }
+@keyframes capin { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
 
 #keys { left: 50%; bottom: 74px; transform: translateX(-50%); width: 320px; z-index: 2; background: var(--panel-solid); }
 #keys dl { display: grid; grid-template-columns: 104px 1fr; gap: 5px 10px; margin: 8px 0 12px; font-size: 12px; }
