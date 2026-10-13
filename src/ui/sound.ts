@@ -34,6 +34,8 @@ export class Soundscape {
   private wind!: { gain: GainNode; filter: BiquadFilterNode };
   private rain!: { gain: GainNode };
   private room!: { gain: GainNode };
+  /** The hum of a swarm of winged ants in the air (a nuptial flight). */
+  private swarm!: { gain: GainNode; am: GainNode };
   private noise!: AudioBuffer;
   private brown!: AudioBuffer;
   private nextChirp: number[] = [0, 0, 0];
@@ -105,6 +107,26 @@ export class Soundscape {
       gain.gain.value = 0;
       src.connect(lp).connect(gain).connect(this.master);
       this.room = { gain };
+    }
+    // A swarm's hum: a low band of noise, trembling at wingbeat-ish rates.
+    {
+      const src = this.loop(this.noise);
+      const band = ctx.createBiquadFilter();
+      band.type = 'bandpass';
+      band.frequency.value = 220;
+      band.Q.value = 3;
+      const am = ctx.createGain();
+      am.gain.value = 0.6;
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 23;
+      const depth = ctx.createGain();
+      depth.gain.value = 0.4;
+      lfo.connect(depth).connect(am.gain);
+      lfo.start();
+      const gain = ctx.createGain();
+      gain.gain.value = 0;
+      src.connect(band).connect(am).connect(gain).connect(this.earth);
+      this.swarm = { gain, am };
     }
     // The music: a few soft voices through a warm low-pass, never above a murmur.
     {
@@ -264,7 +286,7 @@ export class Soundscape {
     const gx = clamp(Math.round(cam.x), 0, w.w - 1);
     // How far below ground the middle of the view is (0 above, 1 well down).
     const below = clamp((cam.y - w.ground[gx]!) / 60, 0, 1);
-    const paused = game.paused || sim.phase === 'choose';
+    const paused = (game.paused || sim.phase === 'choose') && !game.cine.busy;
     // The nearer the camera, the more of the ground's own sound.
     const near = clamp((cam.zoom - 2) / 8, 0, 1);
     this.earth.frequency.setTargetAtTime(16000 * Math.pow(0.04, below), now, 0.4);
@@ -274,6 +296,8 @@ export class Soundscape {
     const rain = sim.weather.snowing ? 0 : sim.weather.rain;
     this.rain.gain.gain.setTargetAtTime(paused ? 0 : clamp(rain * 0.45, 0, 0.7), now, 0.8);
     this.room.gain.gain.setTargetAtTime(paused ? 0 : below * 0.18, now, 0.6);
+    const alates = game.cine.busy ? 26 : sim.flyers.length;
+    this.swarm.gain.gain.setTargetAtTime(paused && !game.cine.busy ? 0 : Math.min(0.5, alates * 0.025) * (1 - below * 0.8), now, 0.5);
     this.pad.gain.setTargetAtTime(this.music && sim.phase !== 'choose' ? 0.2 : 0, now, 2);
     if (this.music && now > this.nextChord) {
       const day0 = sim.cal.daylight(sim.dayT, sim.doy);
