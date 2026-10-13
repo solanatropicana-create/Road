@@ -1090,10 +1090,11 @@ export class Sim {
       this.openAt = 0;
       if (!this.raining && !this.dormant) this.openNest();
     }
-    // Shut the door once everyone is in (or after a while, leaving stragglers to shelter outside).
+    // Shut the door once everyone is in (or after a while: in the rain the
+    // stragglers are let in at the plug; for the winter they get longer to come home).
     if (this.sealAt && this.tick >= this.sealAt) {
       const outside = this.colony.ants.some((a) => this.world.bg[a.y * this.world.w + a.x] === 0);
-      if (!outside || this.tick > this.sealAt + TICK_HZ * 20) {
+      if (!outside || this.tick > this.sealAt + TICK_HZ * (this.dormant ? 100 : 20)) {
         this.sealAt = 0;
         if (!this.world.sealed && (this.raining || this.dormant)) {
           this.nest.seal();
@@ -1131,8 +1132,13 @@ export class Sim {
 
   /** An alate leaves the ground: off it goes, up and away on the breeze. */
   takeOff(a: Ant): void {
-    if (a.caste === 'gyne') this.flightCount.gynes++;
-    else this.flightCount.males++;
+    if (a.caste === 'gyne') {
+      this.flightCount.gynes++;
+      this.colony.flown.gynes++;
+    } else {
+      this.flightCount.males++;
+      this.colony.flown.males++;
+    }
     this.colony.flown.total++;
     this.flyers.push({ x: a.x + 0.5, y: a.y, vx: this.rng.range(-0.15, 0.25), vy: this.rng.range(-0.35, -0.22), caste: a.caste, t: 0 });
   }

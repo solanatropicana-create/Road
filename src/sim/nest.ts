@@ -303,8 +303,9 @@ export class Nest {
     for (const e of this.entrances) {
       const ex = e % w.w;
       const g = w.ground[ex]!;
+      // (The whole width of the mouth: a widened shaft runs wider than the first burrow.)
       for (let y = g; y <= g + 3; y++) {
-        for (let x = ex - 3; x <= ex + 3; x++) {
+        for (let x = ex - 6; x <= ex + 6; x++) {
           const i = y * w.w + x;
           if (!w.plan[i] || w.bg[i] !== 1 || w.mat[i] !== EMPTY) continue;
           const src = w.mat[i + 2] && SOIL[w.mat[i + 2]!] ? w.mat[i + 2]! : HUMUS;
@@ -312,6 +313,28 @@ export class Nest {
         }
       }
     }
+  }
+
+  /** The open nest cell nearest (x, y) just inside a plugged gate (for a straggler let in), or -1. */
+  behindPlug(x: number, y: number): number {
+    const w = this.world;
+    let best = -1;
+    let bd = Infinity;
+    for (let dy = 0; dy <= 12; dy++) {
+      for (let dx = -8; dx <= 8; dx++) {
+        const xx = x + dx;
+        const yy = y + dy;
+        if (xx < 1 || xx >= w.w - 1 || yy >= w.h - 1) continue;
+        const i = yy * w.w + xx;
+        if (w.bg[i] !== 1 || w.mat[i] !== EMPTY || !w.walk[i]) continue;
+        const d = dx * dx + dy * dy;
+        if (d < bd) {
+          bd = d;
+          best = i;
+        }
+      }
+    }
+    return best;
   }
 
   /** Open up: the plug becomes ordinary loose soil in the plan, for the diggers. */

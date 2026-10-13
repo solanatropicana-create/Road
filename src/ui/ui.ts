@@ -1301,8 +1301,10 @@ export class UI {
     const mins = Math.floor(sim.dayT * 24 * 60);
     const clock = `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
     this.els.day!.textContent = dateText(sim);
-    this.els.sky!.textContent = `${t(sky)} · ${t('tempNow', { t: Math.round(sim.surfaceT) })}`;
-    this.els.sky!.title = t('tempTitle', { s: Math.round(sim.surfaceT), n: Math.round(col.nestTemp) });
+    // The icon says clear, rain or night; the words would push the temperature off the card.
+    this.els.sky!.textContent = t('tempNow', { t: Math.round(sim.surfaceT) });
+    this.els.sky!.title = `${t(sky)} · ${t('tempTitle', { s: Math.round(sim.surfaceT), n: Math.round(col.nestTemp) })}`;
+    this.els.skyico!.title = t(sky);
     this.els.year!.textContent = `${t(`season_${sim.season}`)} · ${t('yearN', { n: sim.cal.year(sim.simDays) })}`;
     if (sky !== this.skySig) {
       this.skySig = sky;

@@ -269,6 +269,20 @@ export class Ant {
       this.meet--;
       return;
     }
+    // Shut out by the plug (rain, or the winter rest): the workers on the
+    // other side let a straggler at the mouth squeeze in (one coming home, not
+    // one on her way out with spoil, husks or the dead).
+    const homing = this.carry === Carry.None || isFood(this.carry);
+    if (w.sealed && homing && w.bg[i] === 0 && !this.foreign && !this.rival && sim.fields.dist[F.Entr]![i]! <= 2) {
+      const n = sim.nest.behindPlug(this.x, this.y);
+      if (n >= 0) {
+        this.x = n % w.w;
+        this.y = (n / w.w) | 0;
+        this.fdist = 0;
+        this.lost = 0;
+        return;
+      }
+    }
     if (this.caste !== 'queen' && sim.tick >= this.meetAgain && this.sick < 0.6 && this.greet(sim)) return;
     const slow = this.carry !== Carry.None ? TUNING.carryingSlowdown : 1;
     // Alarmed ants run.
