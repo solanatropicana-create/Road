@@ -36,7 +36,7 @@ export class Game {
   private tpsCount = 0;
   private tpsTime = 0;
 
-  private canvas: HTMLCanvasElement;
+  readonly canvas: HTMLCanvasElement;
   private saving = false;
   /** Bumped when the save is cleared, so a save already under way doesn't write it back. */
   private saveGen = 0;

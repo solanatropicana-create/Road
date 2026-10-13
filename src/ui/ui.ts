@@ -530,6 +530,7 @@ export class UI {
       <dt>F</dt><dd>${t('keyF')}</dd>
       <dt>J</dt><dd>${t('keyJ')}</dd>
       <dt>M</dt><dd>${t('keyM')}</dd>
+      <dt>X</dt><dd>${t('keyX')}</dd>
       <dt>Q</dt><dd>${t('keyQ')}</dd>
       <dt>${t('keyArrows')}</dt><dd>${t('keyArrowsD')}</dd></dl>
       <div class="row langrow"><label>${t('modeLabel')}</label><div class="seg" id="modeseg">
@@ -1041,6 +1042,37 @@ export class UI {
     this.syncBar();
   }
 
+  /** Save the scene as a picture (X): the slice as drawn, with the colony's name and date in a corner. */
+  private snapshot(): void {
+    const game = this.game;
+    const src = game.canvas;
+    const c = document.createElement('canvas');
+    c.width = src.width;
+    c.height = src.height;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(src, 0, 0);
+    const sim = game.sim;
+    const k = src.width / Math.max(1, src.clientWidth);
+    const label = `${sim.names.colony ? t(sim.names.colony) + ' · ' : ''}${dateText(sim)}`;
+    ctx.font = `italic ${Math.round(15 * k)}px Georgia, serif`;
+    ctx.fillStyle = 'rgba(240,228,206,0.85)';
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = 6 * k;
+    ctx.fillText(`Underfoot · ${label}`, 18 * k, c.height - 18 * k);
+    c.toBlob((blob) => {
+      if (!blob) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `underfoot-${sim.seed}-${sim.tick}.png`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      this.toast(t('snapSaved'));
+    }, 'image/png');
+  }
+
   /** Sound on or off (M). */
   private toggleSound(): void {
     const on = this.game.sound.toggle();
@@ -1194,6 +1226,8 @@ export class UI {
         this.toggleCinema();
       } else if (e.key === '?' || e.key === '/') {
         this.els.keys!.hidden = !this.els.keys!.hidden;
+      } else if (e.key === 'x' || e.key === 'X') {
+        this.snapshot();
       } else if (e.key === 'm' || e.key === 'M') {
         this.toggleSound();
       } else if (e.key === 'j' || e.key === 'J') {
