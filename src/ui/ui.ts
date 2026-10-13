@@ -313,6 +313,7 @@ export class UI {
         else {
           this.tab = tab;
           drawer.classList.remove('collapsed');
+          if (this.narrow() && this.els.keys) this.els.keys.hidden = true;
         }
         this.syncCollapse();
       };
@@ -626,6 +627,11 @@ export class UI {
     this.syncCollapse();
     if (this.game.sim.phase === 'failed') this.showOver();
     if (tipShown) this.els.keys!.hidden = false;
+  }
+
+  /** A phone-sized screen: one sheet open at a time. */
+  private narrow(): boolean {
+    return innerWidth <= 760;
   }
 
   /** The drawer's tabs, fold button and which pane shows. */
@@ -1576,8 +1582,10 @@ export class UI {
       <dl>${rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl>
       <p>${t('rvRest', { queen: sim.names.queen || '' })}</p><button class="btn" id="rvok">${t('rvOk')}</button>`;
     el.style.display = 'block';
+    this.root.classList.add('modal');
     const close = (): void => {
       el.style.display = 'none';
+      this.root.classList.remove('modal');
     };
     (el.querySelector('#rvok') as HTMLElement).onclick = close;
     // Watching on its own, the card steps aside by itself.

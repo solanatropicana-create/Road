@@ -156,7 +156,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
 /* --- time bar */
 #bar { left: 50%; bottom: 14px; transform: translateX(-50%); display: flex; gap: 10px; align-items: center; padding: 8px 10px; width: max-content; max-width: calc(100vw - 24px); }
-#bar .seg button { padding: 6px 10px; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+#bar .seg button { padding: 6px 10px; font-size: 12px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 32px; box-sizing: border-box; }
 #bar .seg button .ico { width: 15px; height: 15px; }
 #bar .seg { grid-auto-columns: auto; }
 #keys .perf { margin-top: 8px; font-family: var(--mono); font-size: 11px; color: var(--ink-faint); text-align: right; }
@@ -221,9 +221,13 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #ui.montage #bar { display: none !important; }
 #cineline { position: fixed; left: 50%; bottom: 12vh; transform: translateX(-50%); max-width: min(620px, calc(100vw - 40px)); text-align: center; font-family: var(--serif); font-style: italic; font-size: 17px; line-height: 1.45; color: #efe4cc; text-shadow: 0 1px 10px rgba(0,0,0,0.8); opacity: 0; transition: opacity 0.8s ease; pointer-events: none; z-index: 22; }
 #cineline.on { opacity: 1; }
+#ui:not(.cine):not(.montage) #cineline { display: none; }
 #cinedate { position: fixed; left: 50%; top: calc(9vh + 18px); transform: translateX(-50%); font-family: var(--mono); font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: #d9c9a8; text-shadow: 0 1px 8px rgba(0,0,0,0.8); display: none; z-index: 22; pointer-events: none; }
 #ui.montage #cinedate { display: block; }
 #cineskip { position: fixed; right: 22px; bottom: 11vh; display: none; z-index: 23; }
+/* The UI layer lets clicks through to the slice; its controls must still take them. */
+#ui button, #ui a, #ui input, #ui select, #ui label { pointer-events: auto; }
+#ui.montage #scale { display: none !important; }
 #ui.cine #cineskip, #ui.montage #cineskip { display: inline-flex; }
 #review { left: 50%; top: 50%; transform: translate(-50%, -50%); padding: 20px 26px; display: none; width: max-content; max-width: min(460px, calc(100vw - 24px)); z-index: 25; box-shadow: 0 0 0 100vmax rgba(8,6,4,0.45), 0 10px 30px rgba(0,0,0,0.3); }
 #review h2 { margin: 4px 0 10px; font-weight: 500; font-family: var(--serif); }
@@ -267,13 +271,13 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 
 .btn.ghost { border-color: transparent; color: var(--ink-faint); display: inline-flex; align-items: center; gap: 4px; }
 .btn.ghost:hover { color: var(--ink); background: none; }
-.linkbtn { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; color: var(--ink-dim); }
+.linkbtn { all: unset; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; color: var(--ink-dim); min-height: 28px; padding: 0 4px; }
 .linkbtn:hover { color: var(--accent); }
 
 /* --- title */
-#title { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; pointer-events: auto; overflow: auto;
+#title { position: absolute; inset: 0; display: none; align-items: flex-start; justify-content: center; pointer-events: auto; overflow: auto;
   background: radial-gradient(ellipse at 50% 46%, rgba(11,8,6,0.25) 0%, rgba(11,8,6,0.72) 62%, rgba(11,8,6,0.92) 100%); }
-#title .inner { width: min(760px, calc(100vw - 32px)); text-align: center; padding: 24px 0; }
+#title .inner { width: min(760px, calc(100vw - 32px)); text-align: center; padding: 24px 0; margin: auto 0; }
 #title .logo .logo-ant { width: 72px; height: 72px; }
 #title .wordmark { margin: 2px 0 6px; font-family: var(--serif); font-weight: 600; font-size: clamp(46px, 8vw, 84px); line-height: 1; letter-spacing: -0.01em; color: var(--ink); text-shadow: 0 2px 24px rgba(0,0,0,0.6); }
 #title .tagline { font-family: var(--serif); font-style: italic; font-size: 19px; color: var(--ink-dim); }
@@ -340,6 +344,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 /* --- phones (portrait): strip on top, brain as a bottom sheet over a two-row bar */
 @media (max-width: 760px) {
   #card { display: none !important; }
+  /* One sheet at a time: the drawer steps aside for settings, the year's review and the end. */
+  #ui.ph-failed #drawer, #ui.modal #drawer, #ui:has(> #keys:not([hidden])) #drawer { display: none !important; }
+  #tabs [data-tab] { min-width: 44px; justify-content: center; }
   #strip { display: flex; }
   #bar { left: 8px; right: 8px; bottom: 8px; transform: none; width: auto; max-width: none; display: grid; grid-template-columns: auto 1fr; gap: 6px; padding: 6px; }
   #bar #speeds { grid-column: 1 / -1; }
