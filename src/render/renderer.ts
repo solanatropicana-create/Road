@@ -184,7 +184,9 @@ export class Renderer {
       case ROOT: {
         // Fine roots: pale threads in whatever soil they run through.
         const soil = sampleRamp(soilRamp(this.guessSoil(x, y)), 0.35 + tone * 0.3);
-        c = mixRGB(soil, [214, 190, 146], 0.22 + tone * 0.12);
+        // (Kept faint: the grass's root mat runs the whole width of the slice, and drawn
+        // bold it reads as a busy, repeating pattern from afar. Close up they are fibres.)
+        c = mixRGB(soil, [214, 190, 146], 0.11 + tone * 0.08);
         break;
       }
       case BEDROCK: c = sampleRamp(PAL.bedrock, tone); break;
