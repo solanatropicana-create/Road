@@ -146,7 +146,7 @@ export class Sim {
   private flightYear = 0;
   private flightCount = { gynes: 0, males: 0 };
   /** When it last rained (flights follow rain, when the soil is soft for the new queens). */
-  private lastRain = -1e9;
+  lastRain = -1e9;
   /** Alates in the air after take-off (drawn until they are out of sight). */
   readonly flyers: { x: number; y: number; vx: number; vy: number; caste: string; t: number }[] = [];
   seedRain = 0.4;

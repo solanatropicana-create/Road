@@ -4,6 +4,7 @@ import { Rng } from '../util/rng';
 import { Noise } from '../util/noise';
 import { EMPTY, ROOT, CLAY, GRAVEL, SEED, REFUSE, FRUIT, PREY, HARDNESS, SOLID, LITTER, SAND, SOIL, HUMUS, HARD, LIME } from '../world/mat';
 import type { ChamberKind } from './types';
+import { moleCell } from './predators';
 
 export interface Chamber {
   id: number;
@@ -20,6 +21,10 @@ export interface Chamber {
   floor: number[];
   seeds: number;
   capacity: number;
+  /** Cells it was planned with (later lobes don't count toward being finished). */
+  base: number;
+  /** Lobes dug onto it since, as the room filled up. */
+  lobes: number;
 }
 
 export interface NestNeeds {
@@ -32,8 +37,8 @@ export interface NestNeeds {
   harvestSide?: number;
 }
 
-/** Workers a colony needs before it opens a second gate. */
-export const SECOND_GATE_WORKERS = 120;
+/** Workers a colony needs before it opens a second gate (each colony its own, in this range). */
+export const SECOND_GATE_WORKERS: [number, number] = [55, 110];
 
 const SIZE: Record<ChamberKind, { w: [number, number]; h: [number, number]; depth: number; band: [number, number] }> = {
   queen: { w: [20, 26], h: [9, 11], depth: 999, band: [30, 250] },
@@ -64,6 +69,10 @@ export class Nest {
   marker: { x: number; y: number } | null = null;
   lastPlanFailed = 0;
   private cutOff = 0;
+  /** Workers this colony waits for before opening a second gate. */
+  gateAt = 90;
+  /** Exploratory galleries dug so far (blind side tunnels, a few per hundred workers). */
+  explored = 0;
 
   private world: World;
   private rng: Rng;
@@ -248,6 +257,7 @@ export class Nest {
     const w = this.world;
     this.founded = true;
     this.foundX = x;
+    this.gateAt = this.rng.int(SECOND_GATE_WORKERS[0], SECOND_GATE_WORKERS[1]);
     const g = w.ground[x]!;
     // Claustral chamber a few centimetres down: below the worst of the day's heat and the rain.
     const depth = 48;
@@ -389,35 +399,202 @@ export class Nest {
   }
 
   private addChamber(kind: ChamberKind, cx: number, cy: number, cw: number, chh: number): Chamber {
-    const w = this.world;
     const id = this.chambers.length;
     const floorY = Math.round(cy + chh * 0.32);
-    const c: Chamber = { id, kind, cx, cy, w: cw, h: chh, floorY, cells: [], dug: 0, ready: false, floor: [], seeds: 0, capacity: 0 };
+    const c: Chamber = { id, kind, cx, cy, w: cw, h: chh, floorY, cells: [], dug: 0, ready: false, floor: [], seeds: 0, capacity: 0, base: 0, lobes: 0 };
+    this.stampRoom(c, cx, cy, cw, chh);
+    c.base = c.cells.length;
+    this.chambers.push(c);
+    this.zonesChanged = true;
+    return c;
+  }
+
+  /**
+   * Mark a room's cells: a flat floor at c.floorY under a lumpy, lopsided
+   * dome. Real chambers are pancakes, but no two alike: workers dig on where
+   * the soil gives, so the outline bulges, one end is taller than the other
+   * and the ceiling is uneven.
+   */
+  private stampRoom(c: Chamber, cx: number, cy: number, cw: number, chh: number): void {
+    const w = this.world;
     const seed = this.rng.range(0, 1000);
-    for (let y = Math.floor(cy - chh / 2) - 1; y <= floorY; y++) {
-      for (let x = Math.floor(cx - cw / 2) - 2; x <= Math.ceil(cx + cw / 2) + 2; x++) {
+    const lobes = this.rng.range(0.14, 0.32);
+    // One end higher than the other.
+    const skew = this.rng.range(-0.35, 0.35);
+    for (let y = Math.floor(cy - chh * 0.75) - 1; y <= c.floorY; y++) {
+      for (let x = Math.floor(cx - cw / 2) - 4; x <= Math.ceil(cx + cw / 2) + 4; x++) {
         if (!w.inside(x, y)) continue;
         const nx = (x - cx) / (cw / 2);
-        const ny = (y - cy) / (chh / 2);
+        const hh = (chh / 2) * Math.max(0.55, 1 + skew * nx);
+        const ny = (y - cy) / hh;
         const ang = Math.atan2(ny, nx);
-        // Lobed outline: real chambers bulge where workers kept digging.
-        const r = 1 + this.noise.n2(Math.cos(ang) * 1.5 + seed, Math.sin(ang) * 1.5) * 0.16;
+        // Lobed outline, two scales of bulge.
+        const r = 1 + this.noise.n2(Math.cos(ang) * 1.5 + seed, Math.sin(ang) * 1.5) * lobes + this.noise.n2(Math.cos(ang) * 3.4 + seed * 2, Math.sin(ang) * 3.4) * lobes * 0.45;
         if (nx * nx + ny * ny > r * r) continue;
         const i = y * w.w + x;
         const m = w.mat[i]!;
         if (HARD[m] || w.bg[i] !== 1) continue;
+        // Never into another room.
+        if (w.zone[i] && w.zone[i] !== c.id + 1) continue;
+        if (w.zone[i] === c.id + 1) continue;
         if (!w.plan[i]) {
           w.plan[i] = 1;
           this.planCells.push(i);
         }
-        w.zone[i] = id + 1;
+        w.zone[i] = c.id + 1;
         c.cells.push(i);
-        if (y >= floorY - Math.round(chh * 0.45)) c.capacity++;
+        if (y >= c.floorY - Math.round(chh * 0.45)) c.capacity++;
       }
     }
-    this.chambers.push(c);
-    this.zonesChanged = true;
-    return c;
+  }
+
+  /**
+   * A room that has filled up is dug wider: a lobe on one end, on the same
+   * floor (crowded nurseries and full granaries grow this way in real nests,
+   * rather than always budding a new room off the shaft).
+   */
+  extendChamber(c: Chamber): boolean {
+    const w = this.world;
+    for (let t = 0; t < 6; t++) {
+      const side = this.rng.chance(0.5) ? -1 : 1;
+      const lw = Math.round(c.w * this.rng.range(0.4, 0.75));
+      const lh = Math.max(6, Math.round(c.h * this.rng.range(0.75, 1.05)));
+      const lx = Math.round(c.cx + side * (c.w / 2 + lw / 2 - this.rng.int(3, 7)));
+      const ly = c.floorY - Math.round(lh * 0.32);
+      // Room for it: soil (not rock), underground, clear of every other room and tunnel.
+      const x0 = Math.floor(lx - lw / 2);
+      const x1 = Math.ceil(lx + lw / 2);
+      if (x0 < 14 || x1 > w.w - 14) continue;
+      let ok = true;
+      let rock = 0;
+      let n = 0;
+      for (let y = ly - lh; y <= c.floorY + 2 && ok; y++) {
+        for (let x = x0 - 3; x <= x1 + 3; x++) {
+          const i = y * w.w + x;
+          if (w.bg[i] !== 1 || y < w.ground[x]! + 8) {
+            ok = false;
+            break;
+          }
+          const z = w.zone[i]!;
+          if (z && z !== c.id + 1) {
+            ok = false;
+            break;
+          }
+          if (HARD[w.mat[i]!] || w.mat[i] === ROOT) rock++;
+          n++;
+        }
+      }
+      if (!ok || rock / Math.max(1, n) > 0.12) continue;
+      const before = c.cells.length;
+      this.stampRoom(c, lx, ly, lw, lh);
+      if (c.cells.length - before < 20) continue;
+      c.lobes++;
+      this.zonesChanged = true;
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * A blind side gallery: workers dig short exploratory tunnels off the nest
+   * that lead nowhere (and are sometimes built on later). Wiggly, a little
+   * narrower than a main tunnel, never up toward the surface.
+   */
+  explore(): boolean {
+    const w = this.world;
+    const open = this.planCells.filter((i) => w.mat[i] === EMPTY && w.bg[i] === 1 && ((i / w.w) | 0) > w.ground[i % w.w]! + 18);
+    if (!open.length) return false;
+    for (let t = 0; t < 8; t++) {
+      const s = open[this.rng.int(0, open.length - 1)]!;
+      let x = s % w.w;
+      let y = (s / w.w) | 0;
+      // Out sideways and a little down, rarely up.
+      let a = (this.rng.chance(0.5) ? 0 : Math.PI) + this.rng.range(-0.5, 0.9) * (this.rng.chance(0.5) ? 1 : -1);
+      if (Math.sin(a) < -0.25) a = Math.PI - a;
+      const len = this.rng.int(10, 30);
+      const r = this.rng.range(1.4, 1.9);
+      const cells: number[] = [];
+      let stopped = false;
+      for (let k = 0; k < len; k++) {
+        a += this.rng.range(-0.35, 0.35);
+        const nx = Math.round(x + Math.cos(a) * 1.2);
+        const ny = Math.round(y + Math.sin(a) * 1.2);
+        const i = ny * w.w + nx;
+        if (nx < 16 || nx > w.w - 16 || ny > w.h - 12 || ny < w.ground[nx]! + 14 || HARD[w.mat[i]!] || w.bg[i] !== 1) {
+          stopped = true;
+          break;
+        }
+        // Not into a room, and not back into the plan once clear of the start.
+        if (w.zone[i] || (k > 4 && this.planDistAt(nx, ny) < 3)) {
+          stopped = true;
+          break;
+        }
+        x = nx;
+        y = ny;
+        cells.push(i);
+      }
+      if (cells.length < 8) continue;
+      for (const i of cells) this.stampDisc(i % w.w, (i / w.w) | 0, r, null);
+      this.explored++;
+      return !stopped || cells.length >= 8;
+    }
+    return false;
+  }
+
+  /** Distance (cells, up to 12) from (x, y) to the nearest planned cell, searched directly. */
+  private planDistAt(x: number, y: number): number {
+    const w = this.world;
+    for (let r = 1; r <= 4; r++) {
+      for (let dy = -r; dy <= r; dy++) {
+        for (let dx = -r; dx <= r; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
+          if (w.plan[(y + dy) * w.w + x + dx]) return r;
+        }
+      }
+    }
+    return 12;
+  }
+
+  /**
+   * Workers nibble at the walls and ceilings as they pass: now and then a
+   * cell of soil beside an open part of the nest is dug away, so tunnels and
+   * rooms grow rough and a little roomier with use. Never the floor (brood
+   * and stores lie there), never toward the surface or into another room.
+   */
+  roughen(count: number): void {
+    const w = this.world;
+    const n = this.planCells.length;
+    if (!n) return;
+    for (let t = 0; t < count * 6 && count > 0; t++) {
+      const i = this.planCells[this.rng.int(0, n - 1)]!;
+      if (w.mat[i] !== EMPTY || w.bg[i] !== 1) continue;
+      const x = i % w.w;
+      const y = (i / w.w) | 0;
+      if (y < w.ground[x]! + 14) continue;
+      const dirs = [-1, 1, -w.w, -w.w - 1, -w.w + 1];
+      const d = dirs[this.rng.int(0, dirs.length - 1)]!;
+      const j = i + d;
+      const m = w.mat[j]!;
+      if (w.plan[j] || w.bg[j] !== 1 || !SOIL[m] || HARD[m]) continue;
+      const zi = w.zone[i]!;
+      // Keep rooms apart: no nibbling toward a cell that touches another room or the surface.
+      let clash = false;
+      for (const e of [j - 1, j + 1, j - w.w, j + w.w, j - 2 * w.w]) {
+        const z = w.zone[e]!;
+        if ((z && z !== zi) || w.bg[e] !== 1) clash = true;
+      }
+      if (clash) continue;
+      w.plan[j] = 1;
+      this.planCells.push(j);
+      if (zi) {
+        const c = this.chambers[zi - 1];
+        if (c) {
+          w.zone[j] = zi;
+          c.cells.push(j);
+        }
+      }
+      count--;
+    }
   }
 
   // ------------------------------------------------------------ scanning
@@ -444,7 +621,7 @@ export class Nest {
     // the side that touches). Anything else is out in the meadow: not ours.
     for (let pass = 0; pass < 2; pass++) {
       for (const i of w.claimed) {
-        if (w.plan[i]) continue;
+        if (w.plan[i] || moleCell(i)) continue;
         if (!w.plan[i - 1] && !w.plan[i + 1] && !w.plan[i - w.w] && !w.plan[i + w.w]) continue;
         w.plan[i] = 1;
         this.planCells.push(i);
@@ -523,8 +700,9 @@ export class Nest {
       }
       c.dug = dug;
       c.seeds = seeds;
-      // Hysteresis: a finished chamber stays in use through small slumps.
-      const ready = c.ready ? dug >= c.cells.length * 0.6 : dug >= c.cells.length * 0.85;
+      // Hysteresis: a finished chamber stays in use through small slumps
+      // (and while a lobe or a nibbled wall is still being dug).
+      const ready = c.ready ? dug >= c.base * 0.6 : dug >= c.base * 0.85;
       if (ready !== c.ready) {
         c.ready = ready;
         this.zonesChanged = true;
@@ -619,7 +797,10 @@ export class Nest {
     }
 
     // One gate is a bottleneck for a big colony: open a second.
-    if (needs.adults >= SECOND_GATE_WORKERS && this.entrances.length < 2 && this.gateX < 0 && this.planGate(needs.harvestSide ?? 1)) return 'gate';
+    if (needs.adults >= this.gateAt && this.entrances.length < 2 && this.gateX < 0 && this.planGate(needs.harvestSide ?? 1)) return 'gate';
+
+    // Workers nibble at the walls as they come and go (more workers, more nibbling).
+    if (needs.adults >= 12) this.roughen(Math.min(3, 1 + Math.floor(needs.adults / 150)));
 
     const nursery = this.capacityOf('nursery');
     const granary = this.capacityOf('granary');
@@ -633,11 +814,20 @@ export class Nest {
     // Rooms the colony is short of are built whatever the nest's size; only
     // living space (rest chambers, deeper shafts) follows the headcount.
     if (!kind) {
-      if (this.openCells + this.pendingCells >= wanted) return null;
+      if (this.openCells + this.pendingCells >= wanted) {
+        // Nothing needed: now and then a blind exploratory gallery, while the diggers are idle.
+        if (this.pendingCells < 40 && needs.adults >= 20 && this.explored < 1 + needs.adults / 50 && this.rng.chance(0.12)) return this.explore() ? 'explore' : null;
+        return null;
+      }
       if (needs.adults > 120 && this.rng.chance(0.35)) return this.deepen() ? 'deeper' : null;
       kind = 'rest';
     }
 
+    // A room of this kind that has filled up is often dug wider instead of starting another.
+    if (this.rng.chance(0.5)) {
+      const full = this.chambers.filter((c) => c.kind === kind && c.ready && c.lobes < 2);
+      if (full.length && this.extendChamber(full[this.rng.int(0, full.length - 1)]!)) return 'lobe';
+    }
     if (this.placeChamber(kind)) return kind;
     return this.deepen() ? 'deeper' : null;
   }
@@ -679,20 +869,41 @@ export class Nest {
         best = i;
       }
     }
+    // Now and then a new shaft branches down from the far end of a room
+    // instead, so a big nest is a branching tree, not one spine.
+    let lean = 14;
+    const rooms = this.chambers.filter((c) => c.ready && c.kind !== 'queen');
+    if (!this.marker && rooms.length >= 3 && this.rng.chance(0.35)) {
+      const c = rooms[this.rng.int(0, rooms.length - 1)]!;
+      const side = this.rng.chance(0.5) ? -1 : 1;
+      const ex = Math.round(c.cx + side * (c.w / 2 - 3));
+      const e = (c.floorY - 1) * w.w + ex;
+      if (w.zone[e] === c.id + 1 && ex > 30 && ex < w.w - 30) {
+        best = e;
+        by = c.floorY - 1;
+        lean = 30;
+      }
+    }
     if (best < 0) return false;
     const bx = best % w.w;
     if (by > w.h - 40) return false;
     const len = this.rng.int(28, 44);
-    let tx = bx + this.rng.int(-14, 14);
+    let tx = bx + (lean > 14 ? Math.sign(bx - this.foundX || 1) * this.rng.int(8, lean) : this.rng.int(-lean, lean));
     if (this.marker) tx = Math.round(tx * 0.5 + this.marker.x * 0.5);
     tx = Math.max(24, Math.min(w.w - 24, tx));
     const ty = Math.min(w.h - 12, by + len);
     const path = this.astar(bx, by, tx, ty);
     if (!path) return false;
     const cells: number[] = [];
-    for (const i of path) this.stampDisc(i % w.w, (i / w.w) | 0, 2.6, cells);
+    for (const i of path) this.stampDisc(i % w.w, (i / w.w) | 0, this.tunnelR(i, 2.5), cells);
     this.lastShaft = cells;
     return true;
+  }
+
+  /** A tunnel's radius here: wider and narrower along its length, as dug by many jaws. */
+  private tunnelR(i: number, r: number): number {
+    const w = this.world;
+    return r + this.noise.n2((i % w.w) / 9 + 300, ((i / w.w) | 0) / 9) * 0.65;
   }
 
   private computePlanDist(): void {
@@ -723,6 +934,14 @@ export class Nest {
     const spec = SIZE[kind];
     const tunnels = this.planCells.filter((i) => !w.zone[i]);
     if (tunnels.length === 0) return false;
+    // (A room can also bud off the end of another room, as chains of chambers do in real casts.)
+    for (const c of this.chambers) {
+      if (!c.ready || c.kind === 'queen' || !this.rng.chance(0.5)) continue;
+      for (const side of [-1, 1]) {
+        const e = (c.floorY - 2) * w.w + Math.round(c.cx + side * (c.w / 2 - 2));
+        if (w.zone[e] === c.id + 1) tunnels.push(e);
+      }
+    }
     this.computePlanDist();
 
     let maxDepth = 0;
@@ -763,7 +982,7 @@ export class Nest {
       const path = this.astar(ex, floorY - 3, b.ax, b.ay);
       if (!path) continue;
       this.addChamber(kind, b.cx, b.cy, b.cw, b.ch);
-      for (const i of path) this.stampDisc(i % w.w, (i / w.w) | 0, 2.4, null);
+      for (const i of path) this.stampDisc(i % w.w, (i / w.w) | 0, this.tunnelR(i, 2.3), null);
       return true;
     }
     this.lastPlanFailed++;

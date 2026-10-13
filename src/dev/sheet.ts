@@ -145,6 +145,25 @@ critter('beetlet', 'Attaephilus beetle (nest guest)', 'beetlet', true, 1);
   subjects[subjects.length - 1]!.y = GROUND - 2;
 }
 critter('molecricket', 'Mole cricket (Gryllotalpa, 40 mm)', 'molecricket', true, 10, { vx: 1, vy: 0, state: 0 }, -10);
+// The big ones: room on either side.
+{
+  slotSurface += 40;
+  critter('toad', 'Green toad (Bufotes viridis, 60 mm)', 'toad', false, 26, { tone: 3 });
+  const t = slotSurface;
+  slotSurface += 50;
+  critter('toad-tongue', 'Green toad flicking up an ant', 'toad', false, 26, { tone: 90, peck: 4, px: t + 50, pr: GROUND - 3 });
+  slotSurface += 130;
+  critter('lizard', 'Sand lizard, male (Lacerta agilis, 18 cm)', 'lizard', false, 12, { tone: 200, vx: 1 });
+  subjects[subjects.length - 1]!.x += 10;
+  slotSurface += 140;
+  critter('lizard-f', 'Sand lizard, female, tongue out', 'lizard', false, 12, { tone: 40, peck: 3 });
+  subjects[subjects.length - 1]!.x += 10;
+  slotSurface += 20;
+  slotUnder += 110;
+  critter('mole', 'Mole (Talpa europaea, 13 cm)', 'mole', true, 30, {}, -14);
+  subjects[subjects.length - 1]!.x -= 45;
+  slotUnder += 20;
+}
 for (const kind of ['hopper', 'beetle', 'worm'] as const) {
   const x = place(false);
   const c = new Carcass(kind, x, GROUND - 1, 120, 1);

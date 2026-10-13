@@ -1262,7 +1262,7 @@ export class UI {
         this.note(`ev_${e.key}`, vars, { toast: true, merge: !e.kind, loc });
         if (loc) dir.notice(loc.x, loc.y, t(`ev_${e.key}`, vars), e.key);
         // Big news gets a ring on the spot, so the eye finds it.
-        if (loc && ['neighbourMetL', 'neighbourMetR', 'youngColony', 'youngColonyGone', 'war', 'raid', 'secondGate', 'raidYoung', 'warYoung', 'tugOfWar'].includes(e.key)) game.renderer.mark(loc.x, loc.y);
+        if (loc && ['neighbourMetL', 'neighbourMetR', 'youngColony', 'youngColonyGone', 'war', 'raid', 'secondGate', 'raidYoung', 'warYoung', 'tugOfWar', 'moleNest', 'queenKilledMole', 'toad'].includes(e.key)) game.renderer.mark(loc.x, loc.y);
       }
     }
     // The ant being followed died: show its life card for a moment.
@@ -1695,6 +1695,9 @@ export class UI {
       if (c.kind === 'thief' && Math.abs(x - c.x) < 6 && Math.abs(y - c.y) < 6) return { key: 'thief' };
       if (c.kind === 'centipede' && c.body.some((i) => Math.abs((i % w.w) - x) < 3 && Math.abs(((i / w.w) | 0) - y) < 3)) return { key: 'centipede' };
       if (c.kind === 'molecricket' && Math.hypot(x - c.x, y - c.y) < 16) return { key: 'molecricket' };
+      if (c.kind === 'toad' && Math.abs(x - c.x) < 30 && y > c.y - 28 && y <= c.y + 2) return { key: 'toad' };
+      if (c.kind === 'lizard' && (x - c.x) * c.dir > -128 && (x - c.x) * c.dir < 48 && y > c.y - 14 && y <= c.y + 2) return { key: 'lizard' };
+      if (c.kind === 'mole' && (x - c.x) * c.dir > -112 && (x - c.x) * c.dir < 8 && Math.abs(y - c.y) < 20) return { key: 'mole' };
     }
     const i = y * w.w + x;
     const pl = w.plant[i]!;
@@ -1723,7 +1726,8 @@ export class UI {
     const col = sim.colony;
     const peak = Math.max(0, ...col.history.map((s) => s.pop));
     let cause = 'end_old';
-    if (col.prio.forage === 0) cause = 'end_forageOff';
+    if (col.queen && !col.queen.alive && col.queen.deathCause === 'killed by a mole') cause = 'end_queenMole';
+    else if (col.prio.forage === 0) cause = 'end_forageOff';
     else if (col.lastDeath === 'starvation') cause = 'end_hunger';
     else if (col.lastDeath === 'drowned') cause = 'end_flood';
     else if (col.prio.nurse === 0) cause = 'end_nurseOff';

@@ -36,6 +36,12 @@ const THIEF = { body: hex('#c99a45'), dark: hex('#7a5524'), leg: hex('#b08440') 
 const CENTI = { body: hex('#7a3a1e'), dark: hex('#45200f'), leg: hex('#b0703e'), head: hex('#5a2a14') };
 // Gryllotalpa: brown, with a golden velvet down on the pronotum.
 const MOLE = { body: hex('#6e4a2c'), dark: hex('#3e2816'), velvet: hex('#a07a4a'), wing: hex('#5a4630'), belly: hex('#9a7a56'), leg: hex('#7a5232') };
+// Bufotes viridis: grey-cream, marbled with moss-green blotches edged darker, warty, a gold eye.
+const TOAD = { base: hex('#b9b394'), blotch: hex('#6b8a4a'), edge: hex('#3c5428'), wart: hex('#8f8a6c'), belly: hex('#ddd6bc'), eye: hex('#c79a3a'), tongue: hex('#d9827a'), dark: hex('#2e2a20') };
+// Lacerta agilis: a brown back with dark, white-centred spots; the male's flanks green in spring.
+const LIZARD = { back: hex('#8a6b45'), flankM: hex('#6f9a3c'), flankF: hex('#a2845a'), spot: hex('#3a2a1a'), dot: hex('#efe6cc'), belly: hex('#d9cf9e'), eye: hex('#b88a2e'), tongue: hex('#b0455a') };
+// Talpa europaea: velvet slate-black fur, pink snout and palms.
+const TALPA = { fur: hex('#2b2a30'), sheen: hex('#6c7180'), pink: hex('#e0a194'), palm: hex('#d79584'), claw: hex('#efe4cc'), dark: hex('#141317') };
 
 /**
  * The other animals, drawn over the slice at screen resolution like the
@@ -43,7 +49,7 @@ const MOLE = { body: hex('#6e4a2c'), dark: hex('#3e2816'), velvet: hex('#a07a4a'
  */
 export function drawCritters(ctx: CanvasRenderingContext2D, list: Critter[], world: World, light: Light, view: { x0: number; y0: number; x1: number; y1: number }): void {
   for (const c of list) {
-    const pad = 40;
+    const pad = c.kind === 'mole' || c.kind === 'lizard' ? 140 : 40;
     if (c.kind !== 'worm' && c.kind !== 'thief' && c.kind !== 'centipede' && (c.x < view.x0 - pad || c.x > view.x1 + pad || c.y < view.y0 - pad || c.y > view.y1 + pad)) continue;
     switch (c.kind) {
       case 'hopper': hopper(ctx, c, light); break;
@@ -58,6 +64,9 @@ export function drawCritters(ctx: CanvasRenderingContext2D, list: Critter[], wor
       case 'thief': thiefAnts(ctx, c, world, light); break;
       case 'centipede': centipede(ctx, c, world, light, view); break;
       case 'molecricket': moleCricket(ctx, c, light); break;
+      case 'toad': drawToad(ctx, c, light); break;
+      case 'lizard': drawLizard(ctx, c, light); break;
+      case 'mole': drawMole(ctx, c, light); break;
     }
   }
 }
@@ -1085,6 +1094,373 @@ function moleCricket(ctx: CanvasRenderingContext2D, c: Critter, light: Light): v
     ctx.lineTo(3.25 - k * 0.55, 1.8);
     ctx.lineTo(2.75 - k * 0.55, 0.95);
     ctx.closePath();
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- toad
+
+/**
+ * A green toad, about 6 cm, sitting side on: squat and warty, a kidney-shaped
+ * gland behind the gold eye, green blotches on grey. Hopping, the hind legs
+ * kick out. Feeding, the sticky tongue flicks out to the ant and back.
+ */
+function drawToad(ctx: CanvasRenderingContext2D, c: Critter, light: Light): void {
+  const l = light(c.x, c.y - 10);
+  ctx.save();
+  ctx.translate(c.x + 0.5, c.y + 1);
+  ctx.scale(c.dir, 1);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const breathe = Math.sin(c.t * 0.12) * 0.6;
+  const air = c.air;
+  // Far hind leg.
+  ctx.fillStyle = css(TOAD.base, l, 0.85);
+  if (air) leg(ctx, [[-20, -9], [-30, -6], [-40, -3], [-46, -2]], 6, 2.4);
+  else outline(ctx, [[-24, -6], [-18, -14], [-10, -10], [-12, -2], [-22, -1]]);
+  ctx.fill();
+  // Body: a warty dome, head low and wide.
+  const body: Pt[] = [[-27, -5], [-24, -17], [-12, -25], [2, -24], [14, -21], [24, -16], [29, -9], [26, -4], [16, -2 + breathe], [0, -2], [-16, -2]];
+  outline(ctx, body);
+  litFill(ctx, TOAD.base, l, -25, -2, 1.12, 0.62);
+  // Pale throat and belly.
+  ctx.fillStyle = css(TOAD.belly, l, 0.85);
+  ctx.beginPath();
+  ctx.ellipse(10, -4 + breathe * 0.5, 15, 3.4 + breathe * 0.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Green marbling, each blotch edged darker.
+  ctx.save();
+  outline(ctx, body);
+  ctx.clip();
+  const blot = (x: number, y: number, rx: number, ry: number, rot: number): void => {
+    ctx.fillStyle = css(TOAD.edge, l, 0.9);
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx + 0.9, ry + 0.9, rot, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = css(TOAD.blotch, l);
+    ctx.beginPath();
+    ctx.ellipse(x, y, rx, ry, rot, 0, Math.PI * 2);
+    ctx.fill();
+  };
+  const v = (c.tone % 7) - 3;
+  blot(-14, -15, 6, 3.6, 0.3);
+  blot(-2 + v * 0.4, -22, 5, 2.6, -0.1);
+  blot(-20, -7, 3.6, 2.6, 0.5);
+  blot(5, -13, 4.2, 3, -0.2);
+  blot(18, -12, 3.2, 2.2, 0.2);
+  blot(-6, -7, 3.4, 2.2, 0);
+  // Warts.
+  ctx.fillStyle = css(TOAD.wart, l, 0.9);
+  for (let k = 0; k < 26; k++) {
+    const x = -24 + ((k * 37) % 46);
+    const y = -21 + ((k * 13) % 16);
+    ctx.beginPath();
+    ctx.arc(x, y, 0.7 + (k % 3) * 0.25, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+  ctx.strokeStyle = css(TOAD.dark, l, 0.5);
+  ctx.lineWidth = 0.5;
+  outline(ctx, body);
+  ctx.stroke();
+  // The gland behind the eye.
+  ctx.fillStyle = css(TOAD.base, l);
+  ctx.beginPath();
+  ctx.ellipse(9, -21, 6.5, 2.6, -0.12, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = css(TOAD.edge, l, 0.6);
+  ctx.lineWidth = 0.4;
+  ctx.stroke();
+  // Mouth line.
+  ctx.strokeStyle = css(TOAD.dark, l, 0.7);
+  ctx.lineWidth = 0.6;
+  ctx.beginPath();
+  ctx.moveTo(28.5, -9.5);
+  ctx.quadraticCurveTo(22, -9, 15, -12);
+  ctx.stroke();
+  // The eye: a bulging gold iris with a level black pupil.
+  ctx.fillStyle = css(TOAD.base, l);
+  ctx.beginPath();
+  ctx.ellipse(19, -19.5, 5.4, 5, 0, Math.PI * 0.95, Math.PI * 2.05);
+  ctx.fill();
+  ctx.strokeStyle = css(TOAD.edge, l, 0.6);
+  ctx.lineWidth = 0.5;
+  ctx.stroke();
+  ctx.fillStyle = css(TOAD.dark, l);
+  ctx.beginPath();
+  ctx.arc(19, -19, 3.9, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = css(TOAD.eye, l);
+  ctx.beginPath();
+  ctx.arc(19, -19, 3.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = css(TOAD.dark, l);
+  ctx.beginPath();
+  ctx.ellipse(19.3, -19, 2.3, 1, 0, 0, Math.PI * 2);
+  ctx.fill();
+  glint(ctx, 18, -20.3, 0.9, 0.55, 0, l, 0.75);
+  // Front leg and fingers (a shade darker than the flank, and outlined).
+  ctx.fillStyle = css(TOAD.edge, l, 0.55);
+  leg(ctx, [[15, -9.5], [17.2, -5], [18, -0.5]], 5.2, 3.4);
+  ctx.fillStyle = css(TOAD.wart, l);
+  leg(ctx, [[15, -9], [17, -5], [18, -0.5]], 4.2, 2.6);
+  ctx.strokeStyle = css(TOAD.wart, l);
+  ctx.lineWidth = 1.1;
+  ctx.beginPath();
+  for (const d of [-2, 0, 2.2]) {
+    ctx.moveTo(18, -0.6);
+    ctx.lineTo(19.5 + d, 0);
+  }
+  ctx.stroke();
+  // Near hind leg: a folded thigh and a long foot forward (or kicked out in a hop).
+  ctx.fillStyle = css(TOAD.base, l);
+  if (air) {
+    leg(ctx, [[-16, -10], [-28, -8], [-38, -4], [-48, -3]], 7, 2.8);
+  } else {
+    ctx.beginPath();
+    ctx.ellipse(-15, -8.5, 10, 6.4, -0.25, 0, Math.PI * 2);
+    litFill(ctx, TOAD.base, l, -15, -2, 1.1, 0.7);
+    ctx.strokeStyle = css(TOAD.edge, l, 0.55);
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+    ctx.fillStyle = css(TOAD.blotch, l, 0.85);
+    ctx.beginPath();
+    ctx.ellipse(-16, -10, 4.6, 2.2, -0.25, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = css(TOAD.edge, l, 0.55);
+    leg(ctx, [[-22, -3], [-12, -1], [-2, -0.6]], 5, 3);
+    ctx.fillStyle = css(TOAD.wart, l);
+    leg(ctx, [[-22, -3], [-12, -1], [-2, -0.6]], 4, 2.2);
+  }
+  // The tongue: out to the ant and back.
+  if (c.peck > 0 && c.px !== undefined && c.pr !== undefined) {
+    const f = c.peck > 3.5 ? (7 - c.peck) / 3.5 : c.peck / 3.5;
+    const tx = (c.px - c.x) * c.dir;
+    const ty = c.pr - c.y;
+    const ex = 28 + (tx - 28) * f;
+    const ey = -9.5 + (ty + 9.5) * f;
+    ctx.strokeStyle = css(TOAD.tongue, l);
+    ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(27, -9.5);
+    ctx.quadraticCurveTo((27 + ex) / 2, Math.min(-9.5, ey) - 2, ex, ey);
+    ctx.stroke();
+    ctx.fillStyle = css(TOAD.tongue, l);
+    ctx.beginPath();
+    ctx.arc(ex, ey, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- lizard
+
+/**
+ * A sand lizard, about 18 cm with its tail, flat to the ground: a brown back
+ * with rows of dark, white-centred spots, flanks green on a male, legs
+ * splayed and swinging as it runs. A flick of the forked tongue now and then.
+ */
+function drawLizard(ctx: CanvasRenderingContext2D, c: Critter, light: Light): void {
+  const l = light(c.x, c.y - 4);
+  ctx.save();
+  ctx.translate(c.x + 0.5, c.y + 1);
+  ctx.scale(c.dir, 1);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const male = c.tone >= 128;
+  const flank = male ? LIZARD.flankM : LIZARD.flankF;
+  const gait = c.vx > 0 ? Math.sin(c.x * 0.5) : 0;
+  const sway = Math.sin(c.x * 0.25) * (c.vx > 0 ? 1.5 : 0);
+  // Far legs.
+  ctx.fillStyle = css(flank, l, 0.7);
+  leg(ctx, [[22, -4], [25 - gait * 3, -2], [28 - gait * 5, 0]], 2.2, 1);
+  leg(ctx, [[-22, -4], [-26 + gait * 3, -2], [-30 + gait * 5, 0]], 2.6, 1.1);
+  // Tail: long, tapering, a little wave in it when running.
+  ctx.fillStyle = css(LIZARD.back, l);
+  ctx.beginPath();
+  ctx.moveTo(-28, -10);
+  ctx.quadraticCurveTo(-70, -6 + sway, -128, -1.2);
+  ctx.quadraticCurveTo(-70, -1 + sway, -28, -1.8);
+  ctx.closePath();
+  litFill(ctx, LIZARD.back, l, -8, -1, 1.15, 0.7);
+  // Body: long and low.
+  const body: Pt[] = [[-30, -2], [-31, -10], [-12, -13], [10, -13], [26, -11.4], [32, -8.4], [32, -2.5], [14, -1.2], [-12, -1.2]];
+  outline(ctx, body);
+  litFill(ctx, flank, l, -10.5, -1.2, 1.1, 0.75);
+  ctx.save();
+  outline(ctx, body);
+  ctx.clip();
+  // The brown band down the back, and the pale belly edge.
+  ctx.fillStyle = css(LIZARD.back, l);
+  ctx.fillRect(-33, -14, 68, 6.4);
+  ctx.fillStyle = css(LIZARD.belly, l, 0.8);
+  ctx.fillRect(-32, -3, 66, 2);
+  // Rows of dark spots, each with a small white centre, not quite in line.
+  for (let k = 0; k < 11; k++) {
+    for (const row of [0, 1]) {
+      const j = (k * 37 + row * 11 + c.tone) % 7;
+      const x = -27 + k * 5.6 + row * 2.6 + (j - 3) * 0.4;
+      const y = (row ? -6.8 : -10.6) + ((j % 3) - 1) * 0.4;
+      const r = 1 + (j % 3) * 0.2;
+      ctx.fillStyle = css(LIZARD.spot, l, 0.9);
+      ctx.beginPath();
+      ctx.ellipse(x, y, r * 1.3, r * 0.75, 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      if (j % 2 === 0) {
+        ctx.fillStyle = css(LIZARD.dot, l, 0.9);
+        ctx.beginPath();
+        ctx.arc(x + 0.2, y, 0.32, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  ctx.restore();
+  // Head: a blunt wedge, the eye ringed gold.
+  const head: Pt[] = [[27, -2.4], [28, -11.5], [36, -12.2], [44, -9], [47.5, -5], [43, -2.2]];
+  outline(ctx, head);
+  litFill(ctx, male ? flank : LIZARD.back, l, -12.2, -2.2, 1.2, 0.75);
+  ctx.fillStyle = css(LIZARD.back, l, 0.8);
+  ctx.beginPath();
+  ctx.ellipse(36, -10.6, 7, 1.6, -0.12, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = css(LIZARD.eye, l);
+  ctx.beginPath();
+  ctx.arc(38.5, -8, 1.8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = css([20, 14, 8], l);
+  ctx.beginPath();
+  ctx.arc(38.6, -8, 1.1, 0, Math.PI * 2);
+  ctx.fill();
+  glint(ctx, 38, -8.7, 0.45, 0.3, 0, l, 0.8);
+  // Ear opening and the mouth line.
+  ctx.fillStyle = css(LIZARD.spot, l, 0.6);
+  ctx.beginPath();
+  ctx.ellipse(31.5, -6.5, 1, 1.4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = css(LIZARD.spot, l, 0.6);
+  ctx.lineWidth = 0.4;
+  ctx.beginPath();
+  ctx.moveTo(47, -4.4);
+  ctx.lineTo(35, -4);
+  ctx.stroke();
+  if (c.peck > 0) {
+    ctx.strokeStyle = css(LIZARD.tongue, l);
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(47, -4.6);
+    ctx.lineTo(51.5, -4.8);
+    ctx.lineTo(53, -5.8);
+    ctx.moveTo(51.5, -4.8);
+    ctx.lineTo(53, -3.8);
+    ctx.stroke();
+  }
+  // Near legs, splayed: toes long.
+  ctx.fillStyle = css(flank, l);
+  leg(ctx, [[20, -5], [23 + gait * 3, -1.5], [26 + gait * 5, 0.2]], 3.2, 1.2);
+  leg(ctx, [[-20, -5], [-24 - gait * 3, -1.5], [-29 - gait * 5, 0.2]], 3.8, 1.4);
+  ctx.restore();
+}
+
+// ---------------------------------------------------------------- mole
+
+/**
+ * A mole in its tunnel, side on, head first: velvet fur, a pink snout, the
+ * huge pink spade hands turned out and raking at the soil ahead, a stub of a
+ * tail. (c.x, c.y) is the tip of its snout.
+ */
+function drawMole(ctx: CanvasRenderingContext2D, c: Critter, light: Light): void {
+  const l = light(c.x - c.dir * 40, c.y);
+  ctx.save();
+  ctx.translate(c.x + 0.5, c.y + 0.5);
+  ctx.scale(c.dir, 1);
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  const rake = Math.sin(c.t * 0.45);
+  // Far hand.
+  ctx.save();
+  ctx.translate(-16, 6);
+  ctx.rotate(-0.4 - rake * 0.35);
+  ctx.fillStyle = css(TALPA.palm, l, 0.75);
+  ctx.beginPath();
+  ctx.ellipse(6, 0, 7, 4.8, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+  // Tail with bristles.
+  ctx.strokeStyle = css(TALPA.fur, l);
+  ctx.lineWidth = 3;
+  ctx.beginPath();
+  ctx.moveTo(-100, -2);
+  ctx.quadraticCurveTo(-108, -4, -112, -8);
+  ctx.stroke();
+  // Body: a velvet cylinder, fattest behind the shoulders.
+  const body: Pt[] = [[-104, 2], [-104, -10], [-90, -17], [-60, -18], [-30, -15], [-12, -9], [-4, -3], [-10, 5], [-34, 11], [-70, 12], [-96, 9]];
+  outline(ctx, body);
+  litFill(ctx, TALPA.fur, l, -18, 12, 1.6, 0.6);
+  // The sheen of velvet, and the lie of the fur.
+  ctx.save();
+  outline(ctx, body);
+  ctx.clip();
+  const g = ctx.createLinearGradient(0, -18, 0, -6);
+  g.addColorStop(0, css(TALPA.sheen, l, 0.55));
+  g.addColorStop(1, css(TALPA.sheen, l, 0));
+  ctx.fillStyle = g;
+  ctx.fillRect(-106, -19, 104, 13);
+  ctx.strokeStyle = css(TALPA.dark, l, 0.35);
+  ctx.lineWidth = 0.35;
+  ctx.beginPath();
+  for (let k = 0; k < 24; k++) {
+    const x = -100 + k * 4;
+    ctx.moveTo(x, -12 + (k % 3));
+    ctx.quadraticCurveTo(x - 2, -2, x - 1, 8 - (k % 2) * 2);
+  }
+  ctx.stroke();
+  ctx.restore();
+  // Hind foot.
+  ctx.fillStyle = css(TALPA.pink, l, 0.9);
+  ctx.beginPath();
+  ctx.ellipse(-84, 11.5, 5, 1.8, 0.1, 0, Math.PI * 2);
+  ctx.fill();
+  // Snout: a long pink cone, nostrils at the tip; a pinprick of an eye in the fur.
+  ctx.fillStyle = css(TALPA.pink, l);
+  outline(ctx, [[-10, -7], [-2, -4.5], [5, -1.6], [6, 0.2], [2, 1.4], [-8, 1.8]]);
+  ctx.fill();
+  ctx.fillStyle = css(TALPA.dark, l, 0.7);
+  ctx.beginPath();
+  ctx.arc(5, -0.4, 0.6, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = css(TALPA.dark, l);
+  ctx.beginPath();
+  ctx.arc(-16, -9.5, 0.9, 0, Math.PI * 2);
+  ctx.fill();
+  // Whiskers.
+  ctx.strokeStyle = css(TALPA.claw, l, 0.5);
+  ctx.lineWidth = 0.25;
+  ctx.beginPath();
+  for (const d of [-3, 0, 3]) {
+    ctx.moveTo(1, -2);
+    ctx.lineTo(9, -4 + d);
+  }
+  ctx.stroke();
+  // The near spade hand, palm out, five claws, raking.
+  ctx.save();
+  ctx.translate(-18, 7);
+  ctx.rotate(-0.2 + rake * 0.4);
+  ctx.fillStyle = css(TALPA.palm, l);
+  ctx.beginPath();
+  ctx.ellipse(7, 0, 8, 5.6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = css(TALPA.dark, l, 0.25);
+  ctx.lineWidth = 0.4;
+  ctx.stroke();
+  ctx.fillStyle = css(TALPA.claw, l);
+  for (let k = 0; k < 5; k++) {
+    const a = -0.7 + k * 0.35;
+    const x = 7 + Math.cos(a) * 7.6;
+    const y = Math.sin(a) * 5.2;
+    ctx.beginPath();
+    ctx.ellipse(x + Math.cos(a) * 1.4, y + Math.sin(a) * 1.4, 2, 0.8, a, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();

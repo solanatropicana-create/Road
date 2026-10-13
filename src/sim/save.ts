@@ -214,6 +214,7 @@ function upgrade(sim: Sim): void {
     st.stallX ??= a.x;
     st.stallY ??= a.y;
     st.stallT ??= 0;
+    (a as unknown as { pocketT?: number }).pocketT ??= 0;
     if (x.alarm === undefined) x.alarm = 0;
     if (x.lastDX === undefined) x.lastDX = 0;
     if (x.sent === undefined) x.sent = false;
@@ -236,10 +237,23 @@ function upgrade(sim: Sim): void {
     nest.gateShaft = [];
   }
   nest.gateFrom ??= -1;
+  // Saves from before rooms grew lobes and colonies chose when to open a second gate.
+  const nx = sim.nest as unknown as { gateAt?: number; explored?: number };
+  nx.gateAt ??= 120;
+  nx.explored ??= 0;
+  for (const c of sim.nest.chambers) {
+    const cc = c as unknown as { base?: number; lobes?: number };
+    cc.base ??= c.cells.length;
+    cc.lobes ??= 0;
+  }
   // Saves from before the birds were taken out: drop any lark still visiting.
   const cl = sim.critters.list as { kind: string }[];
   for (let k = cl.length - 1; k >= 0; k--) if (cl[k]!.kind === 'lark') cl.splice(k, 1);
   sim.critters.burrows ??= [];
+  const cz = sim.critters as unknown as { toadLast?: number; toadNights?: number; toadKills?: number };
+  cz.toadLast ??= 0;
+  cz.toadNights ??= 0;
+  cz.toadKills ??= 0;
   const oc = sim as unknown as { carcasses?: Carcasses };
   oc.carcasses ??= new Carcasses();
   if (!o.neighbours) {

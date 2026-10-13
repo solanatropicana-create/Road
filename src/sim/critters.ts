@@ -4,6 +4,7 @@ import { EMPTY, SEED, SOIL, SOLID, WATER } from '../world/mat';
 import { TICK_HZ, DAY_TICKS } from '../config';
 import { clamp } from '../util/math';
 import { spawnUnderground, thief, centipede, moleCricket, backfill } from './underground';
+import { spawnPredators, toad, lizard, mole } from './predators';
 
 /**
  * The other animals of the slice, above and below ground:
@@ -24,8 +25,9 @@ import { spawnUnderground, thief, centipede, moleCricket, backfill } from './und
  *            structor nests in the dry grasslands near Vienna and in Moravia.
  *   antlion – an antlion larva at the bottom of its sand pit.
  *   thief, centipede, molecricket – enemies that come through the soil (see underground.ts).
+ *   toad, lizard, mole – big animals that can wreck a colony (see predators.ts).
  */
-export type CritterKind = 'hopper' | 'beetle' | 'worm' | 'spider' | 'phorid' | 'woodlouse' | 'cricket' | 'beetlet' | 'antlion' | 'thief' | 'centipede' | 'molecricket';
+export type CritterKind = 'hopper' | 'beetle' | 'worm' | 'spider' | 'phorid' | 'woodlouse' | 'cricket' | 'beetlet' | 'antlion' | 'thief' | 'centipede' | 'molecricket' | 'toad' | 'lizard' | 'mole';
 
 export interface Critter {
   kind: CritterKind;
@@ -64,6 +66,11 @@ export class Critters {
   readonly list: Critter[] = [];
   /** Galleries dug by the enemies in the soil, oldest first: cell, tick dug, radius, in threes (see backfill). */
   burrows: number[] = [];
+
+  /** When a toad last came to the nest (it comes back while it remembers), its return visits, and the workers it took. */
+  toadLast = 0;
+  toadNights = 0;
+  toadKills = 0;
 
   /** Remember a gallery step for the soil to fill in later. */
   dug(i: number, r: number, tick: number): void {
@@ -131,6 +138,8 @@ export class Critters {
     // Enemies through the soil, and the old galleries they left filling in.
     spawnUnderground(sim, this);
     backfill(sim, this);
+    // Toads, lizards and moles.
+    spawnPredators(sim, this);
     // Earthworms in the topsoil when it is cool and damp (not in summer drought or frost).
     if (air > 4 && air < 17 && this.count('worm') < 2 && rng.chance(0.05)) {
       const x = rng.int(30, w.w - 31);
@@ -162,6 +171,9 @@ export class Critters {
         case 'thief': keep = thief(sim, c, this); break;
         case 'centipede': keep = centipede(sim, c, this); break;
         case 'molecricket': keep = moleCricket(sim, c, this); break;
+        case 'toad': keep = toad(sim, c, this); break;
+        case 'lizard': keep = lizard(sim, c, this); break;
+        case 'mole': keep = mole(sim, c); break;
       }
       if (keep) this.list[j++] = c;
     }

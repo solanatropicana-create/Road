@@ -8,7 +8,7 @@ import type { Carcass } from './carcass';
 import { clamp } from '../util/math';
 import { Nest } from './nest';
 import {
-  EMPTY, SOLID, HARDNESS, REFUSE, SEED, SEEDHEAD, FRUIT, SAND, WATER, LITTER, PREY, HUMUS,
+  EMPTY, SOLID, HARD, HARDNESS, REFUSE, SEED, SEEDHEAD, FRUIT, SAND, WATER, LITTER, PREY, HUMUS,
 } from '../world/mat';
 import { PACKED, PLUG } from '../world/physics';
 import { TUNING, TICK_HZ, DAY_TICKS } from '../config';
@@ -25,6 +25,8 @@ const enum Act {
   Dig,
   Pick,
   Rest,
+  /** Digging her way out of a pocket the nest was cut off from (see escape). */
+  Escape,
 }
 
 /** The load an ant takes from a food cell, and the cell it puts down again. */
@@ -156,6 +158,8 @@ export class Ant {
   private fdist = 0;
   /** A nurse taking an unneeded meal back to the store. */
   returning = false;
+  /** Ticks spent cut off from the rest of the nest (walled in by stores, a collapse). */
+  private pocketT = 0;
   /** Where the forager came out of the nest (the walk out is measured from here). */
   private exitX = 0;
   /** Where and when a searching forager last made headway (to notice when it is stuck). */
@@ -314,6 +318,9 @@ export class Ant {
       this.alateThink(sim);
       return;
     }
+    // Walled in (stores heaped round her, a slump): she digs her way out
+    // toward the queen's chamber rather than waiting there for ever.
+    if (this.escape(sim)) return;
     // Hopelessly lost with a load: let it go and rethink.
     if (this.lost > 240) this.discard(sim);
     // Dying of a fungus: out, and away from the others.
@@ -661,6 +668,55 @@ export class Ant {
 
   // ---------------------------------------------------------------- jobs
 
+  /**
+   * Cut off from the rest of the nest (no way to the queen's chamber or to a
+   * resting room): after a few seconds of that, dig toward the queen's
+   * chamber, a cell at a time, through soil or stored seed. Returns true while
+   * busy getting out.
+   */
+  private escape(sim: Sim): boolean {
+    const w = sim.world;
+    const i = this.y * w.w + this.x;
+    const f = sim.fields;
+    const cut = w.bg[i] === 1 && f.sourceCount[F.Royal]! > 0 && f.dist[F.Royal]![i] === FAR && f.dist[F.Rest]![i] === FAR;
+    if (!cut) {
+      this.pocketT = 0;
+      return false;
+    }
+    if (++this.pocketT < TICK_HZ * 4 * this.speed) return false;
+    const qc = sim.nest.queenChamber();
+    const tx = qc ? qc.cx : sim.nest.foundX;
+    const ty = qc ? qc.floorY - 2 : w.ground[sim.nest.foundX]! + 20;
+    const here = Math.hypot(this.x - tx, this.y - ty);
+    // Step on into open space that is nearer home; otherwise dig the cell nearest it.
+    let step = -1;
+    let ss = here - 0.5;
+    let best = -1;
+    let bs = Infinity;
+    for (let k = 0; k < 8; k++) {
+      const n = i + f.off[k]!;
+      const m = w.mat[n]!;
+      const s = Math.hypot((n % w.w) - tx, ((n / w.w) | 0) - ty) + (k >= 4 ? 0.4 : 0) + sim.rng.next() * 1.2;
+      if (f.canStep(i, k)) {
+        if (s < ss) {
+          ss = s;
+          step = k;
+        }
+      } else if (SOLID[m] && !HARD[m] && w.bg[n] === 1 && s < bs) {
+        bs = s;
+        best = n;
+      }
+    }
+    if (step >= 0) {
+      this.moveTo(sim, step);
+      return true;
+    }
+    if (best < 0) return false;
+    this.startAct(Act.Escape, best, TUNING.digTicks[HARDNESS[w.mat[best]!]! || 1]!);
+    sim.noteOnce('dugOut', this);
+    return true;
+  }
+
   private startAct(a: Act, cell: number, ticks: number): void {
     this.act = a;
     this.actCell = cell;
@@ -672,6 +728,25 @@ export class Ant {
     const a = this.act;
     const n = this.actCell;
     this.act = Act.None;
+    if (a === Act.Escape) {
+      const m = w.mat[n]!;
+      if (!SOLID[m] || HARD[m]) return;
+      if (m === SEED || m === FRUIT || m === PREY) {
+        // Stored food in the way: she takes it along, or it goes into the crops.
+        if (this.carry === Carry.None) {
+          this.carry = carryOf(m);
+          this.carryTone = w.tone[n]!;
+        } else sim.colony.reserve += rations(carryOf(m));
+        w.set(n, EMPTY, w.tone[n], w.tint[n]);
+      } else {
+        // Soil is tamped into the walls of the pocket behind her.
+        const src = m === SAND ? w.tint[n]! & 0x3f : m;
+        w.set(n, EMPTY, w.tone[n], src);
+        sim.dust(n, src);
+      }
+      if (!w.plan[n]) w.claimed.push(n);
+      return;
+    }
     if (a === Act.Dig) {
       const m = w.mat[n]!;
       if (!Nest.diggable(w, n)) return;
