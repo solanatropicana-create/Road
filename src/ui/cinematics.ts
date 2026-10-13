@@ -177,12 +177,13 @@ export class Cinematics {
     const col = sim.colony;
     const cam = game.cam;
     const q = col.queen;
-    if (q?.alive && !game.director.active) {
-      cam.follow = { x: q.x, y: q.y - 2 };
-      cam.tzoom = Math.min(cam.maxZoom, 11);
-    }
     let stage = 0;
     for (const b of col.brood) stage = Math.max(stage, b.stage + 1);
+    if (q?.alive && !game.director.active) {
+      cam.follow = { x: q.x, y: q.y - 2 };
+      // Closer with each stage: eggs, larvae, pupae, as the brood heap grows round her.
+      cam.tzoom = Math.min(cam.maxZoom, 10 + Math.min(3, stage) * 1.3);
+    }
     if (col.hadWorkers || sim.phase === 'failed') stage = 4;
     if (stage !== this.stage) {
       this.stage = stage;
