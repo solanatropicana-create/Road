@@ -480,6 +480,50 @@ export class Renderer {
    * The dig plan as a survey overlay: amber dots on soil the colony means to
    * remove, and a pin where the player asked it to grow.
    */
+  /**
+   * Hairline cracks in the roof of a room under strain (see Ground): more,
+   * longer and darker as the strain builds toward a cave-in.
+   */
+  private drawCracks(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }, z: number): void {
+    const g = sim.ground;
+    if (!g.strained) return;
+    const ctx = this.ctx;
+    const path = new Path2D();
+    let worst = 0;
+    for (const c of sim.nest.chambers) {
+      const st = g.strain[c.id] ?? 0;
+      if (!c.ready || st < 0.15) continue;
+      if (c.cx + c.w < view.x0 || c.cx - c.w > view.x1 || c.floorY < view.y0 || c.floorY - c.h * 2 > view.y1) continue;
+      if (!this.known(sim, c.cx, c.floorY - c.h)) continue;
+      const r = g.roof(sim, c);
+      if (!r) continue;
+      worst = Math.max(worst, st);
+      const n = 1 + Math.floor(Math.min(1, st) * 8);
+      for (let k = 0; k < n; k++) {
+        // Fixed per room and crack, so the cracks stay put and only grow.
+        const h = (c.id * 7919 + k * 104729) >>> 0;
+        const u = ((h % 1000) / 1000) * 0.7 + 0.15;
+        let x = Math.round(r.x0 + r.span * u);
+        const top = r.top.get(x);
+        if (top === undefined) continue;
+        let y = top;
+        path.moveTo(x + 0.5, y);
+        const len = 2 + Math.min(1, st) * (4 + ((h >> 10) % 5));
+        for (let s = 0; s < len; s++) {
+          const j = ((h >> (s % 13)) & 3) - 1.5;
+          x += j * 0.45;
+          y -= 1;
+          path.lineTo(x + 0.5, y);
+        }
+      }
+    }
+    if (!worst) return;
+    ctx.strokeStyle = `rgba(22,14,9,${0.3 + 0.6 * Math.min(1, worst)})`;
+    ctx.lineWidth = Math.max(0.25, 1.1 / z);
+    ctx.lineJoin = 'round';
+    ctx.stroke(path);
+  }
+
   private drawPlan(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }, z: number, dt: number): void {
     this.planFlash = Math.max(0, this.planFlash - dt);
     const a = this.planAlways ? 1 : Math.min(1, this.planFlash / 1.5);
@@ -1104,6 +1148,7 @@ export class Renderer {
       ctx.globalAlpha = 1;
     }
     this.drawPlan(sim, view, z, dt);
+    this.drawCracks(sim, view, z);
     if (this.trails) this.drawTrails(sim, view);
     this.painter.drawCorpses(ctx, col.corpses, z, this.lightAt, view);
     this.painter.drawBrood(ctx, col.brood, z, this.lightAt, view, TUNING.pupaTicks);

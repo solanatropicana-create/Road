@@ -8,7 +8,7 @@ import type { Carcass, LookKind } from './carcass';
 import { clamp } from '../util/math';
 import { Nest } from './nest';
 import {
-  EMPTY, SOLID, HARD, HARDNESS, REFUSE, SEED, SEEDHEAD, FRUIT, SAND, WATER, LITTER, PREY, HUMUS,
+  EMPTY, SOLID, HARD, HARDNESS, REFUSE, SEED, SEEDHEAD, FRUIT, SAND, WATER, LITTER, PREY, HUMUS, SOIL,
 } from '../world/mat';
 import { PACKED, PLUG } from '../world/physics';
 import { TUNING, TICK_HZ, DAY_TICKS } from '../config';
@@ -29,6 +29,8 @@ const enum Act {
   Escape,
   /** A nurse biting a mouthful off a part of a carcass lying in the nest. */
   Bite,
+  /** Pressing soil into the cracks of a strained roof (see Ground). */
+  Shore,
 }
 
 /** The load an ant takes from a food cell, and the cell it puts down again. */
@@ -268,7 +270,15 @@ export class Ant {
       this.unbury(sim);
       return;
     }
-    this.buried = 0;
+    if (this.buried > 0) {
+      // Out in the air again (dug out, or her own way): the breath comes back slowly,
+      // so being buried again at once by the sliding fall goes on counting.
+      if (m === EMPTY && this.buried > TICK_HZ * 4 && sim.ground.freed(this.id) && this.buried > TICK_HZ * 12 && sim.tick - sim.ground.lastNote > TICK_HZ * 90) {
+        sim.ground.lastNote = sim.tick;
+        sim.events.push({ key: 'buriedOut', x: this.x, y: this.y });
+      }
+      this.buried = Math.max(0, this.buried - 2);
+    }
     if (!w.walk[i]) {
       // Nothing to hold on to: fall.
       if (this.y < w.h - 2 && !SOLID[w.mat[i + w.w]!]) this.y++;
@@ -364,6 +374,15 @@ export class Ant {
     }
     // New jobs are taken up at home, never halfway through a trip outside.
     const home = sim.world.bg[this.y * sim.world.w + this.x] === 1;
+    // A nestmate buried alive close by (ants hear and smell the buried, and dig to them).
+    if (home && sim.nest.rescuing && this.task !== Task.Dig && this.carry === Carry.None && (sim.tick + this.id) % 15 === 0) {
+      if (sim.ground.buried.some((b) => Math.abs(b.x - this.x) <= 30 && Math.abs(b.y - this.y) <= 20)) {
+        this.task = Task.Dig;
+        this.sent = false;
+        this.waiting = false;
+        this.reevalAt = sim.tick + TICK_HZ * 30;
+      }
+    }
     if (this.carry === Carry.None && ((home && sim.tick >= this.reevalAt) || this.lost > 120)) {
       this.lost = 0;
       sim.colony.assign(this, sim);
@@ -641,10 +660,16 @@ export class Ant {
     }
   }
 
+  /**
+   * Buried alive (a roof came down on her, a heap slid over her). With air
+   * within a body-length she shoves through to it; deeper, she works a grain
+   * loose at a time toward the nearest air while her nestmates dig toward her
+   * (see Ground). Out of air for long, she suffocates: under a minute for a
+   * worker, a couple for the big queen.
+   */
   private unbury(sim: Sim): void {
     const w = sim.world;
-    // Shove aside to any nearby open foothold.
-    for (let r = 1; r <= 3; r++) {
+    for (let r = 1; r <= 2; r++) {
       for (let dy = -r; dy <= r; dy++) {
         for (let dx = -r; dx <= r; dx++) {
           if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
@@ -661,18 +686,63 @@ export class Ant {
       }
     }
     this.buried++;
-    if (this.buried > TICK_HZ * 25) {
+    sim.ground.cry(this.id, this.x, this.y, sim.tick);
+    const queen = this.caste === 'queen';
+    if (this.buried > TICK_HZ * (queen ? 120 : 50)) {
+      sim.ground.freed(this.id, false);
       sim.colony.kill(this, 'buried');
       return;
     }
-    // Buried ants dig themselves out, slowly.
-    if (this.buried % (TICK_HZ * 2) === 0) {
-      const i = this.y * w.w + this.x;
-      if (HARDNESS[w.mat[i]!]) {
-        w.set(i, EMPTY, w.tone[i], w.tint[i] || w.mat[i]);
-        if (w.bg[i] === 1 && !w.plan[i]) w.claimed.push(i);
+    // Every second or so she works a grain loose toward the nearest air.
+    if ((sim.tick + this.id) % Math.round(TICK_HZ * (queen ? 0.8 : 1.2)) !== 0) return;
+    const i = this.y * w.w + this.x;
+    const air = this.airNear(sim, 9);
+    let best = -1;
+    let bd = Infinity;
+    for (let k = 0; k < 8; k++) {
+      const n = i + DY[k]! * w.w + DX[k]!;
+      if (n < 0 || n >= w.size || HARD[w.mat[n]!]) continue;
+      const nx = this.x + DX[k]!;
+      const ny = this.y + DY[k]!;
+      // No air in reach: up, where the nest and the surface are.
+      const d = air >= 0 ? Math.hypot(nx - (air % w.w), ny - ((air / w.w) | 0)) : ny + sim.rng.next();
+      if (d < bd) {
+        bd = d;
+        best = k;
       }
     }
+    if (best < 0) return;
+    const n = i + DY[best]! * w.w + DX[best]!;
+    const mn = w.mat[n]!;
+    if (SOLID[mn]) {
+      if (!HARDNESS[mn]) return;
+      // Loose fill she shoves behind her; packed soil she bites through.
+      const src = mn === SAND ? w.tint[n]! & 0x3f : mn;
+      w.set(n, EMPTY, w.tone[n], w.bg[n] ? src || w.tint[n]! : 0);
+      if (w.bg[n] === 1 && !w.plan[n]) w.claimed.push(n);
+      if (sim.rng.chance(0.3)) sim.dust(n, src || mn);
+    }
+    this.x += DX[best]!;
+    this.y += DY[best]!;
+    this.step++;
+  }
+
+  /** The nearest open cell within r (ring by ring), or -1. */
+  private airNear(sim: Sim, r: number): number {
+    const w = sim.world;
+    for (let d = 1; d <= r; d++) {
+      for (let dy = -d; dy <= d; dy++) {
+        for (let dx = -d; dx <= d; dx++) {
+          if (Math.max(Math.abs(dx), Math.abs(dy)) !== d) continue;
+          const x = this.x + dx;
+          const y = this.y + dy;
+          if (!w.inside(x, y)) continue;
+          const n = y * w.w + x;
+          if (w.mat[n] === EMPTY) return n;
+        }
+      }
+    }
+    return -1;
   }
 
   // ---------------------------------------------------------------- jobs
@@ -737,6 +807,11 @@ export class Ant {
     const a = this.act;
     const n = this.actCell;
     this.act = Act.None;
+    if (a === Act.Shore) {
+      const c = sim.ground.shoreAt(sim, this.y * w.w + this.x);
+      if (c && (SOIL[w.mat[n]!] || w.mat[n] === SAND)) sim.ground.shoreUp(sim, c, n);
+      return;
+    }
     if (a === Act.Bite) {
       // A mouthful off the part, to carry to a larva.
       const m = sim.carcasses.bitNear(n % w.w, (n / w.w) | 0, 3);
@@ -808,6 +883,9 @@ export class Ant {
         return;
       }
       sim.dust(n, src);
+      // Digging for the buried: no trips out with it, the soil is shoved back
+      // and tamped aside, a grain a moment, to get to them in time.
+      if (sim.nest.rescuing && sim.ground.buried.some((b) => Math.abs(b.x - this.x) <= 12 && Math.abs(b.y - this.y) <= 12)) return;
       if (this.caste === 'queen') {
         // The founding queen carries the shaft's soil up and out in her jaws,
         // a big pellet at a time; the chamber's she packs into the shaft
@@ -1015,12 +1093,23 @@ export class Ant {
         const h = HARDNESS[sim.world.mat[cell]!]! || 1;
         const mult = this.caste === 'soldier' ? 0.75 : 1;
         this.startAct(Act.Dig, cell, TUNING.digTicks[h]! * mult * sim.rng.range(0.8, 1.25));
-      } else {
+      } else if (!this.shore(sim)) {
         this.wander(sim, true);
       }
     } else if (r === Step.Failed && sim.fields.sourceCount[F.Dig] === 0) {
       this.reevalAt = 0;
     }
+  }
+
+  /** Under the roof of a room that has begun to crack: press soil up into it. */
+  private shore(sim: Sim): boolean {
+    const w = sim.world;
+    const i = this.y * w.w + this.x;
+    const roof = i - w.w;
+    const m = w.mat[roof]!;
+    if (!(SOIL[m] || m === SAND) || !sim.ground.shoreAt(sim, i)) return false;
+    this.startAct(Act.Shore, roof, TICK_HZ * sim.rng.range(2, 3.2));
+    return true;
   }
 
   private findAdjacent(sim: Sim, ok: (n: number) => boolean, orthogonal = false): number {

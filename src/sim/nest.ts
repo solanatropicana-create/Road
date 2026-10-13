@@ -69,6 +69,8 @@ export class Nest {
   marker: { x: number; y: number } | null = null;
   lastPlanFailed = 0;
   private cutOff = 0;
+  /** Someone lies buried alive: the digging is narrowed to the fall over them (see Ground). */
+  rescuing = false;
   /** Workers this colony waits for before opening a second gate. */
   gateAt = 90;
   /** Exploratory galleries dug so far (blind side tunnels, a few per hundred workers). */
@@ -722,8 +724,11 @@ export class Nest {
     return HARDNESS[m]! > 0;
   }
 
-  /** Recount what's dug, find the digging frontier, refresh chamber floors and stores. */
-  scan(): void {
+  /**
+   * Recount what's dug, find the digging frontier, refresh chamber floors and
+   * stores. `buried`: where nestmates or brood lie buried alive just now.
+   */
+  scan(buried?: readonly { x: number; y: number }[]): void {
     const w = this.world;
     // Adopt debris and pockets that ended up inside the nest outside the plan,
     // but only where they touch the nest (two passes, so a clump joins up from
@@ -782,6 +787,25 @@ export class Nest {
       }
       this.frontier.length = j;
       this.digSpots.length = j;
+    }
+    // Someone buried alive under a fall: every digger digs toward them first.
+    this.rescuing = false;
+    if (buried && buried.length) {
+      let j = 0;
+      for (let k = 0; k < this.frontier.length; k++) {
+        const i = this.frontier[k]!;
+        const x = i % W;
+        const y = (i / W) | 0;
+        if (!buried.some((b) => Math.abs(b.x - x) <= 12 && Math.abs(b.y - y) <= 12)) continue;
+        this.frontier[j] = i;
+        this.digSpots[j] = this.digSpots[k]!;
+        j++;
+      }
+      if (j > 0) {
+        this.frontier.length = j;
+        this.digSpots.length = j;
+        this.rescuing = true;
+      }
     }
     this.openCells = open;
     this.pendingCells = pending;

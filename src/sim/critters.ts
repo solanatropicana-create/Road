@@ -5,6 +5,8 @@ import { TICK_HZ, DAY_TICKS } from '../config';
 import { clamp } from '../util/math';
 import { spawnUnderground, thief, centipede, moleCricket, backfill } from './underground';
 import { spawnPredators, toad, lizard, mole } from './predators';
+import { lasius, lasiusSeason } from './lasius';
+import type { Corpse } from './brood';
 
 /**
  * The other animals of the slice, above and below ground:
@@ -26,8 +28,9 @@ import { spawnPredators, toad, lizard, mole } from './predators';
  *   antlion – an antlion larva at the bottom of its sand pit.
  *   thief, centipede, molecricket – enemies that come through the soil (see underground.ts).
  *   toad, lizard, mole – big animals that can wreck a colony (see predators.ts).
+ *   lasius – black garden ants from the tree, foraging at the foot of its trunk (see lasius.ts).
  */
-export type CritterKind = 'hopper' | 'beetle' | 'worm' | 'spider' | 'phorid' | 'woodlouse' | 'cricket' | 'beetlet' | 'antlion' | 'thief' | 'centipede' | 'molecricket' | 'toad' | 'lizard' | 'mole';
+export type CritterKind = 'hopper' | 'beetle' | 'worm' | 'spider' | 'phorid' | 'woodlouse' | 'cricket' | 'beetlet' | 'antlion' | 'thief' | 'centipede' | 'molecricket' | 'toad' | 'lizard' | 'mole' | 'lasius';
 
 export interface Critter {
   kind: CritterKind;
@@ -58,6 +61,8 @@ export interface Critter {
   /** Antlion: the pit's centre and radius. Thief ants: the nursery they dig toward (px, pr = x, y). Mole cricket: px, the column it heads for. */
   px?: number;
   pr?: number;
+  /** Lasius: the body of one of ours it is dragging home. */
+  load?: Corpse | null;
 }
 
 const HOPPER_MONTH = [0, 0, 0, 0, 0.2, 0.8, 1, 1, 0.7, 0.2, 0, 0];
@@ -71,6 +76,11 @@ export class Critters {
   toadLast = 0;
   toadNights = 0;
   toadKills = 0;
+  /** Skirmishes with the garden ants from the tree: fights, our dead, theirs, and when one was last noted. */
+  lasiusFights = 0;
+  lasiusKills = 0;
+  lasiusDead = 0;
+  lasiusNote = -1e9;
 
   /** Remember a gallery step for the soil to fill in later. */
   dug(i: number, r: number, tick: number): void {
@@ -106,6 +116,7 @@ export class Critters {
     const day = sim.cal.daylight(sim.dayT, doy) > 0.15;
     const w = sim.world;
     const dry = !sim.raining && sim.snow < 20;
+    lasiusSeason(sim, this);
     // Grasshoppers in the summer grass, by day.
     if (day && dry && this.count('hopper') < 3 && rng.chance(0.08 * HOPPER_MONTH[m]!)) {
       const x = rng.int(20, w.w - 21);
@@ -174,6 +185,7 @@ export class Critters {
         case 'toad': keep = toad(sim, c, this); break;
         case 'lizard': keep = lizard(sim, c, this); break;
         case 'mole': keep = mole(sim, c); break;
+        case 'lasius': keep = lasius(sim, c, this); break;
       }
       if (keep) this.list[j++] = c;
     }

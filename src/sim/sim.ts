@@ -22,6 +22,7 @@ import { SoilLife } from './soil';
 import { Neighbour } from './rivals';
 import { Fog } from './fog';
 import { Carcasses } from './carcass';
+import { Ground } from './ground';
 
 /** An event for the player; `key` names a message in the UI's string table. */
 export interface SimEvent {
@@ -98,6 +99,8 @@ export class Sim {
   readonly variant: Variant;
   /** The soil's own life: roots, the water table, grubs, hidden hollows. */
   readonly soil: SoilLife;
+  /** The soil as something that fails: roofs that crack and cave in, walls that weep, the buried. */
+  readonly ground = new Ground();
   /** A tree at the edge of the slice (shade, roots, autumn leaves), if any. */
   readonly tree: { x: number; r: number } | null;
   /** The surface's year beyond the meadow: shrub, tree, dead insects. */
@@ -573,7 +576,9 @@ export class Sim {
         break;
       }
       case F.Dig:
+        // (During a rescue, nobody stops to shore a roof.)
         for (const i of nest.digSpots) push(i);
+        if (!nest.rescuing) for (const i of this.ground.shoreSpots(this)) push(i);
         break;
       case F.Gran: {
         // Only granaries hold physical stores; without one, food goes into the
@@ -776,7 +781,12 @@ export class Sim {
       if (this.plants.gardens > 0) this.noteOnce('antGarden');
     }
     this.physics.step();
-    if (this.tick % 15 === 0) this.nest.scan();
+    if (this.tick % 15 === 0) {
+      const was = this.nest.rescuing;
+      this.nest.scan(this.ground.buried);
+      // A rescue starting or over: the diggers' map changes at once.
+      if (this.nest.rescuing !== was) this.fields.hurry(F.Dig, this.tick);
+    }
     if (this.nest.founded) {
       this.colony.tick(this);
       // Rebuild at most one distance field per tick, whichever is most overdue.
@@ -786,6 +796,7 @@ export class Sim {
       if (this.tick % (TICK_HZ * 2) === 1 && this.colony.hadWorkers) this.selfDig();
       for (const nb of this.neighbours) nb.step(this);
       this.carcasses.step(this);
+      this.ground.step(this);
       if (this.foreigners.length) this.foundresses();
     }
     if ((this.tick & 3) === 0) this.decayPheromone();

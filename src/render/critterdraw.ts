@@ -32,6 +32,10 @@ const BEETLET = { body: hex('#9a4c24'), dark: hex('#552812'), leg: hex('#b06a3a'
 const ANTLION = { jaw: hex('#8a6a40'), head: hex('#6b5232') };
 // Solenopsis fugax: tiny, pale amber, shining.
 const THIEF = { body: hex('#c99a45'), dark: hex('#7a5524'), leg: hex('#b08440') };
+// Lasius niger: dull blackish brown, a faint sheen, paler legs and antennae.
+const LASIUS = { body: hex('#2a221d'), dark: hex('#14100d'), leg: hex('#4a3a30') };
+// A dead Messor worker, as dragged off: dark reddish brown.
+const MESSOR_DEAD = hex('#3a2219');
 // Lithobius forficatus: glossy chestnut plates, paler legs.
 const CENTI = { body: hex('#7a3a1e'), dark: hex('#45200f'), leg: hex('#b0703e'), head: hex('#5a2a14') };
 // Gryllotalpa: brown, with a golden velvet down on the pronotum.
@@ -67,6 +71,7 @@ export function drawCritters(ctx: CanvasRenderingContext2D, list: Critter[], wor
       case 'toad': drawToad(ctx, c, light); break;
       case 'lizard': drawLizard(ctx, c, light); break;
       case 'mole': drawMole(ctx, c, light); break;
+      case 'lasius': lasiusAnt(ctx, c, light); break;
     }
   }
 }
@@ -890,6 +895,80 @@ function tinyAnt(ctx: CanvasRenderingContext2D, x: number, y: number, dx: number
     ctx.beginPath();
     ctx.ellipse(1.15, 0, 0.32, 0.24, 0, 0, Math.PI * 2);
     ctx.fill();
+  }
+  ctx.restore();
+}
+
+/**
+ * A black garden ant from the tree, 3.5 mm, seen from the side on the ground:
+ * quick legs, a twitch while it fights, and the body of one of ours in its
+ * jaws when it drags one home.
+ */
+function lasiusAnt(ctx: CanvasRenderingContext2D, c: Critter, light: Light): void {
+  const l = light(c.x, c.y);
+  const fighting = c.state === 1;
+  const jit = fighting ? Math.sin(c.t * 1.7) * 0.35 : 0;
+  const x = c.x + 0.5 + jit;
+  const y = c.y + 0.35;
+  const dir = c.dir >= 0 ? 1 : -1;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(dir, 1);
+  const moving = c.state !== 1 && (c.state !== 0 || c.timer % 40 < 30);
+  const g = moving ? Math.sin(c.t * (c.state === 4 ? 0.6 : 1.3)) * 0.35 : fighting ? Math.sin(c.t * 2.3) * 0.2 : 0;
+  // Legs from the thorax down to the ground, three a side (the far ones darker).
+  ctx.lineCap = 'round';
+  ctx.lineWidth = 0.12;
+  for (let side = 0; side < 2; side++) {
+    ctx.strokeStyle = css(side ? LASIUS.leg : LASIUS.dark, l, side ? 1 : 0.8);
+    ctx.beginPath();
+    for (let k = 0; k < 3; k++) {
+      const hx = 0.15 - k * 0.32;
+      const s = (k === 1 ? -g : g) * (side ? 1 : -1);
+      ctx.moveTo(hx, -0.75);
+      ctx.lineTo(hx + 0.25 + s * 0.5, -0.45);
+      ctx.lineTo(hx + 0.4 + s, 0.05);
+    }
+    ctx.stroke();
+  }
+  // Gaster, petiole, thorax, head.
+  ctx.fillStyle = css(LASIUS.body, l);
+  ctx.beginPath();
+  ctx.ellipse(-1.05, -0.95, 0.72, 0.55, -0.15, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(-0.3, -0.85, 0.14, 0.2, 0, 0, Math.PI * 2);
+  ctx.ellipse(0.2, -0.88, 0.48, 0.25, -0.1, 0, Math.PI * 2);
+  ctx.fill();
+  const bite = fighting ? Math.sin(c.t * 2.9) * 0.12 : 0;
+  ctx.beginPath();
+  ctx.ellipse(0.95, -1.0 + bite, 0.36, 0.32, 0.2, 0, Math.PI * 2);
+  ctx.fill();
+  glint(ctx, -1.15, -1.25, 0.3, 0.1, -0.15, l, 0.35);
+  // Antennae, elbowed, forward.
+  ctx.strokeStyle = css(LASIUS.leg, l);
+  ctx.lineWidth = 0.08;
+  ctx.beginPath();
+  ctx.moveTo(1.1, -1.25);
+  ctx.lineTo(1.35, -1.85 + bite);
+  ctx.lineTo(1.9, -1.55 + bite);
+  ctx.stroke();
+  if (c.state === 4) {
+    // The body of a harvester, legs folded, dragged along before her.
+    ctx.fillStyle = css(MESSOR_DEAD, l);
+    ctx.beginPath();
+    ctx.ellipse(2.4, -0.55, 0.62, 0.45, 0.3, 0, Math.PI * 2);
+    ctx.ellipse(3.3, -0.4, 0.55, 0.3, 0.1, 0, Math.PI * 2);
+    ctx.ellipse(4.4, -0.45, 0.9, 0.62, -0.1, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = css(MESSOR_DEAD, l, 0.9);
+    ctx.lineWidth = 0.1;
+    ctx.beginPath();
+    for (let k = 0; k < 3; k++) {
+      ctx.moveTo(3.1 + k * 0.3, -0.2);
+      ctx.lineTo(3.3 + k * 0.35, 0.15);
+    }
+    ctx.stroke();
   }
   ctx.restore();
 }

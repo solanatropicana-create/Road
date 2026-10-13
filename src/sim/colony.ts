@@ -6,7 +6,7 @@ import { Carry, Task, TaskKind, Work, WORK, ChamberKind, holdsStores } from './t
 import { F } from './fields';
 import { TUNING, TICK_HZ, DAY_TICKS } from '../config';
 import { devRate, metabolism } from './calendar';
-import { EMPTY, SEED, FRUIT, SOLID, WATER, POWDER, PREY } from '../world/mat';
+import { EMPTY, SEED, FRUIT, SOLID, WATER, POWDER, PREY, SAND, SOIL } from '../world/mat';
 import { clamp } from '../util/math';
 
 /** Multipliers for the colony brain's priority levels: off, low, normal, high. */
@@ -322,8 +322,11 @@ export class Colony {
         }
         const m = world.mat[b.y * this.w + b.x]!;
         // Grains that slid onto it (seed, chaff, loose soil): the nurses pull it out at once.
-        if (POWDER[m]) {
-          const spot = this.freeFloorNear(sim, b.x, b.y, 5);
+        // (Not from under a deep fall: that has to be dug away first.)
+        if (POWDER[m] && !(m === SAND && world.mat[at - this.w] === SAND && world.mat[at - 2 * this.w] === SAND)) {
+          // (Out of a seed cache that has buried the queen's floor: a little further off.)
+          let spot = this.freeFloorNear(sim, b.x, b.y, 5);
+          if (spot < 0 && m !== SAND) spot = this.freeFloorNear(sim, b.x, b.y, 12);
           if (spot >= 0) {
             this.liftBrood(b);
             this.placeBrood(b, spot % this.w, (spot / this.w) | 0);
@@ -340,10 +343,14 @@ export class Colony {
           }
         }
         if (m === WATER || SOLID[m]) {
-          // Flooded or buried brood dies unless the water drains in time.
+          // Flooded or buried brood dies unless the water drains, or the nurses dig it out, in time.
+          const fall = m === SAND || SOIL[m];
+          if (fall) sim.ground.cry(-b.id, b.x, b.y, sim.tick);
           if (++b.wet > TICK_HZ * 60) {
             dead.push(b);
-            this.deaths['brood drowned'] = (this.deaths['brood drowned'] ?? 0) + 1;
+            const cause = fall ? 'brood buried' : m === WATER ? 'brood drowned' : 'brood smothered';
+            if (fall) sim.ground.freed(-b.id, false);
+            this.deaths[cause] = (this.deaths[cause] ?? 0) + 1;
             continue;
           }
         } else if (b.wet > 0) b.wet--;
@@ -698,6 +705,10 @@ export class Colony {
       need[Task.Forage] = need[Task.Forage]! * 0.3;
       if (nest.frontier.length > 0) need[Task.Dig] = need[Task.Dig]! + 0.6;
     }
+    // A nestmate or brood buried alive under a fall: diggers drop everything to dig it out.
+    if (nest.rescuing) need[Task.Dig] = need[Task.Dig]! + 1.2;
+    // A roof cracking: a few diggers go to shore it up.
+    else if (sim.ground.strained > 0 && !sim.dormant) need[Task.Dig] = need[Task.Dig]! + Math.min(0.5, 0.2 * sim.ground.strained);
     need[Task.Nurse] = this.brood.length > 0 ? 0.12 + Math.min(1.2, (this.looseEggs + this.hungryLarvae * 1.5) / (adults * 0.15 + 2)) : 0;
     // Cleaning demand follows the loads waiting to go out (husk bundles, the dead),
     // not how much floor they happen to lie on.

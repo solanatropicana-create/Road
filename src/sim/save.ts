@@ -18,6 +18,7 @@ import { Neighbour } from './rivals';
 import { Fog, FOG } from './fog';
 import { Carcass, Carcasses } from './carcass';
 import { SoilLife } from './soil';
+import { Ground } from './ground';
 
 /**
  * Saving a colony: the whole simulation object graph, written generically.
@@ -28,7 +29,7 @@ import { SoilLife } from './soil';
  */
 
 const CLASSES: Record<string, { prototype: object }> = {
-  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar, Ecology, Critters, Neighbour, Fog, Carcass, Carcasses, SoilLife,
+  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar, Ecology, Critters, Neighbour, Fog, Carcass, Carcasses, SoilLife, Ground,
 };
 
 const TYPED: Record<string, new (b: ArrayBuffer) => ArrayBufferView> = {
@@ -270,10 +271,14 @@ function upgrade(sim: Sim): void {
   const sw = sim as unknown as { wind?: number; windGoal?: number };
   sw.wind ??= 0;
   sw.windGoal ??= 0;
-  const cz = sim.critters as unknown as { toadLast?: number; toadNights?: number; toadKills?: number };
+  const cz = sim.critters as unknown as { toadLast?: number; toadNights?: number; toadKills?: number; lasiusFights?: number; lasiusKills?: number; lasiusDead?: number; lasiusNote?: number };
   cz.toadLast ??= 0;
   cz.toadNights ??= 0;
   cz.toadKills ??= 0;
+  cz.lasiusFights ??= 0;
+  cz.lasiusKills ??= 0;
+  cz.lasiusDead ??= 0;
+  cz.lasiusNote ??= -1e9;
   // Saves from before the tree had a kind and a seed season.
   const eco = sim.eco as unknown as { treeKind?: string; samaras?: number };
   eco.treeKind ??= sim.site === 'limestone' || sim.site === 'vineyard' ? 'maple' : 'elm';
@@ -283,6 +288,8 @@ function upgrade(sim: Sim): void {
   // Saves from before carcasses came apart in parts.
   for (const c of sim.carcasses.list) c.settle();
   (sim.carcasses as unknown as { bits?: unknown[] }).bits ??= [];
+  // Saves from before the soil could fail.
+  (sim as unknown as { ground?: Ground }).ground ??= new Ground();
   if (!o.neighbours) {
     const list = o.neighbour ? [o.neighbour] : [];
     for (const nb of list) {

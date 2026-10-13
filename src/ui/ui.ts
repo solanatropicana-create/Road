@@ -1268,7 +1268,7 @@ export class UI {
         this.note(`ev_${e.key}`, vars, { toast: true, merge: !e.kind, loc });
         if (loc) dir.notice(loc.x, loc.y, t(`ev_${e.key}`, vars), e.key);
         // Big news gets a ring on the spot, so the eye finds it.
-        if (loc && ['neighbourMetL', 'neighbourMetR', 'youngColony', 'youngColonyGone', 'war', 'raid', 'secondGate', 'raidYoung', 'warYoung', 'tugOfWar', 'moleNest', 'queenKilledMole', 'toad'].includes(e.key)) game.renderer.mark(loc.x, loc.y);
+        if (loc && ['neighbourMetL', 'neighbourMetR', 'youngColony', 'youngColonyGone', 'war', 'raid', 'secondGate', 'raidYoung', 'warYoung', 'tugOfWar', 'moleNest', 'queenKilledMole', 'toad', 'caveIn', 'lasiusFight', 'lasiusKill'].includes(e.key)) game.renderer.mark(loc.x, loc.y);
       }
     }
     // The ant being followed died: show its life card for a moment.
@@ -1714,6 +1714,7 @@ export class UI {
       if (c.kind === 'antlion' && Math.abs(x - (c.px ?? c.x)) < (c.pr ?? 8) && y > c.y - (c.pr ?? 8) && y <= c.y + 2) return { key: 'antlion' };
       if ((c.kind === 'spider' || c.kind === 'phorid' || c.kind === 'woodlouse' || c.kind === 'cricket' || c.kind === 'beetlet') && Math.abs(x - c.x) < 4 && Math.abs(y - c.y + 1) < 4) return { key: c.kind };
       if (c.kind === 'thief' && Math.abs(x - c.x) < 6 && Math.abs(y - c.y) < 6) return { key: 'thief' };
+      if (c.kind === 'lasius' && Math.abs(x - c.x) < 4 && Math.abs(y - c.y) < 4) return { key: 'lasius' };
       if (c.kind === 'centipede' && c.body.some((i) => Math.abs((i % w.w) - x) < 3 && Math.abs(((i / w.w) | 0) - y) < 3)) return { key: 'centipede' };
       if (c.kind === 'molecricket' && Math.hypot(x - c.x, y - c.y) < 16) return { key: 'molecricket' };
       if (c.kind === 'toad' && Math.abs(x - c.x) < 30 && y > c.y - 28 && y <= c.y + 2) return { key: 'toad' };
