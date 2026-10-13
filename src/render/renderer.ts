@@ -210,6 +210,21 @@ export class Renderer {
           c = [c[0] * lit, c[1] * lit, c[2] * lit];
           const moss = clamp((u - 0.25) * 1.6, 0, 1) * clamp(1 - above / 120, 0, 1) * (0.5 + 0.5 * Math.sin(y * 0.21 + x * 0.05));
           if (moss > 0.05) c = mixRGB(c, [86, 104, 52], moss * 0.55);
+        } else {
+          // A woody root in the soil is a rounded limb, not a hole: lit along its
+          // upper side, shadowed beneath, with a grain running along it.
+          const W = w.w;
+          let up = 0;
+          let dn = 0;
+          while (up < 10 && y - up - 1 >= 0 && w.mat[i - (up + 1) * W] === WOOD) up++;
+          while (dn < 10 && y + dn + 1 < w.h && w.mat[i + (dn + 1) * W] === WOOD) dn++;
+          const s = (up + 0.5) / (up + dn + 1) * 2 - 1;
+          const nz = Math.sqrt(Math.max(0, 1 - s * s));
+          const lit = 0.62 + 0.62 * Math.max(0, -0.55 * s + 0.83 * nz);
+          const grain = 0.9 + 0.1 * Math.sin(x * 0.23 + y * 1.7 + Math.sin(x * 0.05) * 3);
+          c = sampleRamp(PAL.wood, 0.25 + tone * 0.5);
+          c = [c[0] * lit * grain, c[1] * lit * grain, c[2] * lit * grain];
+          if (up === 0) c = mixRGB(c, [150, 118, 84], 0.35);
         }
         break;
       }
