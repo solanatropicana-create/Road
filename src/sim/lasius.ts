@@ -6,11 +6,11 @@ import { clamp } from '../util/math';
 import { EMPTY, PREY } from '../world/mat';
 
 /** How far out from the foot of the trunk the garden ants forage on the ground (mm). */
-const RANGE = 110;
+const RANGE = 160;
 /** At most this many on the slice at once (the column on the bark is drawn apart, see TreeLife). */
 const MOST = 8;
-/** They pick fights only this close to their tree (mm out from the trunk); further out they give way. */
-const TURF = 100;
+/** Close to their tree they fight readily (mm out from the trunk); further out, less so. */
+const TURF = 80;
 
 /** Where the trunk meets the slice, and which way is out from it into the slice. */
 function foot(sim: Sim): { x: number; out: number } | null {
@@ -122,12 +122,12 @@ export function lasius(sim: Sim, c: Critter, cz: Critters): boolean {
     }
     if (c.timer % 40 < 30) walk(0.3, c.dir);
   }
-  if (c.t % 3 !== 0 || d > TURF) return true;
+  if (c.t % 3 !== 0) return true;
   // One of ours within reach, on their ground: seized (more often than not they only touch and part).
   for (const a of col.ants) {
     if (a.away || a.paralysed || a.fight > 0 || a.rival) continue;
     if (Math.abs(a.x - c.x) > 2 || Math.abs(a.y - c.y) > 3 || w.bg[a.y * w.w + a.x] !== 0) continue;
-    if (!rng.chance(0.07)) continue;
+    if (!rng.chance(d < TURF ? 0.06 : 0.025)) continue;
     c.state = 1;
     c.prey = a;
     c.dir = a.x >= c.x ? 1 : -1;

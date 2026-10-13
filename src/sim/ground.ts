@@ -228,6 +228,7 @@ export class Ground {
     const wetter = clamp((w.moist[((r.top.get(Math.round(cx)) ?? c.floorY) - 2) * w.w + Math.round(cx)]! - 40) / 90, 0, 1);
     const high = rng.range(3, 6) + wetter * 4;
     let fell = 0;
+    let crushed = 0;
     const col = sim.colony;
     const ants = col.queen && col.queen.alive ? [...col.ants, col.queen] : col.ants;
     for (let x = Math.floor(cx - half); x <= Math.ceil(cx + half); x++) {
@@ -236,7 +237,7 @@ export class Ground {
       const u = (x - cx) / half;
       const hh = Math.round(high * (1 - u * u));
       // Ants clinging to this stretch of the roof come down with it.
-      const riders = hh > 0 ? ants.filter((a) => a.x === x && a.y >= t - 1 && a.y <= t + 1 && !a.away) : [];
+      const riders = hh > 0 ? ants.filter((a) => a.alive && a.x === x && a.y >= t - 1 && a.y <= t + 1 && !a.away) : [];
       // The arch over this column comes away...
       const mass: { tone: number; src: number }[] = [];
       for (let k = 1; k <= hh; k++) {
@@ -269,7 +270,22 @@ export class Ground {
         if (j === mass.length - 1 && rng.chance(0.5)) sim.dust(i, mass[j]!.src || HUMUS);
       }
       // The ones that rode it down end up somewhere in the heap (or on it, if it is shallow).
-      for (const a of riders) a.y = laid > 2 ? yb - rng.int(0, laid - 3) : yb - laid;
+      // Under a heavy fall, some are crushed outright: the workers that came down with
+      // the roof, and the brood under the thick of it. (The queen is too big and armoured.)
+      for (const a of riders) {
+        a.y = laid > 2 ? yb - rng.int(0, laid - 3) : yb - laid;
+        if (laid >= 4 && a.caste !== 'queen' && rng.chance(0.3)) {
+          col.kill(a, 'buried');
+          crushed++;
+        }
+      }
+      if (laid >= 4) {
+        for (const b of [...col.brood]) {
+          if (b.carried || b.x !== x || b.y > yb || b.y < yb - laid + 1 || !rng.chance(0.25)) continue;
+          col.takeBrood(b, 'brood buried');
+          crushed++;
+        }
+      }
     }
     // (Nothing left to fall: the roof has come down to rock, or to the surface.)
     this.strain[c.id] = fell < 6 ? 0.5 : 0;
@@ -277,7 +293,7 @@ export class Ground {
     this.fell[c.id] = sim.tick;
     this.shore[c.id] = (this.shore[c.id] ?? 0) * 0.5;
     this.caveIns++;
-    sim.events.push({ key: 'caveIn', kind: c.kind, x: Math.round(cx), y: c.floorY - 2 });
+    sim.events.push({ key: crushed ? 'caveInDead' : 'caveIn', kind: c.kind, n: crushed, x: Math.round(cx), y: c.floorY - 2 });
   }
 
   /** Soaked walls weep: water seeps out into the tunnels and runs down to pool in the low rooms. */
