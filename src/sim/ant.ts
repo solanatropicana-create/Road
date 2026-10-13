@@ -376,7 +376,7 @@ export class Ant {
     const home = sim.world.bg[this.y * sim.world.w + this.x] === 1;
     // A nestmate buried alive close by (ants hear and smell the buried, and dig to them).
     if (home && sim.nest.rescuing && this.task !== Task.Dig && this.carry === Carry.None && (sim.tick + this.id) % 15 === 0) {
-      if (sim.ground.buried.some((b) => Math.abs(b.x - this.x) <= 30 && Math.abs(b.y - this.y) <= 20)) {
+      if (sim.ground.buried.some((b) => Math.abs(b.x - this.x) <= 18 && Math.abs(b.y - this.y) <= 12)) {
         this.task = Task.Dig;
         this.sent = false;
         this.waiting = false;
@@ -1091,7 +1091,8 @@ export class Ant {
       const cell = this.findAdjacent(sim, (n) => Nest.diggable(sim.world, n), true);
       if (cell >= 0) {
         const h = HARDNESS[sim.world.mat[cell]!]! || 1;
-        const mult = this.caste === 'soldier' ? 0.75 : 1;
+        // (Burrowing into a fall to reach the buried is slow: the loose fill keeps running back.)
+        const mult = (this.caste === 'soldier' ? 0.75 : 1) * (sim.nest.rescuing ? 1.8 : 1);
         this.startAct(Act.Dig, cell, TUNING.digTicks[h]! * mult * sim.rng.range(0.8, 1.25));
       } else if (!this.shore(sim)) {
         this.wander(sim, true);
