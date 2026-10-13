@@ -11,7 +11,7 @@ import { Backdrop, skyAt } from './backdrop';
 import { Camera } from './camera';
 import { AntPainter } from './antdraw';
 import { MacroLens, fibreAlpha, isPiece, heapy } from './macro';
-import { drawCritters, drawCarcasses } from './critterdraw';
+import { drawCritters, drawCarcasses, drawMorsels } from './critterdraw';
 import type { Sim } from '../sim/sim';
 import type { Ant } from '../sim/ant';
 import { TUNING, GROUND_Y } from '../config';
@@ -1057,6 +1057,7 @@ export class Renderer {
     this.painter.drawBrood(ctx, col.brood, z, this.lightAt, view, TUNING.pupaTicks);
     if (sim.critters.list.length) drawCritters(ctx, sim.critters.list.filter((c) => (c.kind === 'worm' ? this.known(sim, c.body[0]! % w.w, (c.body[0]! / w.w) | 0) : this.known(sim, c.x, c.y))), w, this.lightAt, view);
     if (sim.carcasses.list.length) drawCarcasses(ctx, sim.carcasses.list.filter((c) => this.known(sim, c.x, c.y)), this.lightAt, view);
+    if (sim.carcasses.bits.length) drawMorsels(ctx, sim.carcasses.bits.filter((m) => this.known(sim, m.x, m.y)), this.lightAt, view);
     this.painter.draw(ctx, ants, z, this.lightAt, view, selected);
     if (sim.flyers.length) this.painter.drawFlyers(ctx, sim.flyers, z, this.lightAt);
     if (sim.eco.fallers.length) this.drawFallers(sim, view);

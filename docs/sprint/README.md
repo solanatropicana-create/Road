@@ -154,6 +154,16 @@ Geri bildirim: "Skip" tuşuna basılamıyor, kraliçe toprağı taşımıyor (h�
 - Leş küçülmüyor, parça kaybediyor: bacaklar, kanat, kafa, göğüs. Kopan yerde ham bir kesik görünüyor ve her parça bir karıncanın ağzında ayrı ayrı taşınıyor. Solucan boğum boğum kesiliyor.
 - Kapıdaki bir çekirge yaklaşık bir dakikada bitiyor (önceden 15 saniyede eriyordu).
 
+**Kesilen parça hemen yiyecek olmuyor (sonradan gelen düzeltme).** İlk sürümde eve gelen parça ambara tek hücrelik bir "et kırıntısı" olarak konuyordu. Büyük parçaların fazlası anında ortak yiyeceğe yazılıyordu; kapıda kimse tutmayan leş de her 6 saniyede kendiliğinden bir parça "yiyecek" veriyordu. Şimdi gerçek *Messor* gibi:
+- Parça bütün olarak kreşe, yavruların arasına konuyor (kreş yoksa ambara ya da kraliçenin yanına).
+- Bakıcılar gelip 2–4 saniye ısırıyor ve her lokmayı aç bir larvaya götürüyor. Bir arka bacak 2, bir karın 3 lokma.
+- Aç larva yoksa yanındaki işçiler yavaş yavaş kendileri yiyor.
+- Geriye kalan kabuk (bacak, kanat, kafa kabuğu) çöp olarak kalıyor ve temizlikçiler çöplüğe taşıyor. 10 gün kadar yenmeyen parça çürüyüp kabuğa dönüyor.
+- Kapıdaki sahipsiz leş artık kendiliğinden yiyecek vermiyor; dışarı çıkan toplayıcıları bekliyor.
+- Kreşteki parçanın üstüne gelince ne olduğu ve kaç lokma kaldığı görünüyor.
+- Ölçüm (4 hafta, 235 işçilik koloni): kreşe 128 lokmalık parça geldi; 33'ünü bakıcılar larvalara götürdü, kalanını işçiler yedi, çürüyen olmadı. Yiyecek kaybolmuyor, zamana yayılıyor.
+- 8 harita × 160 hafta: 8/8 hayatta. 6 haritada açlıktan ölüm 0. İki büyük kolonide (zirve 500 ve 700 işçi) 4. yılın baharında kış stoğu bitti (16 ve 181 işçi). Bu, bilinen bahar darboğazı (aşağıda 2. madde). Haritalar arası fark kaotik, ama sıradaki iş bu.
+
 **Kendiliğinden kazı (stigmerji).** Plan hâlâ odaları başlatıyor, ama büyüme artık karıncalardan geliyor:
 - Kazılan galerinin ucunda bir "kazı kokusu" kalıyor. O ucu kazan bir sonraki parçayı da açıyor, koku zayıfladıkça galeri sona eriyor. Galeriler kıvrılıyor, ara sıra çatallanıyor, başka bir tünele çıkarsa orada bitiyor.
 - Kalabalık bir odada duvara en yakın karıncalar duvarı kazıyor. Oda karıncaların toplandığı yana doğru tabanla aynı hizada genişliyor.
@@ -179,7 +189,8 @@ Yolda yakalanan iki şey:
 ## 6. Sıradaki (öneri)
 
 1. **Ağaç ve yarı 3B:** Ağacın gövdesi önde, kesit arkada derinlik bulanıklığıyla.
-2. **Majörler değirmenci olsun:** Tohumu kırıp "karınca ekmeği" yapsınlar.
-3. **Komşu koloniler (ertelendi).**
-4. **Akarlar:** Temasla yayılan, tımarla temizlenen bir parazit.
-5. **Sondan sonra:** Steam için masaüstü paketi (Tauri).
+2. **Bahar darboğazı:** 500+ işçilik koloniler kışa kişi başı yetersiz stokla giriyor. Yaz sonu yumurtlama kuralı stoğa göre daha sıkı olmalı, sonbahar hasadı da daha uzun sürmeli.
+3. **Majörler değirmenci olsun:** Tohumu kırıp "karınca ekmeği" yapsınlar.
+4. **Komşu koloniler (ertelendi).**
+5. **Akarlar:** Temasla yayılan, tımarla temizlenen bir parazit.
+6. **Sondan sonra:** Steam için masaüstü paketi (Tauri).

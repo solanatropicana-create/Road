@@ -278,6 +278,7 @@ function upgrade(sim: Sim): void {
   oc.carcasses ??= new Carcasses();
   // Saves from before carcasses came apart in parts.
   for (const c of sim.carcasses.list) c.settle();
+  (sim.carcasses as unknown as { bits?: unknown[] }).bits ??= [];
   if (!o.neighbours) {
     const list = o.neighbour ? [o.neighbour] : [];
     for (const nb of list) {

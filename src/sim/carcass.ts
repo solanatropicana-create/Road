@@ -1,7 +1,7 @@
 import type { Sim } from './sim';
 import type { Ant } from './ant';
 import { TICK_HZ, DAY_TICKS } from '../config';
-import { EMPTY, SOLID, WOOD } from '../world/mat';
+import { EMPTY, SOLID, WOOD, REFUSE } from '../world/mat';
 import { Carry } from './types';
 
 export type CarcassKind = 'beetle' | 'hopper' | 'worm';
@@ -163,8 +163,31 @@ export class Carcass {
   }
 }
 
+/**
+ * A part cut off a carcass and set down in the nest, among the brood: not
+ * food yet. Nurses come and bite it up, a mouthful at a time, and carry each
+ * bite to a hungry larva (insect is what larvae grow on); with no larva
+ * waiting the workers pick at it themselves. What is left, the husk of a leg
+ * or a wing, goes out to the midden. Left too long, it rots.
+ */
+export interface Morsel {
+  x: number;
+  y: number;
+  look: LookKind;
+  tone: number;
+  /** Bites of food left in it (one a meal for a larva), and what it came with. */
+  food: number;
+  whole: number;
+  age: number;
+}
+
+/** Parts with a husk worth carrying out once the meat is gone. */
+const HUSKED = new Set<number>([Look.Leg, Look.HindLeg, Look.Wing, Look.Head, Look.Thorax, Look.Case]);
+
 export class Carcasses {
   readonly list: Carcass[] = [];
+  /** Parts set down in the nest, being eaten. */
+  bits: Morsel[] = [];
 
   /** Lay a fresh carcass on the ground at column x (or at random). */
   drop(sim: Sim, kind: CarcassKind, at?: number): Carcass | null {
@@ -228,7 +251,79 @@ export class Carcasses {
     if (k >= 0) c.carriers.splice(k, 1);
   }
 
+  /** Set a part down here, in the nest. */
+  lay(x: number, y: number, look: LookKind, tone: number, food: number): void {
+    this.bits.push({ x, y, look, tone, food, whole: food, age: 0 });
+  }
+
+  /** The nearest part with food left within r cells (to bite from). */
+  bitNear(x: number, y: number, r: number): Morsel | null {
+    let best: Morsel | null = null;
+    let bd = r;
+    for (const m of this.bits) {
+      if (m.food <= 0) continue;
+      const d = Math.abs(m.x - x) + Math.abs(m.y - y) * 1.5;
+      if (d < bd) {
+        bd = d;
+        best = m;
+      }
+    }
+    return best;
+  }
+
+  /** The part lying at a point (the hover card). */
+  bitAt(x: number, y: number): Morsel | null {
+    for (const m of this.bits) if (Math.abs(x - m.x) <= 3 && y >= m.y - 3 && y <= m.y + 1) return m;
+    return null;
+  }
+
+  /** A bite taken from a part: true if there was one. */
+  bite(m: Morsel): boolean {
+    if (m.food <= 0) return false;
+    m.food--;
+    return true;
+  }
+
+  /**
+   * The parts in the nest, every second: with no nurse coming for it, a part
+   * is picked at by the workers about it (slowly, into the shared crops);
+   * left alone too long it rots. Eaten up or rotten, its husk is left for the
+   * cleaners to carry out.
+   */
+  private stepBits(sim: Sim): void {
+    if (!this.bits.length || sim.tick % TICK_HZ !== 7) return;
+    const w = sim.world;
+    let j = 0;
+    for (const m of this.bits) {
+      m.age += TICK_HZ;
+      if (m.food > 0 && m.age > TICK_HZ * 40 && sim.tick % (TICK_HZ * 20) === 7 && !sim.dormant) {
+        // Workers about it take a share themselves.
+        let near = 0;
+        for (const a of sim.colony.ants) if (Math.abs(a.x - m.x) <= 4 && Math.abs(a.y - m.y) <= 3 && ++near > 0) break;
+        if (near) {
+          m.food--;
+          sim.colony.reserve += 2;
+        }
+      }
+      if (m.age > DAY_TICKS * 1.5) m.food = 0;
+      if (m.food > 0) {
+        this.bits[j++] = m;
+        continue;
+      }
+      // The husk: chaff for the cleaners (a worm or an abdomen leaves nothing).
+      if (!HUSKED.has(m.look)) continue;
+      for (const i of [m.y * w.w + m.x, m.y * w.w + m.x - 1, m.y * w.w + m.x + 1, (m.y - 1) * w.w + m.x]) {
+        if (w.mat[i] !== EMPTY || w.bg[i] !== 1) continue;
+        w.set(i, REFUSE, m.tone, 0);
+        if (!w.plan[i]) w.claimed.push(i);
+        break;
+      }
+    }
+    this.bits.length = j;
+  }
+
   step(sim: Sim): void {
+    this.stepBits(sim);
     if (!this.list.length) return;
     let j = 0;
     for (const c of this.list) {
@@ -250,15 +345,8 @@ export class Carcasses {
     if (c.pieces <= 0) return false;
     const trunk = PARTS[c.kind].length - 1;
     if (!c.carriers.length) {
+      // (Nobody on it: it waits, at the gate too, for the next foragers out.)
       c.stall = 0;
-      // At the gate the traffic in and out takes the rest down, part by part.
-      if (c.atGate && !sim.dormant && sim.forageWeather > 0.05 && --c.cut <= 0) {
-        c.cut = TICK_HZ * 6;
-        let p = 0;
-        while ((c.gone >> p) & 1) p++;
-        this.sever(sim, c, p, null);
-        return c.pieces > 0;
-      }
       return c.age < DAY_TICKS * (sim.dormant ? 1 : 2.5);
     }
     // Only the trunk left, and light: one of them takes it home.
@@ -374,24 +462,23 @@ export class Carcasses {
     for (const a of c.carriers) if (a.cutPart >= 0) c.prog[a.cutPart]! += a.caste === 'soldier' ? 2.5 : 1;
     for (let p = 0; p < trunk; p++) {
       if ((c.gone >> p) & 1 || c.prog[p]! < parts[p]!.secs * TICK_HZ) continue;
-      this.sever(sim, c, p, c.carriers.find((a) => a.cutPart === p) ?? null);
+      const a = c.carriers.find((b) => b.cutPart === p);
+      if (a) this.sever(sim, c, p, a);
     }
     return c.pieces > 0;
   }
 
-  /** Part p comes off: into worker a's jaws (or down the gate with the traffic). */
-  private sever(sim: Sim, c: Carcass, p: number, a: Ant | null): void {
+  /** Part p comes off, into worker a's jaws: she takes it home whole. */
+  private sever(sim: Sim, c: Carcass, p: number, a: Ant): void {
     const part = PARTS[c.kind][p]!;
     c.gone |= 1 << p;
     c.pieces -= part.load;
-    if (a) {
-      this.release(a);
-      a.carry = Carry.Prey;
-      a.carryTone = c.tone;
-      a.carryPart = part.look;
-      a.carryLoad = part.load;
-      if (!c.atGate && !a.rival) sim.noteOnce('cutUp', { x: Math.round(c.x), y: c.y });
-    } else sim.colony.reserve += part.load * 2;
+    this.release(a);
+    a.carry = Carry.Prey;
+    a.carryTone = c.tone;
+    a.carryPart = part.look;
+    a.carryLoad = part.load;
+    if (!c.atGate && !a.rival) sim.noteOnce('cutUp', { x: Math.round(c.x), y: c.y });
   }
 
   /**

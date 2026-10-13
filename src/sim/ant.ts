@@ -4,7 +4,7 @@ import { Carry, CarryKind, Task, TaskKind, Caste, holdsStores } from './types';
 import { intruderNear } from './underground';
 import type { Brood } from './brood';
 import type { Neighbour } from './rivals';
-import type { Carcass } from './carcass';
+import type { Carcass, LookKind } from './carcass';
 import { clamp } from '../util/math';
 import { Nest } from './nest';
 import {
@@ -27,6 +27,8 @@ const enum Act {
   Rest,
   /** Digging her way out of a pocket the nest was cut off from (see escape). */
   Escape,
+  /** A nurse biting a mouthful off a part of a carcass lying in the nest. */
+  Bite,
 }
 
 /** The load an ant takes from a food cell, and the cell it puts down again. */
@@ -735,6 +737,18 @@ export class Ant {
     const a = this.act;
     const n = this.actCell;
     this.act = Act.None;
+    if (a === Act.Bite) {
+      // A mouthful off the part, to carry to a larva.
+      const m = sim.carcasses.bitNear(n % w.w, (n / w.w) | 0, 3);
+      if (m && this.carry === Carry.None && sim.carcasses.bite(m)) {
+        this.carry = Carry.Prey;
+        this.carryPart = 0;
+        this.carryLoad = 1;
+        this.carryTone = m.tone;
+        this.returning = false;
+      }
+      return;
+    }
     if (a === Act.Escape) {
       const m = w.mat[n]!;
       if (!SOLID[m] || HARD[m]) return;
@@ -971,7 +985,11 @@ export class Ant {
   /** Give up on the current load: spoil gets tamped into the wall, food shared out. */
   private discard(sim: Sim): void {
     if (this.carry === Carry.Corpse) sim.colony.corpses.push({ x: this.x, y: this.y, carried: false });
+    // A part of a carcass is set down where she stands, for the nurses to find (or to rot).
+    else if (this.carry === Carry.Prey && this.carryPart > 0) sim.carcasses.lay(this.x, this.y, this.carryPart as LookKind, this.carryTone, this.carryLoad);
     else if (isFood(this.carry)) sim.colony.reserve += rations(this.carry);
+    this.carryPart = 0;
+    this.carryLoad = 1;
     if (this.carryBrood) {
       sim.colony.placeBrood(this.carryBrood, this.x, this.y);
       this.carryBrood = null;
@@ -1051,6 +1069,10 @@ export class Ant {
         sim.colony.forageReturn(sim, this, this.carry === Carry.Seed ? 3 : 4);
       }
       this.fdist = 0;
+      if (this.carry === Carry.Prey && this.carryPart > 0) {
+        this.bringPart(sim);
+        return;
+      }
       // Into a granary if one has room; otherwise straight into the shared crops
       // of the workers by the queen (trophallaxis), no pile.
       const gran = sim.fields.dist[F.Gran]!;
@@ -1063,8 +1085,6 @@ export class Ant {
         } else {
           sim.colony.reserve += rations(this.carry);
         }
-        // A hind leg or a head is more than one piece's worth: the rest is shared out at once.
-        if (this.carry === Carry.Prey && this.carryLoad > 1) sim.colony.reserve += (this.carryLoad - 1) * rations(Carry.Prey);
         this.carryLoad = 1;
         this.carryPart = 0;
         this.carry = Carry.None;
@@ -1323,8 +1343,11 @@ export class Ant {
   dropLoad(sim: Sim): void {
     const w = sim.world;
     const i = this.y * w.w + this.x;
-    if (isFood(this.carry) && w.mat[i] === EMPTY) w.set(i, matOf(this.carry), this.carryTone, 0);
+    if (this.carry === Carry.Prey && this.carryPart > 0 && !this.rival) sim.carcasses.lay(this.x, this.y, this.carryPart as LookKind, this.carryTone, this.carryLoad);
+    else if (isFood(this.carry) && w.mat[i] === EMPTY) w.set(i, matOf(this.carry), this.carryTone, 0);
     this.carry = Carry.None;
+    this.carryPart = 0;
+    this.carryLoad = 1;
   }
 
   /**
@@ -1641,6 +1664,30 @@ export class Ant {
     }
   }
 
+  /**
+   * A part of a carcass goes in whole and is set down among the brood (in a
+   * granary or by the queen if there is no nursery yet), for the nurses to
+   * bite up: it is not food until they do.
+   */
+  private bringPart(sim: Sim): void {
+    const w = sim.world;
+    const i = this.y * w.w + this.x;
+    const f = sim.fields.sourceCount;
+    const to = f[F.Nurse]! > 0 ? F.Nurse : f[F.Gran]! > 0 ? F.Gran : F.Royal;
+    const r = this.descend(sim, to);
+    if ((r === Step.Arrived || (r === Step.Failed && w.bg[i] === 1 && w.plan[i])) && SOLID[w.mat[i + w.w]!]) {
+      sim.carcasses.lay(this.x, this.y, this.carryPart as LookKind, this.carryTone, this.carryLoad);
+      sim.noteOnce('partInNest', this);
+      this.carry = Carry.None;
+      this.carryPart = 0;
+      this.carryLoad = 1;
+      this.tapped = false;
+      this.delivered++;
+      sim.colony.delivered++;
+      this.reevalAt = Math.min(this.reevalAt, sim.tick + TICK_HZ * 4);
+    } else if (this.lost > 150) this.discard(sim);
+  }
+
   private doNurse(sim: Sim): void {
     const w = sim.world;
     const col = sim.colony;
@@ -1702,6 +1749,16 @@ export class Ant {
         } else this.wander(sim, true);
       }
       return;
+    }
+    // A part of a carcass lying in the nest comes first: insect is what larvae
+    // grow on, and it will not keep. Bite a mouthful off it for a larva.
+    if (feedMore && f[F.Larva]! > 0) {
+      const m = sim.carcasses.bitNear(this.x, this.y, 30);
+      if (m) {
+        if (Math.abs(m.x - this.x) <= 2 && Math.abs(m.y - this.y) <= 2) this.startAct(Act.Bite, m.y * w.w + m.x, sim.rng.int(TICK_HZ * 2, TICK_HZ * 4));
+        else this.toward(sim, m.x, true);
+        return;
+      }
     }
     if (feedMore && f[F.Larva]! > 0 && f[F.Store]! === 0 && col.reserve > 0) {
       // No stores yet: take food from the shared crops by the queen.

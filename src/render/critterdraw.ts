@@ -1,5 +1,5 @@
 import type { Critter } from '../sim/critters';
-import { Look, type Carcass } from '../sim/carcass';
+import { Look, type Carcass, type Morsel } from '../sim/carcass';
 import type { World } from '../world/world';
 import { RGB, hex } from './palette';
 import { clamp } from '../util/math';
@@ -1552,6 +1552,33 @@ export function drawCarcasses(ctx: CanvasRenderingContext2D, list: Carcass[], li
         k = j - 1;
       }
     }
+    ctx.restore();
+  }
+}
+
+/** Rough length of each part as drawn by drawPart (mm), to lay it centred where it lies. */
+const PART_LEN: Record<number, number> = { [Look.Leg]: 3.9, [Look.HindLeg]: 5.4, [Look.Wing]: 7.8, [Look.Head]: 4.4, [Look.Thorax]: 5.6, [Look.Abdomen]: 11.4, [Look.Case]: 8.6, [Look.Segment]: 3.2 };
+
+/**
+ * Parts of carcasses lying in the nest, being bitten up by the nurses: on the
+ * floor where they were set down, paling and thinning as the meat goes.
+ */
+export function drawMorsels(ctx: CanvasRenderingContext2D, list: Morsel[], light: Light, view: { x0: number; y0: number; x1: number; y1: number }): void {
+  for (const m of list) {
+    if (m.x < view.x0 - 12 || m.x > view.x1 + 12 || m.y < view.y0 - 8 || m.y > view.y1 + 8) continue;
+    const l = light(m.x, m.y - 1);
+    const len = PART_LEN[m.look] ?? 2;
+    const left = m.whole > 0 ? m.food / m.whole : 0;
+    ctx.save();
+    ctx.translate(m.x + 0.5, m.y + 0.6);
+    // Each lies its own way (from its tone), on its side on the floor.
+    const flip = m.tone % 2 ? -1 : 1;
+    ctx.scale(flip, 1);
+    ctx.rotate(((m.tone % 7) - 3) * 0.04);
+    ctx.translate(-len / 2, -0.6);
+    // Eaten down: the meat goes, the empty cuticle pales.
+    ctx.globalAlpha = 0.55 + 0.45 * left;
+    drawPart(ctx, m.look, m.tone, l);
     ctx.restore();
   }
 }

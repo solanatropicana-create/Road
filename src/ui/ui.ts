@@ -1500,6 +1500,14 @@ export class UI {
       place();
       return;
     }
+    // A part of a carcass in the nest: what it is, and how much is left of it.
+    const mo = game.sim.carcasses.bitAt(x, y);
+    if (mo && game.renderer.inSight(game.sim, mo.x, mo.y)) {
+      const who = mo.tone < 150 ? 'beetle' : mo.tone < 220 ? 'hopper' : 'worm';
+      tip.innerHTML = `<b>${t(`part_${mo.look}`)}</b> <span class="dim">${t(`partOf_${who}`)}</span><br>${mo.food > 0 ? t('partBites', { n: mo.food }) : t('partHusk')}`;
+      place();
+      return;
+    }
     // A carcass: how heavy, and who has hold of it.
     const cc = game.sim.carcasses.at(x, y);
     if (cc && game.renderer.inSight(game.sim, cc.x, cc.y)) {
