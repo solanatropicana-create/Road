@@ -252,6 +252,32 @@ export class Backdrop {
       c.restore();
     }
 
+    // Glow-worm males (Lamprohiza) drifting over the meadow on June and July nights, blinking.
+    const glowSeason = month === 5 || month === 6 ? 1 : 0;
+    const glow2 = glowSeason * Math.max(0, night - 0.6) / 0.4 * (1 - wet) * (snow > 1 ? 0 : 1);
+    if (glow2 > 0.05) {
+      c.save();
+      c.globalCompositeOperation = 'lighter';
+      for (let k = 0; k < 40; k++) {
+        const hx = ((k * 7919 + 131) % 1000) / 1000;
+        const x = (hx * worldW + Math.sin(time * 0.07 + k * 1.9) * 40 + time * (k % 2 ? 1.5 : -1.2)) % worldW;
+        const gx = ((x % worldW) + worldW) % worldW;
+        const y = (ground[Math.max(0, Math.min(worldW - 1, gx | 0))]! - 12 - ((k * 53) % 70) + Math.sin(time * 0.31 + k * 2.3) * 9) * s;
+        const blink = Math.pow(Math.max(0, Math.sin(time * (0.6 + (k % 5) * 0.11) + k * 4.1)), 4);
+        if (blink < 0.02) continue;
+        const r = (5 + (k % 3) * 2) * s;
+        const g3 = c.createRadialGradient(gx * s, y, 0, gx * s, y, r);
+        g3.addColorStop(0, `rgba(214,255,140,${0.85 * blink * glow2})`);
+        g3.addColorStop(0.25, `rgba(170,240,110,${0.35 * blink * glow2})`);
+        g3.addColorStop(1, 'rgba(120,200,80,0)');
+        c.fillStyle = g3;
+        c.beginPath();
+        c.arc(gx * s, y, r, 0, Math.PI * 2);
+        c.fill();
+      }
+      c.restore();
+    }
+
     // The trunk's shadow across the meadow beside it, away from the sun: long
     // and soft in the morning and evening, short at noon.
     if (this.tree && daylight > 0.05) this.trunkShadow(c, s, ground, worldW, dayT, daylight, wet);
