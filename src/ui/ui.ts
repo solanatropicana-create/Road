@@ -16,6 +16,8 @@ import { TWIG, BERRY, FLOWER, SEEDHEAD, FRUIT, PREY, STONE, LITTER, SEED, EMPTY,
 import { PACKED, PLUG } from '../world/physics';
 
 export type Mode = 'watch' | 'guide';
+/** Seconds without input before the documentary starts on its own (in Watch mode). */
+const IDLE_DOC = 90;
 type Tab = 'guide' | 'colony' | 'notes';
 const MODE_KEY = 'underfoot.mode';
 /** Scale-bar lengths to choose from, in mm. */
@@ -89,6 +91,8 @@ const MAT_KEYS = ['air', 'humus', 'loam', 'clay', 'subsoil', 'gravel', 'stone', 
 export class UI {
   /** Panels hidden for a clean frame (H); the documentary caption stays. */
   cinema = false;
+  /** Seconds since the player last touched anything. */
+  private idle = 0;
   /** Where the latest located event happened (J jumps there). */
   private lastLoc: { x: number; y: number } | null = null;
   /** Watch: the colony runs itself. Guide: the player is the colony brain. */
@@ -1150,6 +1154,8 @@ export class UI {
       },
       { passive: false },
     );
+    // Any sign of the player resets the idle clock (see update: the documentary takes over when idle).
+    for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel']) addEventListener(ev, () => (this.idle = 0), { passive: true });
     addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
       // A sequence running: Space, Esc or Enter skip it.
@@ -1270,6 +1276,12 @@ export class UI {
     const sim = game.sim;
     const col = sim.colony;
     const phase = sim.phase;
+    // Left to watch for a while: the documentary camera takes over, like a screen saver.
+    this.idle += dt;
+    if (this.mode === 'watch' && phase === 'growing' && !game.director.active && !game.paused && !game.cine.busy && !game.cine.montage && !game.selected && this.idle > IDLE_DOC && !this.root.classList.contains('modal')) {
+      game.director.start();
+      this.toast(t('autoDoc'));
+    }
     if (phase !== this.lastPhase) {
       const was = this.lastPhase;
       this.lastPhase = phase;
