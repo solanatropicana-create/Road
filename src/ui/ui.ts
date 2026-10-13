@@ -739,7 +739,7 @@ export class UI {
     // A line with a place on it: click it to go there.
     const loc = item.loc;
     if (loc) {
-      el.classList.add('go');
+      el.classList.add('toastgo');
       el.title = t('toastGo');
       el.onclick = () => this.lookAt(loc.x, loc.y);
     }

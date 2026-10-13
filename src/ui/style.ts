@@ -197,9 +197,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .toast { background: linear-gradient(180deg, rgba(42,33,25,0.96), rgba(26,20,15,0.96)); border: 1px solid var(--line); border-radius: 12px; padding: 9px 16px 9px 30px; position: relative; font-size: 13.5px; line-height: 1.4; text-align: center; animation: toast 5s forwards; box-shadow: var(--shadow); }
 .toast::before { content: ''; position: absolute; left: 13px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
 .toast b { color: var(--accent); font-weight: 500; }
-.toast.go { pointer-events: auto; cursor: pointer; }
-.toast.go:hover { border-color: var(--accent); }
-.toast.go::after { content: '›'; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--accent); opacity: .7; font-size: 15px; }
+.toast.toastgo { pointer-events: auto; cursor: pointer; }
+.toast.toastgo:hover { border-color: var(--accent); }
+.toast.toastgo::after { content: '›'; position: absolute; right: 10px; top: 50%; transform: translateY(-50%); color: var(--accent); opacity: .7; font-size: 15px; }
 @keyframes toast { 0% { opacity: 0; transform: translateY(-6px); } 8% { opacity: 1; transform: none; } 85% { opacity: 1; } 100% { opacity: 0; } }
 
 #tip { position: absolute; pointer-events: none; background: var(--panel-solid); border: 1px solid var(--line); border-radius: 10px; padding: 7px 10px; font-size: 12px; display: none; white-space: nowrap; box-shadow: var(--shadow); }

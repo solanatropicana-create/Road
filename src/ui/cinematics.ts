@@ -68,7 +68,11 @@ export class Cinematics {
     const cam = this.game.cam;
     cam.follow = null;
     cam.fit();
+    // Open on the meadow under the swarm, not on the whole slice of dark soil.
+    cam.tzoom = Math.max(cam.fitZoom(), cam.screenH / (w.ground[x]! * 1.5));
     cam.zoom = cam.tzoom;
+    cam.tx = this.landing.x0 + dir * w.w * 0.1;
+    cam.ty = 0;
     cam.x = cam.tx;
     cam.y = cam.ty;
     cam.ease = 2.4;
@@ -135,7 +139,11 @@ export class Cinematics {
     // The camera finds her and closes in as she comes down.
     const p = Math.min(1, L.t / T);
     cam.follow = { x: q.x, y: q.y + 6 };
-    cam.tzoom = Math.max(cam.minZoom, cam.fitZoom() * (1 + p * p * 5.5));
+    // Framed on the meadow and the sky over it (the ground two thirds down the screen),
+    // not on the dark soil she has not yet come to; closing in as she comes down.
+    const gy = sim.world.ground[L.x]!;
+    const z0 = Math.max(cam.fitZoom(), cam.screenH / (gy * 1.5));
+    cam.tzoom = Math.max(cam.minZoom, z0 * (1 + p * p * 2.6));
     if (L.t >= T) {
       this.landing = null;
       cam.ease = 12;
