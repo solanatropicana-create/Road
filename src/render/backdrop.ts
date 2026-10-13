@@ -269,23 +269,21 @@ export class Backdrop {
     if (pappus > 0.1) {
       c.save();
       const dirW = this.wind >= 0 ? 1 : -1;
-      for (let k = 0; k < 16; k++) {
-        if (k / 16 > pappus) break;
+      for (let k = 0; k < 30; k++) {
+        if (k / 30 > pappus) break;
         const hx = ((k * 4513 + 77) % 1000) / 1000;
         const x = ((((hx * worldW + dirW * time * (8 + (k % 4) * 3)) % worldW) + worldW) % worldW) * s;
         const y = (GROUND_Y - 30 - ((k * 37) % 90) + Math.sin(time * 0.6 + k) * 6) * s;
-        const r = (1.6 + (k % 3) * 0.5) * s;
-        c.strokeStyle = css(mixRGB([245, 245, 240], sky.low, 0.2), 0.75);
-        c.lineWidth = 0.35 * s;
+        const r = (3.2 + (k % 3) * 1.1) * s;
+        // A soft white puff of fluff (out of focus, like the meadow behind).
+        const g4 = c.createRadialGradient(x, y, 0, x, y, r);
+        g4.addColorStop(0, 'rgba(252,252,248,0.75)');
+        g4.addColorStop(0.5, 'rgba(250,250,245,0.35)');
+        g4.addColorStop(1, 'rgba(250,250,245,0)');
+        c.fillStyle = g4;
         c.beginPath();
-        for (let a = 0; a < 8; a++) {
-          const ang = Math.PI + (a / 7) * Math.PI;
-          c.moveTo(x, y);
-          c.lineTo(x + Math.cos(ang) * r, y + Math.sin(ang) * r);
-        }
-        c.moveTo(x, y);
-        c.lineTo(x, y + r * 1.4);
-        c.stroke();
+        c.arc(x, y, r, 0, Math.PI * 2);
+        c.fill();
       }
       c.restore();
     }
