@@ -193,7 +193,10 @@ export class Director {
           critter = seen[Math.floor(Math.random() * seen.length)] ?? null;
           if (critter) {
             zoom = critter.kind === 'toad' || critter.kind === 'lizard' || critter.kind === 'mole' ? 5 : critter.kind === 'worm' || critter.kind === 'centipede' || critter.kind === 'hopper' ? 7 : 10;
-            this.caption = t(`nm_${critter.kind}`);
+            const cx = Math.max(0, Math.min(w.w - 1, Math.round(critter.x)));
+            const depth = (critter.y - w.ground[cx]!) / 10;
+            const where = depth > 0.3 ? t('dc_down', { d: num(depth) }) : t('dc_from', { d: num(Math.abs(critter.x - sim.nest.foundX) / 10) });
+            this.caption = `${t(`nm_${critter.kind}`)} · ${where}`;
           }
           break;
         }
