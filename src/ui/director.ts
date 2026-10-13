@@ -7,7 +7,7 @@ import { TICK_HZ } from '../config';
 import { SOLID } from '../world/mat';
 import { dateText } from './ui';
 
-type Shot = 'queen' | 'forager' | 'digger' | 'hauler' | 'nurse' | 'major' | 'granary' | 'wide' | 'rescue' | 'shoring' | 'lasius';
+type Shot = 'queen' | 'forager' | 'digger' | 'hauler' | 'nurse' | 'major' | 'granary' | 'wide' | 'rescue' | 'shoring' | 'lasius' | 'critter' | 'mouth' | 'tree';
 
 /**
  * Documentary camera: cuts between subjects every few seconds and glides
@@ -66,12 +66,15 @@ export class Director {
    */
   notice(x: number, y: number, caption: string, key: string): void {
     if (!this.active) return;
-    const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds', 'neighbourMetL', 'neighbourMetR', 'youngColony', 'teamCarry', 'cutUp', 'recruitHeavy', 'tugOfWar', 'lasiusFight', 'lasiusKill', 'lasiusCaught', 'buriedOut'];
+    const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds', 'neighbourMetL', 'neighbourMetR', 'youngColony', 'teamCarry', 'cutUp', 'recruitHeavy', 'tugOfWar', 'lasiusFight', 'lasiusKill', 'lasiusCaught', 'buriedOut', 'guestWoodlouse', 'guestCricket', 'guestBeetle', 'parasitoidKills', 'foundBone', 'foundSeeds'];
     const wide = ['war', 'raid', 'flight', 'moleBreach', 'moleNest', 'queenKilledMole', 'toad', 'toadBack', 'lizard', 'leafFall', 'otherQueens', 'wormsUp', 'youngColonyGone', 'secondGate', 'raidYoung', 'warYoung'];
     // A room's roof: close enough to see the cracks and the fall, wide enough for the room.
     const room = ['caveIn', 'caveInDead', 'roofCracks', 'seepage', 'shoring'];
     const zoom = close.includes(key) ? 11 : wide.includes(key) ? 3.4 : room.includes(key) ? 7.5 : 6;
     this.story = { x, y, caption, zoom };
+    // Big moments play out at normal speed, however fast the film was running.
+    const drama = ['caveIn', 'caveInDead', 'lasiusFight', 'lasiusKill', 'war', 'raid', 'toad', 'lizard', 'moleBreach', 'moleNest', 'flight', 'tugOfWar', 'spider', 'raidYoung', 'warYoung', 'queenKilledMole'];
+    if (drama.includes(key)) this.game.slowMo();
     // Don't cut away from a shot that has barely started, unless it's big news.
     if (this.ran > 2.5 || wide.includes(key) || key === 'caveIn' || key === 'caveInDead') this.left = 0;
   }
@@ -123,6 +126,9 @@ export class Director {
       ['rescue', sim.nest.rescuing && g.buried.length ? 30 : 0],
       ['lasius', fights.length ? 12 : 0],
       ['shoring', g.strained > 0 ? 2.5 : 0],
+      ['critter', 1.5],
+      ['mouth', 1],
+      ['tree', sim.tree && sim.critters.count('lasius') > 0 ? 0.8 : 0],
       ['forager', 3],
       ['digger', 2],
       ['hauler', 1.5],
@@ -165,6 +171,36 @@ export class Director {
           critter = fights[Math.floor(Math.random() * fights.length)] ?? null;
           zoom = 12;
           if (critter) this.caption = t(critter.state === 4 ? 'dc_lasiusDrag' : 'dc_lasiusFight');
+          break;
+        }
+        case 'critter': {
+          // Whoever else lives here: a spider by the trail, a beetle, a worm, a guest in the stores.
+          const kinds = ['spider', 'beetle', 'hopper', 'worm', 'woodlouse', 'cricket', 'beetlet', 'antlion', 'centipede', 'molecricket', 'lizard', 'toad', 'lasius'];
+          const seen = sim.critters.list.filter((c) => kinds.includes(c.kind) && sim.fog.at(Math.round(c.x), c.y, w.ground[Math.max(0, Math.min(w.w - 1, Math.round(c.x)))]!) > 0.5);
+          critter = seen[Math.floor(Math.random() * seen.length)] ?? null;
+          if (critter) {
+            zoom = critter.kind === 'toad' || critter.kind === 'lizard' || critter.kind === 'mole' ? 5 : critter.kind === 'worm' || critter.kind === 'centipede' ? 8 : 11;
+            this.caption = t(`nm_${critter.kind}`);
+          }
+          break;
+        }
+        case 'mouth': {
+          const e = sim.nest.entrances[Math.floor(Math.random() * sim.nest.entrances.length)];
+          if (e !== undefined) {
+            point = { x: e % w.w, y: ((e / w.w) | 0) - 8 };
+            zoom = 6;
+            const out = col.ants.filter((a) => a.away === 0 && !under(a)).length;
+            this.caption = t('dc_mouth', { n: out });
+          }
+          break;
+        }
+        case 'tree': {
+          const tr = sim.tree!;
+          const side = tr.x < w.w / 2 ? -1 : 1;
+          const fx = tr.x - side * tr.r;
+          point = { x: fx - side * 30, y: w.ground[Math.max(0, Math.min(w.w - 1, Math.round(fx)))]! - 40 };
+          zoom = 4.5;
+          this.caption = t('dc_tree');
           break;
         }
         case 'shoring': {

@@ -176,7 +176,18 @@ export class Game {
     this.cam.setBounds(v.x0, Math.max(0, g - air), v.x1, v.y1);
   }
 
+  /** Until when a moment worth watching holds the documentary at normal speed (performance.now ms). */
+  private slowUntil = 0;
+  /** Something big is happening on camera: let it play out at 1x for a little while. */
+  slowMo(seconds = 12): void {
+    if (this.speed > 1) this.slowUntil = performance.now() + seconds * 1000;
+  }
+  get slowed(): boolean {
+    return this.director.active && performance.now() < this.slowUntil;
+  }
+
   setSpeed(i: number): void {
+    this.slowUntil = 0;
     this.speed = SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, i))]!;
     this.paused = false;
   }
@@ -193,7 +204,7 @@ export class Game {
     if (!this.paused && this.sim.phase !== 'choose') {
       // Winter rest goes by fast unless the player wants to watch it.
       const winter = this.winterSkip && this.sim.dormant && this.sim.phase !== 'failed';
-      this.acc += dt * TICK_HZ * (this.cine.montage ? MONTAGE_SPEED : winter ? WINTER_SPEED : this.speed);
+      this.acc += dt * TICK_HZ * (this.cine.montage ? MONTAGE_SPEED : winter ? WINTER_SPEED : this.slowed ? 1 : this.speed);
       // Never spend more than ~12 ms of a frame simulating; drop the rest.
       const start = performance.now();
       let n = 0;

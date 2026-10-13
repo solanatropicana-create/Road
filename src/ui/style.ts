@@ -331,6 +331,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 /* --- phases: before landing there is only the meadow and the question */
 #ui.ph-choose #drawer, #ui.ph-choose #card, #ui.ph-choose #strip { display: none !important; }
 
+.slowtag { font-family: var(--sans); font-style: normal; font-size: 11px; letter-spacing: .04em; color: var(--accent); opacity: .85; margin-left: 6px; }
 /* --- documentary: the panels step aside for the picture, the controls fade back */
 #card, #drawer, #inspect { transition: opacity .6s ease, transform .6s ease; }
 #bar { transition: opacity .5s ease; }

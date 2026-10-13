@@ -1239,7 +1239,11 @@ export class UI {
     this.root.classList.toggle('doc', dir.active);
     const cap = this.els.caption!;
     cap.style.display = dir.active && dir.caption ? 'block' : 'none';
-    if (dir.active) (cap.querySelector('.line') as HTMLElement).innerHTML = dir.caption;
+    if (dir.active) {
+      const line = dir.caption + (game.slowed ? ` <span class="slowtag">${t('slowTag')}</span>` : '');
+      const el = cap.querySelector('.line') as HTMLElement;
+      if (el.innerHTML !== line) el.innerHTML = line;
+    }
     while (sim.events.length) {
       const e = sim.events.shift()!;
       if (phase === 'failed') continue;
