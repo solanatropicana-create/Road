@@ -252,6 +252,43 @@ export class Backdrop {
       c.restore();
     }
 
+    // Ground mist on still spring and autumn mornings, lying low over the meadow until the sun lifts it.
+    const morning = dayT > 0.22 && dayT < 0.42 ? Math.min(1, (dayT - 0.22) / 0.04) * Math.min(1, (0.42 - dayT) / 0.1) : 0;
+    const mistSeason = (month >= 2 && month <= 4) || (month >= 8 && month <= 10) ? 1 : 0.25;
+    const mist = morning * mistSeason * (1 - Math.min(1, Math.abs(this.wind) * 1.5)) * (1 - wet * 0.5);
+    if (mist > 0.03) {
+      const band = c.createLinearGradient(0, gy - 70 * s, 0, gy + 6 * s);
+      band.addColorStop(0, 'rgba(232,234,238,0)');
+      band.addColorStop(0.6, `rgba(232,234,238,${0.22 * mist})`);
+      band.addColorStop(1, `rgba(240,240,242,${0.34 * mist})`);
+      c.fillStyle = band;
+      c.fillRect(0, gy - 70 * s, W, 76 * s);
+    }
+    // Dandelion seeds adrift on breezy days in May and June.
+    const pappus = (month === 4 || month === 5) && daylight > 0.2 && !wet ? Math.min(1, Math.abs(this.wind) * 2) : 0;
+    if (pappus > 0.1) {
+      c.save();
+      const dirW = this.wind >= 0 ? 1 : -1;
+      for (let k = 0; k < 16; k++) {
+        if (k / 16 > pappus) break;
+        const hx = ((k * 4513 + 77) % 1000) / 1000;
+        const x = ((((hx * worldW + dirW * time * (8 + (k % 4) * 3)) % worldW) + worldW) % worldW) * s;
+        const y = (GROUND_Y - 30 - ((k * 37) % 90) + Math.sin(time * 0.6 + k) * 6) * s;
+        const r = (1.6 + (k % 3) * 0.5) * s;
+        c.strokeStyle = css(mixRGB([245, 245, 240], sky.low, 0.2), 0.75);
+        c.lineWidth = 0.35 * s;
+        c.beginPath();
+        for (let a = 0; a < 8; a++) {
+          const ang = Math.PI + (a / 7) * Math.PI;
+          c.moveTo(x, y);
+          c.lineTo(x + Math.cos(ang) * r, y + Math.sin(ang) * r);
+        }
+        c.moveTo(x, y);
+        c.lineTo(x, y + r * 1.4);
+        c.stroke();
+      }
+      c.restore();
+    }
     // Glow-worm males (Lamprohiza) drifting over the meadow on June and July nights, blinking.
     const glowSeason = month === 5 || month === 6 ? 1 : 0;
     const glow2 = glowSeason * Math.max(0, night - 0.6) / 0.4 * (1 - wet) * (snow > 1 ? 0 : 1);
