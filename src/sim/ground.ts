@@ -241,7 +241,7 @@ export class Ground {
         w.wake(i);
         if (!w.plan[i]) w.claimed.push(i);
         fell++;
-        if (rng.chance(0.12)) sim.dust(i, m === SAND ? HUMUS : m);
+        if (rng.chance(0.3)) sim.dust(i, m === SAND ? HUMUS : m);
       }
     }
     // (Nothing left to fall: the roof has come down to rock, or to the surface.)

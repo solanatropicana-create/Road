@@ -488,6 +488,7 @@ export class Renderer {
     const g = sim.ground;
     if (!g.strained) return;
     const ctx = this.ctx;
+    const w = this.world;
     const path = new Path2D();
     let worst = 0;
     for (const c of sim.nest.chambers) {
@@ -511,7 +512,10 @@ export class Renderer {
         const len = 2 + Math.min(1, st) * (4 + ((h >> 10) % 5));
         for (let s = 0; s < len; s++) {
           const j = ((h >> (s % 13)) & 3) - 1.5;
-          x += j * 0.45;
+          const nx = x + j * 0.45;
+          // Only through soil: a crack stops at the next hollow.
+          if (w.mat[(y - 1) * w.w + Math.round(nx)] === EMPTY) break;
+          x = nx;
           y -= 1;
           path.lineTo(x + 0.5, y);
         }
