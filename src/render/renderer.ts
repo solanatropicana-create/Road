@@ -767,8 +767,36 @@ export class Renderer {
     const l = this.lightAt(mx, w.ground[mx]! - 3);
     // Snow throws back what light there is: never as dark as the soil at night.
     const lit = (c: number, k: number): number => Math.min(255, c * Math.max(l[k]!, 0.5));
-    ctx.fillStyle = `rgb(${lit(232, 0) | 0},${lit(238, 1) | 0},${lit(246, 2) | 0})`;
+    // A snowpack in section: bright at the top, settling bluish-grey and denser toward the ground.
+    let yTop = Infinity;
+    let yBase = -Infinity;
+    for (let k = 0; k < top.length; k++) {
+      yTop = Math.min(yTop, top[k]!);
+      yBase = Math.max(yBase, base[k]!);
+    }
+    const grad = ctx.createLinearGradient(0, yTop, 0, yTop + d + 2);
+    grad.addColorStop(0, `rgb(${lit(240, 0) | 0},${lit(244, 1) | 0},${lit(250, 2) | 0})`);
+    grad.addColorStop(0.55, `rgb(${lit(214, 0) | 0},${lit(222, 1) | 0},${lit(236, 2) | 0})`);
+    grad.addColorStop(1, `rgb(${lit(170, 0) | 0},${lit(182, 1) | 0},${lit(204, 2) | 0})`);
+    ctx.fillStyle = grad;
     ctx.fill(p);
+    // The layers of separate snowfalls, faint lines following the top.
+    if (d > 4) {
+      ctx.save();
+      ctx.clip(p);
+      ctx.lineWidth = 0.35;
+      for (const f of [0.3, 0.55, 0.78]) {
+        const layer = new Path2D();
+        for (let k = 0; k < top.length; k++) {
+          const y = top[k]! + (base[k]! - top[k]!) * f + Math.sin((x0 + k) * 0.05 + f * 9) * 0.6;
+          if (k === 0) layer.moveTo(x0 + 0.5, y);
+          else layer.lineTo(x0 + k + 0.5, y);
+        }
+        ctx.strokeStyle = `rgba(${lit(150, 0) | 0},${lit(164, 1) | 0},${lit(190, 2) | 0},0.35)`;
+        ctx.stroke(layer);
+      }
+      ctx.restore();
+    }
     // A brighter crust along the top edge.
     const edge = new Path2D();
     edge.moveTo(x0 + 0.5, top[0]!);
