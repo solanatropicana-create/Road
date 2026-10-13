@@ -189,6 +189,14 @@ export class Game {
   slowMo(seconds = 12): void {
     if (this.speed > 1) this.slowUntil = performance.now() + seconds * 1000;
   }
+  /** A documentary time-lapse running until then (performance.now ms): the film runs faster. */
+  private lapseUntil = 0;
+  timeLapse(seconds: number): void {
+    this.lapseUntil = performance.now() + seconds * 1000;
+  }
+  get lapsing(): boolean {
+    return this.director.active && performance.now() < this.lapseUntil;
+  }
   get slowed(): boolean {
     return this.director.active && performance.now() < this.slowUntil;
   }
@@ -213,7 +221,7 @@ export class Game {
     if (!this.paused && this.sim.phase !== 'choose') {
       // Winter rest goes by fast unless the player wants to watch it.
       const winter = this.winterSkip && this.sim.dormant && this.sim.phase !== 'failed';
-      this.acc += dt * TICK_HZ * (this.cine.montage ? MONTAGE_SPEED : winter ? WINTER_SPEED : this.slowed ? 1 : this.speed);
+      this.acc += dt * TICK_HZ * (this.cine.montage ? MONTAGE_SPEED : winter ? WINTER_SPEED : this.slowed ? 1 : this.lapsing ? Math.max(this.speed * 6, 12) : this.speed);
       // Never spend more than ~12 ms of a frame simulating; drop the rest.
       const start = performance.now();
       let n = 0;

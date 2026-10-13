@@ -7,7 +7,7 @@ import { TICK_HZ } from '../config';
 import { SOLID } from '../world/mat';
 import { dateText } from './ui';
 
-type Shot = 'queen' | 'forager' | 'digger' | 'hauler' | 'nurse' | 'major' | 'granary' | 'wide' | 'rescue' | 'shoring' | 'lasius' | 'critter' | 'mouth' | 'tree';
+type Shot = 'queen' | 'forager' | 'digger' | 'hauler' | 'nurse' | 'major' | 'granary' | 'wide' | 'rescue' | 'shoring' | 'lasius' | 'critter' | 'mouth' | 'tree' | 'lapse';
 
 /**
  * Documentary camera: cuts between subjects every few seconds and glides
@@ -127,6 +127,7 @@ export class Director {
       ['lasius', fights.length ? 12 : 0],
       // (A roof only just cracking is not much to see; one near giving way, or shorers at work, is.)
       ['shoring', col.ants.some((a) => a.shoring) ? 2 : sim.nest.chambers.some((c) => c.ready && (g.strain[c.id] ?? 0) >= 0.35) ? 1.2 : 0],
+      ['lapse', col.adults > 25 && !sim.dormant ? 0.7 : 0],
       ['critter', 1.5],
       ['mouth', 1],
       ['tree', sim.tree && sim.critters.count('lasius') > 0 ? 0.8 : 0],
@@ -172,6 +173,17 @@ export class Director {
           critter = fights[Math.floor(Math.random() * fights.length)] ?? null;
           zoom = 12;
           if (critter) this.caption = t(critter.state === 4 ? 'dc_lasiusDrag' : 'dc_lasiusFight');
+          break;
+        }
+        case 'lapse': {
+          // A time-lapse over the nest: the traffic in the tunnels as a flow.
+          const cs = sim.nest.chambers.filter((c) => c.ready);
+          if (cs.length) {
+            point = { x: cs.reduce((a, c) => a + c.cx, 0) / cs.length, y: cs.reduce((a, c) => a + c.cy, 0) / cs.length - 12 };
+            zoom = Math.max(cam.fitZoom() * 2.2, 3.2);
+            this.caption = t('dc_lapse');
+            this.game.timeLapse(8);
+          }
           break;
         }
         case 'critter': {
@@ -270,7 +282,7 @@ export class Director {
       this.point = point;
       this.critter = critter;
       cam.tzoom = Math.min(cam.maxZoom, Math.max(cam.minZoom, zoom));
-      this.left = shot === 'wide' ? 8 : shot === 'rescue' || shot === 'lasius' ? 9 : 10 + Math.random() * 6;
+      this.left = shot === 'wide' || shot === 'lapse' ? 8 : shot === 'rescue' || shot === 'lasius' ? 9 : 10 + Math.random() * 6;
       return;
     }
     this.left = 3;
