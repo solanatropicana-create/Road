@@ -232,14 +232,16 @@ Toprak artık yalnızca kazılan bir malzeme değil, çökebilen bir yapı (`src
 - **Uyarı, destek, çöküş.**
   - Taşıyamayan tavanda gerilim birikir. İnce çatlaklar çıkar; gerilim büyüdükçe çoğalır, uzar ve koyulaşır. Çatlaklardan tane tane toprak dökülür.
   - Kazıcılar tavanın altına gidip çatlaklara nemli toprak bastırır (destekleme). Destek gerilimi düşürür ama zamanla aşınır.
-  - Gerilim sınıra varınca, ya da yüksek gerilimde her an, tavanın bir kemeri gevşek toprak olarak odaya iner.
+  - Gerilim sınıra varınca, ya da yüksek gerilimde her an, tavanın bir kemeri kopar ve bir yığın olarak tek seferde odanın tabanına iner. Tavana tutunan karıncalar da onunla birlikte düşer.
+  - Ağır bir düşüşte bazıları anında ezilir: tavanla inen işçilerin bir kısmı ve yığının en kalın yerindeki yavruların bir kısmı. Kraliçe ezilmez.
+  - Çöken oda altı hafta "oturur": yeni kubbe bu sürede ikinci bir göçük vermez. Böylece aynı oda zincirleme çöküp yüzeye kadar açılmaz.
 - **Gömülme ve kurtarma.**
   - Göçüğün altında kalan karınca, bir vücut boyu içinde boşluk varsa oraya sıyrılır. Daha derindeyse en yakın havaya doğru tane tane kazar.
-  - Yuva arkadaşları kazıyı gömülenin üstüne yoğunlaştırır: yakındaki işçiler işini bırakıp gelir, toprağı dışarı taşımadan yana itip sıkıştırır.
+  - Yuva arkadaşları kazıyı gömülenin üstüne yoğunlaştırır: yakındaki işçiler işini bırakıp gelir, toprağı dışarı taşımadan yana itip sıkıştırır. Gevşek dolguya kazmak normal kazıdan yavaş.
   - İşçi yaklaşık 50 saniye, kraliçe 2 dakika havasız dayanır. Gömülen yavru da kurtarma listesine girer ve bir dakikası vardır.
 - **Sızıntı.** Taban suyuna yakın ya da çok ıslanmış duvarlar su sızdırır; su tünellerde akıp alçak odalarda birikir.
 - **Ağacın dibinde kavga (*Lasius niger*).**
-  - Ağaçlı haritalarda bahçe karıncaları gövdenin dibinde, yaklaşık 15 cm içinde yerde yiyecek arar.
+  - Ağaçlı haritalarda bahçe karıncaları gövdenin dibinden yaklaşık 16 cm'ye kadar yerde yiyecek arar. Gövdeye yakın daha kolay, uzakta daha az saldırırlar.
   - Bir toplayıcımıza rastlarlarsa onu yakalar: birkaç saniyelik bir boğuşma olur ve sonunda biri ölebilir.
   - Tek başına bir *Messor*, hele majör, çoğunlukla kazanır. Yakındaki yuva arkadaşları şansı artırır.
   - Kavga gövdeden yeni *Lasius* indirir; birkaçının arasında kalan toplayıcı ölür ve cesedi gövdeye sürüklenir. Yeterince işçi gelirse cesedi bırakıp kaçarlar.
@@ -248,7 +250,19 @@ Toprak artık yalnızca kazılan bir malzeme değil, çökebilen bir yapı (`src
   - Kraliçenin tohum zulası odanın tabanını kaplayınca bazı yumurtalar tohum altında kalıp ölüyordu. Bakıcılar artık onları daha uzaktaki boş bir yere çekiyor.
   - Eskiden "boğulma" diye sayılan bu ölümler artık ayrı tutuluyor: su, göçük, tohum altı.
 
-**Ölçüm:** (sürüyor)
+- **Ayar sırasında bulunanlar:**
+  - Tünel duvarlarındaki nem yağmurdan sonra bile 100 civarını pek geçmiyordu. Islanmaya bağlı yumuşama eşikleri bu ölçeğe çekildi.
+  - Göçük önce tane tane dökülüyordu: dışarıdaki hafriyatın yuvaya akmasını engelleyen kural çöken toprağı da tutuyordu. Karıncalar yığının üstüne tırmanıp hiç gömülmüyordu. Artık kemer tek seferde yığılıyor.
+  - Odadaki karıncaların çoğu tabanda değil tavanda ve duvarda duruyordu. Artık çöken tavanla birlikte düşüyorlar.
+  - İlk sürümde kurtarma çok çabuktu (31 kazıcı, 15 saniye) ve *Lasius* çok saldırgandı (bir haritada 60 haftada 39 işçi). İkisi de ayarlandı.
+
+**Zorla göçük denemesi:** 48 işçilik bir kolonide kreşin tavanı indirildi. 23 yavru ve 2 işçi gömüldü, kurtarıcılar hepsini 25 saniyede çıkardı. Bu deneme ezilme eklenmeden önce yapıldı.
+
+**Ölçüm (8 harita, 160 hafta):**
+- 8/8 koloni hayatta, **açlıktan ölen işçi 0**.
+- 8/8'de evlilik uçuşu oldu (önceki tur 7/8). Zirve 201–475 işçi, ortalama son nüfus 324 (önceki tur 300).
+- Göçükte ölen: 3 yılda harita başına 0–46 işçi ve 0–7 yavru.
+- Ağaçlı dört haritada bahçe karıncalarına giden: 3 yılda 21–81 işçi. Bu kayıplar komşu savaşları ve kertenkelelerle aynı mertebede ve koloniler yine de büyüyor.
 
 ## 9. Sıradaki (öneri)
 
