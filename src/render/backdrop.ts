@@ -223,6 +223,9 @@ export class Backdrop {
       }
     }
 
+    // The trunk's shadow across the meadow beside it, away from the sun: long
+    // and soft in the morning and evening, short at noon.
+    if (this.tree && daylight > 0.05) this.trunkShadow(c, s, ground, worldW, dayT, daylight, wet);
     // The tree's low boughs: nearer than the meadow behind, so over its grass.
     if (this.tree) this.drawTree(c, s, time, sky, night);
     // Wildflowers: blurred heads on their stalks, dimmed by night and haze. They
@@ -367,6 +370,33 @@ export class Backdrop {
         c.fill();
       }
     }
+  }
+
+  private trunkShadow(c: CanvasRenderingContext2D, s: number, ground: Int16Array, worldW: number, dayT: number, daylight: number, wet: number): void {
+    const t = this.tree!;
+    const side = t.x < worldW / 2 ? 1 : -1;
+    // Falls away from the sun: east (left) in the morning, so the shadow reaches
+    // right; after noon, left. Seen only when it falls into the slice.
+    if ((dayT < 0.5 ? 1 : -1) !== side) return;
+    const len = Math.min(900, (t.r * 1.5) / Math.max(0.18, daylight));
+    const x0 = t.x + side * (t.r + 20);
+    const gy = ground[Math.max(0, Math.min(worldW - 1, Math.round(x0)))]!;
+    // (Up through the grass in its shade, which is about this tall.)
+    const R = 110;
+    const a = 0.5 * (0.4 + 0.6 * daylight) * (1 - wet * 0.8);
+    c.save();
+    c.beginPath();
+    c.rect((side > 0 ? x0 : x0 - len) * s, (gy - R - 10) * s, len * s, (R + 16) * s);
+    c.clip();
+    c.translate(x0 * s, (gy + 4) * s);
+    c.scale(len / R, 1);
+    const g = c.createRadialGradient(0, 0, 0, 0, 0, R * s);
+    g.addColorStop(0, `rgba(10,14,10,${a.toFixed(3)})`);
+    g.addColorStop(0.55, `rgba(10,14,10,${(a * 0.6).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(10,14,10,0)');
+    c.fillStyle = g;
+    c.fillRect(-R * s, -R * s, R * 2 * s, (R + 4) * s);
+    c.restore();
   }
 
   /** Hills, rocks, vine rows and feather-grass plumes behind the meadow, soft and hazy. */

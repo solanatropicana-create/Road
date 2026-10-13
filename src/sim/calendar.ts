@@ -196,10 +196,14 @@ export function devRate(t: number): number {
   return (38 - t) / 7;
 }
 
-/** How willing foragers are to go out at this surface temperature, 0..1 (Messor: about 12–40 °C). */
+/**
+ * How willing foragers are to go out at this surface temperature, 0..1
+ * (Messor: about 10–40 °C; on a sunny autumn or spring noon a few go out at
+ * 9–10 °C, more as it warms).
+ */
 export function forageWindow(t: number): number {
-  if (t <= 11 || t >= 41) return 0;
-  if (t < 15) return (t - 11) / 4;
+  if (t <= 9 || t >= 41) return 0;
+  if (t < 14) return (t - 9) / 5;
   if (t <= 36) return 1;
   return (41 - t) / 5;
 }

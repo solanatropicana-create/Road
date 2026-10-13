@@ -4,7 +4,7 @@ import { WORK, Work, Task, ChamberKind, holdsStores } from '../sim/types';
 import type { Ant } from '../sim/ant';
 import type { Chamber } from '../sim/nest';
 import { SPEEDS, TICK_HZ, DAY_TICKS, TUNING } from '../config';
-import { ZONE_TINT } from '../render/palette';
+import { ZONE_TINT, SAMARA_TONE } from '../render/palette';
 import { bodyLength } from '../render/antdraw';
 import { savedMeta } from '../sim/save';
 import { t, num, getLang, setLang, Lang, Vars } from './i18n';
@@ -12,7 +12,7 @@ import { metabolism } from '../sim/calendar';
 import type { Sim } from '../sim/sim';
 import { ICON, LOGO_ANT } from './icons';
 import { SITES, SITE_IDS } from '../world/sites';
-import { TWIG, BERRY, FLOWER, SEEDHEAD, FRUIT, PREY, STONE, LITTER, SEED, EMPTY, SAND } from '../world/mat';
+import { TWIG, BERRY, FLOWER, SEEDHEAD, FRUIT, PREY, STONE, LITTER, SEED, EMPTY, SAND, WOOD } from '../world/mat';
 import { PACKED, PLUG } from '../world/physics';
 
 export type Mode = 'watch' | 'guide';
@@ -1720,7 +1720,11 @@ export class UI {
       if (c.kind === 'lizard' && (x - c.x) * c.dir > -128 && (x - c.x) * c.dir < 48 && y > c.y - 14 && y <= c.y + 2) return { key: 'lizard' };
       if (c.kind === 'mole' && (x - c.x) * c.dir > -112 && (x - c.x) * c.dir < 8 && Math.abs(y - c.y) < 20) return { key: 'mole' };
     }
+    // Life on the tree's bark, and the tree itself.
+    const bark = this.game.renderer.treeLife.at(sim, x, y);
+    if (bark) return { key: bark };
     const i = y * w.w + x;
+    if (sim.tree && w.mat[i] === WOOD && y < w.ground[x]!) return { key: `tree_${sim.eco.treeKind ?? 'elm'}` };
     const pl = w.plant[i]!;
     const doy = sim.doy;
     if (pl) {
@@ -1738,6 +1742,7 @@ export class UI {
     if (m === STONE && w.tint[i] === 4) return { key: 'shard' };
     if (m === STONE && w.tint[i] === 5) return { key: 'bone' };
     if (m === LITTER && w.tint[i] === 2) return { key: 'leaf' };
+    if (m === SEED && w.bg[i] === 0 && w.tone[i]! >= SAMARA_TONE[0]) return { key: 'seed_samara' };
     if (m === SEED && w.bg[i] === 0) return { key: `seed_${['grass', 'clover', 'purse', 'stipa', 'erodium'][Math.min(4, Math.floor(w.tone[i]! / 51.2))]}` };
     return null;
   }

@@ -207,11 +207,22 @@ Düzeltmeler:
 
 **Ölçüm (8 harita, 160 hafta, bu turun bütün değişiklikleriyle):** 8/8 koloni 4. yılın baharında hayatta, **8/8'de açlıktan ölen işçi 0** (önceki turda 2 haritada 16 ve 181). 7/8'de evlilik uçuşu, zirve 162–730 işçi. 730 işçilik koloni bu kez kışı açlıksız çıkardı. Sonbahar ayıklaması 4 haritada devreye girdi (10–45 yavru). Açlıktan ölen larva harita başına 0–2.
 
-## 7. Sıradaki (öneri)
+## 7. Cila: ağacın hayatı, gölgesi, sonbahar hasadı
 
-1. **Ağacın devamı:** Gövdenin kesite düşen gölgesi, kabukta yaşayanlar (kabuk böcekleri, örümcekler), gövdeye tırmanan yabancı karıncalar, ağacın kendi yaprak biti kolonileri (*Messor* onlarla ilgilenmez ama komşu *Lasius* ilgilenir).
-2. **Sonbahar hasadı:** Ekim sonunda yüzeyde hâlâ 300 tohum duruyor ama toplayıcılar soğukta çıkmıyor. Ilık öğlenlerde kısa toplama turları kışlık stoğu artırır.
-3. **Majörler değirmenci olsun:** Tohumu kırıp "karınca ekmeği" yapsınlar.
-4. **Komşu koloniler (ertelendi).**
-5. **Akarlar:** Temasla yayılan, tımarla temizlenen bir parazit.
-6. **Sondan sonra:** Steam için masaüstü paketi (Tauri).
+- **Kabuktaki hayat** (yalnızca görsel; koloniyle etkileşmiyor):
+  - Gövdede bir siyah bahçe karıncası (*Lasius niger*) izi var: yukarı çıkanlar taçtaki yaprak bitlerine gidiyor, inenlerin karnı balözüyle şişmiş ve kehribar rengi.
+  - Baharda ve sonbaharda güneşli günlerde gövdenin dibinde kırmızı-siyah böcekler (*Pyrrhocoris apterus*) güneşleniyor.
+  - Yazın kabukta bir zebra zıplayan örümcek (*Salticus scenicus*) sıçrayarak dolaşıyor.
+  - Hepsinin ve ağacın kendisinin (karaağaç ya da ova akçaağacı) üstüne gelince adı ve kısa bilgisi çıkıyor; yerdeki kanatlı tohumlar da "kanatlı tohum" olarak görünüyor.
+- **Gövdenin gölgesi:** Öğleden önce sağa, sonra sola düşüyor. Sabah ve akşam uzun, öğlen kısa; çayırın dibinde, otların boyunca yumuşak bir gölge. Kenardaki ağaçta yalnızca kesite düştüğü saatlerde görünüyor.
+- **Sonbahar ve bahar öğleleri:** Toplayıcıların çıkma eşiği 11 °C'den 9 °C'ye indi (9–14 °C arası kademeli). Serin ama güneşli öğlenlerde birkaç toplayıcı çıkıyor. Eski eşikle Ekim'de hiç toplayıcının çıkmadığı soğukça günlerde artık öğle saatlerinde toplama yapılabiliyor (ölçüm: 0 saatten 21–24 saate).
+
+**Ölçüm (8 harita, 160 hafta):** 8/8 koloni hayatta, **8/8'de açlıktan ölen işçi 0**. 7/8'de evlilik uçuşu, zirve 188–610 işçi. Sonbahar ayıklaması 5 haritada devreye girdi (6–54 yavru). Açlıktan ölen larva harita başına 0–5.
+
+## 8. Sıradaki (öneri)
+
+1. **Ağacın devamı:** *Lasius* izinin kolonimizle karşılaşması (yolları kesişirse kısa kavgalar), yaprak biti kolonileri, kabuk altında kışlayan böcekler.
+2. **Majörler değirmenci olsun:** Tohumu kırıp "karınca ekmeği" yapsınlar.
+3. **Komşu koloniler (ertelendi).**
+4. **Akarlar:** Temasla yayılan, tımarla temizlenen bir parazit.
+5. **Sondan sonra:** Steam için masaüstü paketi (Tauri).

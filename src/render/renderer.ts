@@ -12,6 +12,7 @@ import { Camera } from './camera';
 import { AntPainter } from './antdraw';
 import { MacroLens, fibreAlpha, isPiece, heapy } from './macro';
 import { drawCritters, drawCarcasses, drawMorsels } from './critterdraw';
+import { TreeLife } from './treelife';
 import type { Sim } from '../sim/sim';
 import type { Ant } from '../sim/ant';
 import { TUNING, GROUND_Y } from '../config';
@@ -58,8 +59,9 @@ export class Renderer {
   private base: Uint32Array;
   private backdrop: Backdrop;
   private world: World;
-  /** The tree at the slice's edge (its trunk is shaded round), if any. */
+  /** The tree at the slice's edge (its trunk is shaded round), if any, and the life on its bark. */
   private tree: { x: number; r: number } | null = null;
+  readonly treeLife = new TreeLife();
   private lutR = new Uint16Array(512);
   private lutG = new Uint16Array(512);
   private lutB = new Uint16Array(512);
@@ -876,7 +878,6 @@ export class Renderer {
     const eco = sim.eco;
     const doy = sim.doy;
     const cover = eco.leafCover(doy);
-    if (cover <= 0) return;
     const sun = Math.max(0, Math.sin((solar - 0.25) * Math.PI * 2)) * (1 - 0.7 * Math.min(1, sim.cloud));
     if (sun < 0.05) return;
     const w = this.world;
@@ -890,11 +891,13 @@ export class Renderer {
       p.closePath();
       this.airPath = p;
     }
+    if (cover <= 0) return;
     const x0 = Math.max(0, view.x0);
     const x1 = Math.min(w.w, view.x1);
     if (x1 <= x0) return;
     ctx.save();
     ctx.clip(this.airPath);
+    ctx.globalCompositeOperation = 'source-over';
     const g = ctx.createLinearGradient(x0, 0, x1, 0);
     for (let k = 0; k <= 4; k++) {
       const x = x0 + ((x1 - x0) * k) / 4;
@@ -1107,6 +1110,11 @@ export class Renderer {
     if (sim.critters.list.length) drawCritters(ctx, sim.critters.list.filter((c) => (c.kind === 'worm' ? this.known(sim, c.body[0]! % w.w, (c.body[0]! / w.w) | 0) : this.known(sim, c.x, c.y))), w, this.lightAt, view);
     if (sim.carcasses.list.length) drawCarcasses(ctx, sim.carcasses.list.filter((c) => this.known(sim, c.x, c.y)), this.lightAt, view);
     if (sim.carcasses.bits.length) drawMorsels(ctx, sim.carcasses.bits.filter((m) => this.known(sim, m.x, m.y)), this.lightAt, view);
+    if (sim.tree) {
+      // (Its clock is the sim's: in seconds of sim time, so it hurries and stops with the game.)
+      this.treeLife.update(sim, dt * speed);
+      if (this.known(sim, Math.round(sim.tree.x < w.w / 2 ? sim.tree.x + sim.tree.r : sim.tree.x - sim.tree.r), w.ground[0]! - 5)) this.treeLife.draw(ctx, sim, this.lightAt, view);
+    }
     this.painter.draw(ctx, ants, z, this.lightAt, view, selected);
     if (sim.flyers.length) this.painter.drawFlyers(ctx, sim.flyers, z, this.lightAt);
     if (sim.eco.fallers.length) this.drawFallers(sim, view);
