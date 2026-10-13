@@ -219,9 +219,40 @@ Düzeltmeler:
 
 **Ölçüm (8 harita, 160 hafta):** 8/8 koloni hayatta, **8/8'de açlıktan ölen işçi 0**. 7/8'de evlilik uçuşu, zirve 188–610 işçi. Sonbahar ayıklaması 5 haritada devreye girdi (6–54 yavru). Açlıktan ölen larva harita başına 0–5.
 
-## 8. Sıradaki (öneri)
+## 8. Yaşayan toprak altı: çatlaklar, göçükler, kurtarma, sızıntı; ağacın dibinde kavga
 
-1. **Ağacın devamı:** *Lasius* izinin kolonimizle karşılaşması (yolları kesişirse kısa kavgalar), yaprak biti kolonileri, kabuk altında kışlayan böcekler.
+Toprak artık yalnızca kazılan bir malzeme değil, çökebilen bir yapı (`src/sim/ground.ts`).
+
+- **Tavan mekaniği.** Her odanın tavanı bir boşluğun üstündeki toprak. Taşıyıp taşımadığı beş şeye bağlı:
+  - *Toprağın tutması:* kil ve marn en iyi, lös ve kara toprak iyi, çakıl zayıf. Kum yalnızca nemliyken tutar; kuruyken akar, ıslanınca çamurlaşır. Kök çevresini bağlar.
+  - *Nem:* lös ve kara toprak ıslandıkça yumuşar, kil en son yumuşar.
+  - *Derinlik:* yüzeye yakın ince tavan sarkar, derinde toprak kemerlenip taşır.
+  - *Açıklık:* geniş oda daha zor taşır. Ambar şişip yanına lob ekledikçe risk artar.
+  - *Kemer:* bir çöküntüden sonra kalan kubbe şekli daha sağlam.
+- **Uyarı, destek, çöküş.**
+  - Taşıyamayan tavanda gerilim birikir. İnce çatlaklar çıkar; gerilim büyüdükçe çoğalır, uzar ve koyulaşır. Çatlaklardan tane tane toprak dökülür.
+  - Kazıcılar tavanın altına gidip çatlaklara nemli toprak bastırır (destekleme). Destek gerilimi düşürür ama zamanla aşınır.
+  - Gerilim sınıra varınca, ya da yüksek gerilimde her an, tavanın bir kemeri gevşek toprak olarak odaya iner.
+- **Gömülme ve kurtarma.**
+  - Göçüğün altında kalan karınca, bir vücut boyu içinde boşluk varsa oraya sıyrılır. Daha derindeyse en yakın havaya doğru tane tane kazar.
+  - Yuva arkadaşları kazıyı gömülenin üstüne yoğunlaştırır: yakındaki işçiler işini bırakıp gelir, toprağı dışarı taşımadan yana itip sıkıştırır.
+  - İşçi yaklaşık 50 saniye, kraliçe 2 dakika havasız dayanır. Gömülen yavru da kurtarma listesine girer ve bir dakikası vardır.
+- **Sızıntı.** Taban suyuna yakın ya da çok ıslanmış duvarlar su sızdırır; su tünellerde akıp alçak odalarda birikir.
+- **Ağacın dibinde kavga (*Lasius niger*).**
+  - Ağaçlı haritalarda bahçe karıncaları gövdenin dibinde, yaklaşık 15 cm içinde yerde yiyecek arar.
+  - Bir toplayıcımıza rastlarlarsa onu yakalar: birkaç saniyelik bir boğuşma olur ve sonunda biri ölebilir.
+  - Tek başına bir *Messor*, hele majör, çoğunlukla kazanır. Yakındaki yuva arkadaşları şansı artırır.
+  - Kavga gövdeden yeni *Lasius* indirir; birkaçının arasında kalan toplayıcı ölür ve cesedi gövdeye sürüklenir. Yeterince işçi gelirse cesedi bırakıp kaçarlar.
+  - Ölen bir *Lasius* bizim toplayıcılar için av: yiyecek olarak yuvaya taşınır.
+- **Yolda yakalananlar.**
+  - Kraliçenin tohum zulası odanın tabanını kaplayınca bazı yumurtalar tohum altında kalıp ölüyordu. Bakıcılar artık onları daha uzaktaki boş bir yere çekiyor.
+  - Eskiden "boğulma" diye sayılan bu ölümler artık ayrı tutuluyor: su, göçük, tohum altı.
+
+**Ölçüm:** (sürüyor)
+
+## 9. Sıradaki (öneri)
+
+1. **Ağacın devamı:** yaprak biti kolonileri, kabuk altında kışlayan böcekler; *Lasius* ile yol paylaşımı (bir kayıptan sonra toplayıcıların gövde dibinden kaçınması).
 2. **Majörler değirmenci olsun:** Tohumu kırıp "karınca ekmeği" yapsınlar.
 3. **Komşu koloniler (ertelendi).**
 4. **Akarlar:** Temasla yayılan, tımarla temizlenen bir parazit.

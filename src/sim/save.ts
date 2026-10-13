@@ -290,6 +290,7 @@ function upgrade(sim: Sim): void {
   (sim.carcasses as unknown as { bits?: unknown[] }).bits ??= [];
   // Saves from before the soil could fail.
   (sim as unknown as { ground?: Ground }).ground ??= new Ground();
+  (sim.ground as unknown as { fell?: number[] }).fell ??= [];
   if (!o.neighbours) {
     const list = o.neighbour ? [o.neighbour] : [];
     for (const nb of list) {

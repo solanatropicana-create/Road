@@ -2,7 +2,7 @@ import type { Sim } from './sim';
 import type { Chamber } from './nest';
 import { EMPTY, SAND, WATER, HUMUS, LOAM, CLAY, SUBSOIL, GRAVEL, SANDY, LIME, ROOT, SOIL, HARD } from '../world/mat';
 import { PACKED, PLUG } from '../world/physics';
-import { TICK_HZ } from '../config';
+import { TICK_HZ, DAY_TICKS } from '../config';
 import { clamp } from '../util/math';
 
 /**
@@ -11,11 +11,13 @@ import { clamp } from '../util/math';
  * clay and marl best; a root binds what is round it; sand only while damp.
  */
 const COHESION: Record<number, number> = {
-  [CLAY]: 1.3, [LIME]: 1.2, [LOAM]: 1.1, [SUBSOIL]: 1.05, [HUMUS]: 0.95, [GRAVEL]: 0.6, [SANDY]: 0.55, [ROOT]: 1.4, [SAND]: 0.25,
+  [CLAY]: 1.3, [LIME]: 1.2, [LOAM]: 1.1, [SUBSOIL]: 1.05, [HUMUS]: 0.95, [GRAVEL]: 0.6, [SANDY]: 0.65, [ROOT]: 1.4, [SAND]: 0.25,
 };
 
 /** Seconds between checks of the nest's roofs. */
 const CHECK = 5;
+/** After a cave-in, how long the room's new roof settles before strain can build to another (ticks). */
+const SETTLE = DAY_TICKS * 6;
 
 /**
  * The soil as something that can fail. Every room has a roof of soil over a
@@ -38,8 +40,9 @@ export class Ground {
   /** Per chamber id: strain building toward a cave-in (0..1), and shoring pressed into its roof (0..1). */
   strain: number[] = [];
   shore: number[] = [];
-  /** Per chamber id: the tick of the last crack warning (so it is noted once a bout). */
+  /** Per chamber id: the tick of the last crack warning (so it is noted once a bout), and of the last cave-in. */
   warned: number[] = [];
+  fell: number[] = [];
   /** Where ants or brood lie buried alive right now (refreshed as they struggle), for the rescuers. */
   buried: { x: number; y: number; id: number; t: number }[] = [];
   caveIns = 0;
@@ -61,7 +64,7 @@ export class Ground {
     // Sand holds damp and runs dry or soaked; loams soften as they soak, clay last.
     let f: number;
     // (Rain seldom brings the soil round the rooms past 100 or so; the water table soaks it through.)
-    if (m === SANDY || m === SAND) f = wet < 12 ? 0.7 : wet < 100 ? 1.15 : wet < 150 ? 0.85 : 0.5;
+    if (m === SANDY || m === SAND) f = wet < 12 ? 0.85 : wet < 100 ? 1.15 : wet < 150 ? 0.85 : 0.5;
     else if (m === CLAY || m === LIME) f = wet < 60 ? 1 : wet < 160 ? 1 - ((wet - 60) / 100) * 0.55 : 0.45;
     else f = wet < 40 ? 1 : wet < 130 ? 1 - ((wet - 40) / 90) * 0.55 : 0.45;
     // Soil the workers have packed (a shored roof, the spoil of the walls) holds better.
@@ -172,6 +175,8 @@ export class Ground {
       const risk = clamp(1 - s, 0, 1);
       let strain = this.strain[c.id] ?? 0;
       strain = risk > 0 ? strain + risk * 0.022 : Math.max(0, strain - 0.01);
+      // A fresh fall settles into an arch for a while before the next can come (no chimney of falls).
+      if (sim.tick - (this.fell[c.id] ?? -1e9) < SETTLE) strain = Math.min(strain, 0.5);
       this.strain[c.id] = strain;
       // Shoring slowly weathers away.
       if (this.shore[c.id]) this.shore[c.id] = Math.max(0, this.shore[c.id]! - 0.0015);
@@ -242,6 +247,7 @@ export class Ground {
     // (Nothing left to fall: the roof has come down to rock, or to the surface.)
     this.strain[c.id] = fell < 6 ? 0.5 : 0;
     if (fell < 6) return;
+    this.fell[c.id] = sim.tick;
     this.shore[c.id] = (this.shore[c.id] ?? 0) * 0.5;
     this.caveIns++;
     sim.events.push({ key: 'caveIn', kind: c.kind, x: Math.round(cx), y: c.floorY - 2 });

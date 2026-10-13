@@ -6,9 +6,11 @@ import { clamp } from '../util/math';
 import { EMPTY, PREY } from '../world/mat';
 
 /** How far out from the foot of the trunk the garden ants forage on the ground (mm). */
-const RANGE = 150;
+const RANGE = 110;
 /** At most this many on the slice at once (the column on the bark is drawn apart, see TreeLife). */
-const MOST = 10;
+const MOST = 8;
+/** They pick fights only this close to their tree (mm out from the trunk); further out they give way. */
+const TURF = 70;
 
 /** Where the trunk meets the slice, and which way is out from it into the slice. */
 function foot(sim: Sim): { x: number; out: number } | null {
@@ -31,7 +33,7 @@ export function lasiusOut(sim: Sim): number {
 export function lasiusSeason(sim: Sim, cz: Critters): void {
   const f = foot(sim);
   if (!f) return;
-  const want = Math.round(lasiusOut(sim) * 4);
+  const want = Math.round(lasiusOut(sim) * 3);
   if (cz.count('lasius') >= want || !sim.rng.chance(0.6)) return;
   comeDown(sim, cz, f, 0);
 }
@@ -120,12 +122,12 @@ export function lasius(sim: Sim, c: Critter, cz: Critters): boolean {
     }
     if (c.timer % 40 < 30) walk(0.3, c.dir);
   }
-  if (c.t % 3 !== 0) return true;
-  // One of ours within reach: seized.
+  if (c.t % 3 !== 0 || d > TURF) return true;
+  // One of ours within reach, on their ground: seized (more often than not they only touch and part).
   for (const a of col.ants) {
     if (a.away || a.paralysed || a.fight > 0 || a.rival) continue;
     if (Math.abs(a.x - c.x) > 2 || Math.abs(a.y - c.y) > 3 || w.bg[a.y * w.w + a.x] !== 0) continue;
-    if (!rng.chance(0.3)) continue;
+    if (!rng.chance(0.04)) continue;
     c.state = 1;
     c.prey = a;
     c.dir = a.x >= c.x ? 1 : -1;
@@ -135,7 +137,7 @@ export function lasius(sim: Sim, c: Critter, cz: Critters): boolean {
     // The alarm goes round the harvesters close by; the Lasius call more of theirs down.
     a.alarm = TICK_HZ * 20;
     cz.lasiusFights++;
-    if (rng.chance(0.6)) for (let k = rng.int(1, 3); k > 0; k--) comeDown(sim, cz, f, 3, c.x);
+    if (rng.chance(0.35)) for (let k = rng.int(1, 2); k > 0; k--) comeDown(sim, cz, f, 3, c.x);
     sim.noteYearly('lasiusFight', c);
     break;
   }
@@ -163,8 +165,8 @@ function resolve(sim: Sim, c: Critter, cz: Critters): boolean {
   let allies = 0;
   for (const o of cz.list) if (o !== c && o.kind === 'lasius' && o.state !== 2 && Math.abs(o.x - c.x) < 8) allies++;
   const major = a.caste === 'soldier';
-  const pDie = clamp(0.24 + 0.14 * allies - 0.08 * helpers - (major ? 0.18 : 0), 0.03, 0.75);
-  const pKill = clamp(0.3 + 0.12 * helpers + (major ? 0.3 : 0) - 0.06 * allies, 0.08, 0.85);
+  const pDie = clamp(0.14 + 0.1 * allies - 0.06 * helpers - (major ? 0.12 : 0), 0.02, 0.6);
+  const pKill = clamp(0.35 + 0.12 * helpers + (major ? 0.3 : 0) - 0.06 * allies, 0.1, 0.9);
   const r = rng.next();
   c.prey = null;
   a.fight = 0;
