@@ -12,7 +12,7 @@ import { Ant } from './ant';
 import { Particles } from './particles';
 import { Task, Carry, holdsStores } from './types';
 import { TUNING, TICK_HZ, DAY_TICKS, GROUND_Y } from '../config';
-import { pack, sampleRamp, PAL, mixRGB, SEED_TONE } from '../render/palette';
+import { pack, sampleRamp, PAL, mixRGB, SEED_TONE, SAMARA_TONE } from '../render/palette';
 import { HUMUS, LOAM, CLAY, SUBSOIL } from '../world/mat';
 import { Calendar, Season, forageWindow } from './calendar';
 import { SITES, SiteId, Variant, siteForSeed } from '../world/sites';
@@ -179,7 +179,8 @@ export class Sim {
     this.horizons = gen.horizons;
     this.variant = gen.variant;
     this.tree = gen.tree;
-    this.eco = new Ecology(gen.shrub, gen.tree);
+    // A field maple on the limestone and by the vineyard; elsewhere a field elm.
+    this.eco = new Ecology(gen.shrub, gen.tree, site === 'limestone' || site === 'vineyard' ? 'maple' : 'elm');
     this.fog = new Fog(this.world.w, this.world.h);
     // (When its foragers reach us is set when we land.)
     if (gen.variant.neighbour) this.neighbours.push(new Neighbour(gen.variant.neighbourSide, gen.variant.neighbour, 1e9));
@@ -706,9 +707,9 @@ export class Sim {
         const i = y * w.w + x;
         const m = w.mat[i];
         if (m === SEED && w.bg[i] === 0) {
-          // Awned seed (feather grass, stork's bill) drills down when wet.
+          // Awned seed (feather grass, stork's bill) drills down when wet (a samara's wing doesn't).
           const dn = i + w.w;
-          if (w.tone[i]! >= 154 && SOIL[w.mat[dn]!] && w.moist[dn]! > 30 && w.mat[i - w.w] === EMPTY && this.rng.chance(0.05)) {
+          if (w.tone[i]! >= 154 && w.tone[i]! < SAMARA_TONE[0] && SOIL[w.mat[dn]!] && w.moist[dn]! > 30 && w.mat[i - w.w] === EMPTY && this.rng.chance(0.05)) {
             w.set(dn, SEED, w.tone[i], 0);
             w.set(i, EMPTY, 0, 0);
             this.drilled++;

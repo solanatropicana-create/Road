@@ -256,12 +256,20 @@ export class Carcasses {
     this.bits.push({ x, y, look, tone, food, whole: food, age: 0 });
   }
 
-  /** The nearest part with food left within r cells (to bite from). */
-  bitNear(x: number, y: number, r: number): Morsel | null {
+  /**
+   * The nearest part with food left within r cells (to bite from). inside:
+   * only parts in the nest on about the same floor (a nurse walks over to it),
+   * or only parts lying out on the surface (a forager picks it up again).
+   */
+  bitNear(x: number, y: number, r: number, where: 'any' | 'floor' | 'out' = 'any', w?: { bg: Uint8Array; w: number }): Morsel | null {
     let best: Morsel | null = null;
     let bd = r;
     for (const m of this.bits) {
       if (m.food <= 0) continue;
+      if (where !== 'any' && w) {
+        const out = w.bg[m.y * w.w + m.x] === 0;
+        if (where === 'out' ? !out : out || Math.abs(m.y - y) > 3) continue;
+      }
       const d = Math.abs(m.x - x) + Math.abs(m.y - y) * 1.5;
       if (d < bd) {
         bd = d;
@@ -275,6 +283,12 @@ export class Carcasses {
   bitAt(x: number, y: number): Morsel | null {
     for (const m of this.bits) if (Math.abs(x - m.x) <= 3 && y >= m.y - 3 && y <= m.y + 1) return m;
     return null;
+  }
+
+  /** A part picked up whole again (it was dropped outside): gone from the floor. */
+  take(m: Morsel): void {
+    const k = this.bits.indexOf(m);
+    if (k >= 0) this.bits.splice(k, 1);
   }
 
   /** A bite taken from a part: true if there was one. */

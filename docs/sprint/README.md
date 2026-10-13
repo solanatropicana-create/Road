@@ -186,10 +186,31 @@ Yolda yakalanan iki şey:
 - Taban suyu ilk sürümde nem modelinin listesine giriyordu (yüz binlerce hücre her tick dolaşılıyordu) ve simülasyon 17 kat yavaşlamıştı. Artık sabit tutuluyor.
 - Test çalışırken kaynak dosyayı düzenleyince geliştirme sunucusu sayfayı yeniliyor ve test "çöküyor". Oyuncu testi artık sayfanın kendiliğinden yenilendiğini ayrıca raporluyor.
 
-## 6. Sıradaki (öneri)
+## 6. Bahar darboğazı ve ağaca giriş
 
-1. **Ağaç ve yarı 3B:** Ağacın gövdesi önde, kesit arkada derinlik bulanıklığıyla.
-2. **Bahar darboğazı:** 500+ işçilik koloniler kışa kişi başı yetersiz stokla giriyor. Yaz sonu yumurtlama kuralı stoğa göre daha sıkı olmalı, sonbahar hasadı da daha uzun sürmeli.
+**Bahar darboğazı.** Haftalık ekonomi izinden (`scripts/econ.ts`) çıkanlar:
+- 450 işçilik bir koloni kış uykusunda haftada yaklaşık 50 birim yiyor (kişi başı 0,11). Kış 20 hafta sürüyor; Nisan'da koloni uyanıyor, kışı pupa olarak geçirenler çıkıyor ve tüketim ikiye katlanıyor.
+- Ağustos'ta hâlâ 200 yumurta bırakılıyordu: yaz sonu kuralı kişi başı 2,5 birim stok istiyordu ve koloni tam sınırdaydı. Eylül'de 150 larva haftada 300–400 birim yedi.
+
+Düzeltmeler:
+- Yaz sonu yumurtlama Haziran sonundan itibaren kişi başı 3,4 birim stok istiyor (kış uykusu artı ilk tohumdan önceki bahar).
+- Kışa yetmeyecek kadar ağız varsa, Ağustos sonundan kış uykusuna kadar bakıcılar her gün en genç yavruların bir kısmını yiyor (önce yumurtalar, sonra en küçük larvalar). Gerçek karıncalar da yavruyu protein yedeği olarak kullanır; yavrunun yediği bir kısmı geri kazanılıyor.
+- Kıtlıkta yavru yeme notlarının metni eksikti, eklendi.
+
+**Ağaca giriş.**
+- *Yarı 3B gövde:* gövde artık düz bir blok değil, ışığa bakan yanı aydınlık, öbür yanına doğru kararan bir sütun. Gölgede kalan yanında, dibe yakın yosun var.
+- *Camın ötesindeki ağaç:* gövdeden çıkan alçak dallar arka planda, çayırın önünde, odak dışı uzanıyor ve uçları görüş alanına sarkıyor. Yapraklar baharda açık yeşil, yazın koyu yeşil, sonbaharda sarı ya da pas rengi; kışın dallar çıplak, rüzgârla sallanıyorlar.
+- *Kanatlı tohum yağmuru:* karaağaç Mayıs'ta kâğıt gibi disklerini, akçaağaç (kireçtaşı ve bağ haritalarında) Eylül–Ekim'de dönerek inen kanatlı tohumlarını döküyor. Bir mevsimde 200–250 tohum gövdenin çevresine, rüzgârla sürüklenerek iniyor. Tohumlar toplanabilir yiyecek; yakındaki bir koloni için bereket. Başlıkta ve notlarda "ağaç tohum döküyor" çıkıyor.
+
+- Yolda bir hata yakalandı: ulaşılamayan bir yerde (dışarıda ya da başka bir katta) kalan av parçası bakıcıları kendine kilitliyordu. Bakıcılar ona yürümeye çalışırken larvaları beslemiyordu ve bir kolonide 18 larva açlıktan öldü, koloni 7 işçiye düştü. Artık bakıcı yalnızca bulunduğu kattaki yakın parçayı ısırıyor, 12 saniyede ulaşamazsa bir dakika vazgeçiyor; dışarıda kalan parçayı toplayıcılar geri getiriyor.
+- İlk sürümde yaz sonu kuralı yalnızca eldeki stoğa bakıyordu ve fazla katıydı: bir koloni bol yiyecekle 90 işçide takıldı. Artık Eylül başına kadar gelecek hasadın bir kısmı da sayılıyor; asıl güvence sonbahardaki ayıklama.
+
+**Ölçüm (8 harita, 160 hafta, bu turun bütün değişiklikleriyle):** 8/8 koloni 4. yılın baharında hayatta, **8/8'de açlıktan ölen işçi 0** (önceki turda 2 haritada 16 ve 181). 7/8'de evlilik uçuşu, zirve 162–730 işçi. 730 işçilik koloni bu kez kışı açlıksız çıkardı. Sonbahar ayıklaması 4 haritada devreye girdi (10–45 yavru). Açlıktan ölen larva harita başına 0–2.
+
+## 7. Sıradaki (öneri)
+
+1. **Ağacın devamı:** Gövdenin kesite düşen gölgesi, kabukta yaşayanlar (kabuk böcekleri, örümcekler), gövdeye tırmanan yabancı karıncalar, ağacın kendi yaprak biti kolonileri (*Messor* onlarla ilgilenmez ama komşu *Lasius* ilgilenir).
+2. **Sonbahar hasadı:** Ekim sonunda yüzeyde hâlâ 300 tohum duruyor ama toplayıcılar soğukta çıkmıyor. Ilık öğlenlerde kısa toplama turları kışlık stoğu artırır.
 3. **Majörler değirmenci olsun:** Tohumu kırıp "karınca ekmeği" yapsınlar.
 4. **Komşu koloniler (ertelendi).**
 5. **Akarlar:** Temasla yayılan, tımarla temizlenen bir parazit.

@@ -1139,6 +1139,22 @@ export class Ant {
       } else this.descend(sim, F.Entr);
       return;
     }
+    // A part of a carcass dropped out here (a forager that had to let it go): take it home again.
+    if (this.carry === Carry.None && !this.recruiting && !this.haul) {
+      const m = sim.carcasses.bitNear(this.x, this.y, 10, 'out', w);
+      if (m) {
+        if (Math.abs(m.x - this.x) <= 1 && Math.abs(m.y - this.y) <= 2) {
+          sim.carcasses.take(m);
+          this.carry = Carry.Prey;
+          this.carryTone = m.tone;
+          this.carryPart = m.look;
+          this.carryLoad = m.food;
+          return;
+        }
+        this.toward(sim, m.x, false);
+        return;
+      }
+    }
     // Called out to a carcass: straight there.
     if (this.bound && (this.bound.pieces <= 0 || !sim.carcasses.list.includes(this.bound))) this.bound = null;
     // A carcass close by (or the one we were called to): go and take hold.
@@ -1752,11 +1768,17 @@ export class Ant {
     }
     // A part of a carcass lying in the nest comes first: insect is what larvae
     // grow on, and it will not keep. Bite a mouthful off it for a larva.
-    if (feedMore && f[F.Larva]! > 0) {
-      const m = sim.carcasses.bitNear(this.x, this.y, 30);
+    // (Only one on the floor where she is; one she cannot get to, she leaves for a while.)
+    if (feedMore && f[F.Larva]! > 0 && sim.tick >= this.noCarcassUntil) {
+      const m = sim.carcasses.bitNear(this.x, this.y, 18, 'floor', w);
       if (m) {
-        if (Math.abs(m.x - this.x) <= 2 && Math.abs(m.y - this.y) <= 2) this.startAct(Act.Bite, m.y * w.w + m.x, sim.rng.int(TICK_HZ * 2, TICK_HZ * 4));
-        else this.toward(sim, m.x, true);
+        if (Math.abs(m.x - this.x) <= 2 && Math.abs(m.y - this.y) <= 2) {
+          this.chase = 0;
+          this.startAct(Act.Bite, m.y * w.w + m.x, sim.rng.int(TICK_HZ * 2, TICK_HZ * 4));
+        } else if (++this.chase > TICK_HZ * 12) {
+          this.chase = 0;
+          this.noCarcassUntil = sim.tick + TICK_HZ * 60;
+        } else this.toward(sim, m.x, true);
         return;
       }
     }

@@ -1,6 +1,6 @@
 import type { Sim } from './sim';
 import type { ShrubInfo } from '../world/gen';
-import { EMPTY, LEAF, FLOWER, BERRY, FRUIT, LITTER, TWIG, WOOD } from '../world/mat';
+import { EMPTY, LEAF, FLOWER, BERRY, FRUIT, LITTER, TWIG, WOOD, SEED } from '../world/mat';
 import { DRY_SHIFT } from '../world/plants';
 import { TICK_HZ } from '../config';
 import { clamp } from '../util/math';
@@ -17,7 +17,12 @@ export interface Faller {
   len: number;
   /** A sloe or hip dropping from the bush overhead (falls straight, lands as soft fruit). */
   fruit?: boolean;
+  /** A samara from the tree: elm (a papery disc that flutters down) or maple (a wing that spins). */
+  samara?: 'elm' | 'maple';
 }
+
+/** The tree's kind: a field elm sheds its samaras in May, a field maple in early autumn. */
+export type TreeKind = 'elm' | 'maple';
 
 /** Dead insects (and stranded worms) turning up on the surface, by month. */
 const PREY_MONTH = [0, 0, 0.1, 0.3, 0.6, 0.9, 1, 1, 0.8, 0.5, 0.15, 0];
@@ -38,10 +43,19 @@ export class Ecology {
   private shrubFruit = false;
   /** Dead insects that turned up, and stranded worms, since the start. */
   preyFound = 0;
+  /** What kind of tree it is, and the samaras it has shed this year. */
+  treeKind: TreeKind;
+  samaras = 0;
 
-  constructor(shrub: ShrubInfo | null, tree: { x: number; r: number } | null) {
+  constructor(shrub: ShrubInfo | null, tree: { x: number; r: number } | null, treeKind: TreeKind = 'elm') {
     this.shrub = shrub;
     this.tree = tree;
+    this.treeKind = treeKind;
+  }
+
+  /** The weeks the tree sheds its seed (day of year). */
+  samaraSeason(): [number, number] {
+    return (this.treeKind ?? 'elm') === 'elm' ? [128, 160] : [252, 292];
   }
 
   /** How much of the tree's crown is in leaf, 0..1. */
@@ -74,6 +88,16 @@ export class Ecology {
       if (f.fruit) {
         f.vy = Math.min(3, (f.vy ?? 0) + 0.12);
         f.y += f.vy;
+      } else if (f.samara) {
+        // A maple key spins down slowly and drifts on the wind; an elm disc flutters.
+        const gust = sim.gust();
+        if (f.samara === 'maple') {
+          f.x += f.vx + gust * 0.35;
+          f.y += 0.22;
+        } else {
+          f.x += f.vx + gust * 0.25 + Math.sin(f.t * 0.09 + f.tone) * 0.3;
+          f.y += 0.3 + Math.sin(f.t * 0.13) * 0.12;
+        }
       } else {
         // A leaf flutters and sways as it falls.
         f.x += f.vx + Math.sin(f.t * 0.06 + f.tone) * 0.5;
@@ -85,6 +109,7 @@ export class Ecology {
       // (Landing is judged against the ground and what lies on it, not seeds in mid-fall.)
       if (y > 1 && y >= this.topAt(sim, x)) {
         if (f.fruit) this.restFruit(sim, x, f.tone);
+        else if (f.samara) this.restSeed(sim, x, f.tone);
         else this.restLeaf(sim, x, f.len, f.tone);
         continue;
       }
@@ -129,6 +154,15 @@ export class Ecology {
     }
   }
 
+  /** A samara lands: tree seed lying on the ground, for the foragers to find. */
+  private restSeed(sim: Sim, x: number, tone: number): void {
+    const w = sim.world;
+    if (this.trunk(sim, x)) return;
+    const i = this.topAt(sim, x) * w.w + x;
+    // (Not on a planned cell: the nest's mouth stays clear.)
+    if (w.mat[i] === EMPTY && w.bg[i] === 0 && !w.plan[i]) w.set(i, SEED, tone, 0);
+  }
+
   /** A sloe or hip lands: a soft round fruit sitting on the ground. */
   private restFruit(sim: Sim, x: number, tone: number): void {
     const w = sim.world;
@@ -165,6 +199,24 @@ export class Ecology {
         this.fallers.push({ x, y: -30, vx: side * rng.range(0.02, 0.18), t: rng.int(0, 999), tone: rng.int(0, 255), len: rng.int(38, 72) });
       }
     }
+    // The tree sheds its seed: a few weeks' rain of samaras under and around
+    // the crown, drifting on the wind. A windfall for a colony in reach.
+    const [s0, s1] = this.samaraSeason();
+    if (this.tree && doy >= s0 && doy < s1) {
+      if (this.samaras === 0) {
+        const lx = clamp(Math.round(this.tree.x + (this.tree.x < w.w / 2 ? 220 : -220)), 40, w.w - 40);
+        sim.noteYearly((this.treeKind ?? 'elm') === 'elm' ? 'elmSeed' : 'mapleSeed', { x: lx, y: w.ground[lx]! - 30 });
+      }
+      const n = rng.next() < 0.6 ? rng.int(1, 3) : 0;
+      for (let k = 0; k < n; k++) {
+        const side = this.tree.x < w.w / 2 ? 1 : -1;
+        // Most fall near the trunk, fewer farther out.
+        const x = clamp(this.tree.x + side * (this.tree.r + Math.pow(rng.next(), 1.7) * 650), 4, w.w - 5);
+        const kind = this.treeKind ?? 'elm';
+        this.fallers.push({ x, y: -20, vx: side * rng.range(0, 0.12), t: rng.int(0, 999), tone: kind === 'elm' ? rng.int(240, 246) : rng.int(249, 255), len: 0, samara: kind });
+        this.samaras++;
+      }
+    } else if (doy < s0 || doy > s1 + 5) this.samaras = 0;
     // Fallen leaves rot into the soil through the winter and spring (faster in the warmth).
     if (air > 3) {
       for (let k = 0; k < (air > 10 ? 6 : 2); k++) {

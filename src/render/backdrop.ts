@@ -74,6 +74,17 @@ export class Backdrop {
   private site: string;
   /** Background features of the site: rocks, vine posts, distant hills, feather-grass plumes. */
   private props: { kind: string; x: number; y: number; w: number; h: number; phase: number }[] = [];
+  /**
+   * The tree at the slice's edge, as seen beyond the glass: its low boughs
+   * reaching out over the meadow, out of focus, the leaf masses on them
+   * green, then gold, then gone with the season. Set by the renderer.
+   */
+  tree: { x: number; r: number } | null = null;
+  treeKind = 'elm';
+  /** How much of the crown is in leaf (0..1), and how far into autumn its colour has turned (0..1). */
+  leafCover = 0;
+  autumn = 0;
+  private boughs: { tip: number; len: number; y: number; bend: number; leaves: { t: number; off: number; r: number; phase: number }[] }[] | null = null;
   /** Wildflowers in the meadow behind, far out of focus: soft discs of colour on stalks. */
   private flowers: { x: number; h: number; r: number; col: RGB; phase: number; layer: number }[] = [];
 
@@ -212,6 +223,8 @@ export class Backdrop {
       }
     }
 
+    // The tree's low boughs: nearer than the meadow behind, so over its grass.
+    if (this.tree) this.drawTree(c, s, time, sky, night);
     // Wildflowers: blurred heads on their stalks, dimmed by night and haze. They
     // bloom from April into July; a few late ones linger into September.
     const bloom = [0, 0, 0.05, 0.5, 1, 1, 0.75, 0.4, 0.25, 0.05, 0, 0][month]!;
@@ -284,6 +297,76 @@ export class Backdrop {
       }
     }
     c.globalCompositeOperation = 'source-over';
+  }
+
+  /**
+   * The tree beyond the glass: a few low boughs out of the trunk, reaching
+   * over the meadow and out of the frame, with soft leaf masses along them.
+   * Far out of focus, so it reads as depth behind the crisp slice.
+   */
+  private drawTree(c: CanvasRenderingContext2D, s: number, time: number, sky: { low: RGB; mid: RGB }, night: number): void {
+    const t = this.tree!;
+    const side = t.x < this.canvas.width / s / 2 ? 1 : -1;
+    if (!this.boughs) {
+      const rng = new Rng(Math.round(t.x * 7 + t.r));
+      this.boughs = [];
+      for (let k = 0; k < 4; k++) {
+        const leaves = [];
+        for (let j = 0; j < 26; j++) leaves.push({ t: rng.range(0.25, 1.05), off: rng.range(-28, 28), r: rng.range(14, 34), phase: rng.range(0, 6.28) });
+        // Low boughs: out from the trunk above the frame, drooping into view at their tips.
+        this.boughs.push({ tip: rng.range(45, 105), len: rng.range(380, 820), y: rng.range(-30, 20), bend: rng.range(-0.25, 0.1), leaves });
+      }
+    }
+    const bark = mixRGB(mixRGB(hex('#3a2c22'), sky.low, 0.45), hex('#0e1420'), night * 0.8);
+    // The leaves: fresh green in spring, deep in summer, gold to rust in autumn.
+    const green = mixRGB(hex('#5f7f3a'), hex('#3f5f2c'), 0.5);
+    const gold = this.treeKind === 'maple' ? hex('#c8742e') : hex('#c9a640');
+    const leaf = mixRGB(mixRGB(mixRGB(green, gold, this.autumn), sky.low, 0.35), hex('#101824'), night * 0.85);
+    const sway = (k: number): number => Math.sin(time * (0.35 + Math.abs(this.wind) * 0.9) + k) * (3 + Math.abs(this.wind) * 9) + this.wind * 14;
+    for (let k = 0; k < this.boughs.length; k++) {
+      const b = this.boughs[k]!;
+      // From the trunk's edge, up and out over the meadow.
+      const x0 = (t.x + side * t.r * 0.8) * s;
+      const y0 = (GROUND_Y - 150 + b.y) * s;
+      const ex = x0 + side * b.len * s;
+      const ey = (GROUND_Y - b.tip) * s + sway(k) * s;
+      const cx = (x0 + ex) / 2 + side * b.bend * b.len * s * 0.3;
+      const cy = Math.max(y0, ey) - b.len * 0.04 * s;
+      c.strokeStyle = css(bark, 0.8);
+      c.lineCap = 'round';
+      c.lineWidth = 18 * s;
+      c.beginPath();
+      c.moveTo(x0, y0);
+      c.quadraticCurveTo(cx, cy, ex, ey);
+      c.stroke();
+      if (this.leafCover <= 0.02) continue;
+      for (const l of b.leaves) {
+        // Only part of the crown is in leaf while it is coming out or falling.
+        if (l.phase / 6.28 > this.leafCover) continue;
+        const u = l.t;
+        const px = (1 - u) * (1 - u) * x0 + 2 * (1 - u) * u * cx + u * u * ex + side * l.off * 0.3 * s;
+        const py = (1 - u) * (1 - u) * y0 + 2 * (1 - u) * u * cy + u * u * ey + l.off * s + Math.sin(time * 0.6 + l.phase) * 2 * s;
+        const r = l.r * s;
+        // A clump of leaves out of focus: a darker heart, lit at the edge toward the sky.
+        const g = c.createRadialGradient(px, py, 0, px, py, r);
+        g.addColorStop(0, css(mixRGB(leaf, [8, 14, 6], 0.35), 0.8));
+        g.addColorStop(0.65, css(leaf, 0.55));
+        g.addColorStop(1, css(leaf, 0));
+        c.fillStyle = g;
+        c.beginPath();
+        c.arc(px, py, r, 0, Math.PI * 2);
+        c.fill();
+        const hx = px - r * 0.25;
+        const hy = py - r * 0.35;
+        const g2 = c.createRadialGradient(hx, hy, 0, hx, hy, r * 0.55);
+        g2.addColorStop(0, css(mixRGB(leaf, sky.low, 0.45), 0.35 * (1 - night)));
+        g2.addColorStop(1, css(leaf, 0));
+        c.fillStyle = g2;
+        c.beginPath();
+        c.arc(hx, hy, r * 0.55, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
   }
 
   /** Hills, rocks, vine rows and feather-grass plumes behind the meadow, soft and hazy. */

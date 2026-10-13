@@ -473,10 +473,13 @@ export class Colony {
       const upkeep = adults * (DAY_TICKS / TUNING.adultSeedTicks) * metabolism(this.nestTemp);
       if (this.income * 0.8 < upkeep) return;
       if (this.stored + this.reserve + this.income * weeksLeft * 0.5 < heads * 4) return;
-      // From mid-July the harvest still to come is the winter's: late brood
-      // is paid for out of the stores in hand (or the autumn's newcomers eat
-      // the colony's winter).
-      if (doy > 185 && this.stored + this.reserve < heads * 2.5) return;
+      // From late June what is laid is paid for out of the winter's food: the
+      // stores in hand and some of what the rest of the harvest (to early
+      // September) should bring in. A head needs about a seed and a half to
+      // see out the winter rest, and as much again for the spring before the
+      // first seed is ripe (measured: 0.11 a head a week asleep, 30 weeks).
+      // (Too many mouths all the same: see winterCull.)
+      if (doy > 175 && this.stored + this.reserve + this.income * Math.max(0, (250 - doy) / 7) * 0.4 < heads * 3.4) return;
     }
     // An established colony stops raising brood at the end of summer (what is
     // laid now would only eat into the winter store); a young one keeps going.
@@ -605,6 +608,41 @@ export class Colony {
         if (victim) this.kill(victim, 'starvation');
       }
     } else this.starveTimer = 0;
+  }
+
+  /**
+   * Before the winter, a colony that has more mouths than its stores will
+   * carry through eats some of its youngest brood (ants do: brood is the
+   * colony's reserve of protein). Once a day from late August to the winter
+   * rest, while stores are short: eggs first, then the smallest larvae.
+   */
+  private winterCull(sim: Sim): void {
+    const doy = sim.doy;
+    if (sim.dormant || doy < 232 || doy > 305 || this.adults < 30) return;
+    let eggs = 0;
+    let larvae = 0;
+    let pupae = 0;
+    for (const b of this.brood) {
+      if (b.stage === 0) eggs++;
+      else if (b.stage === 1) larvae++;
+      else pupae++;
+    }
+    const heads = this.adults + pupae + larvae + eggs * 0.8 + this.alates.length * 1.5;
+    const food = this.stored + this.reserve;
+    if (food >= heads * 2.6) return;
+    const n = Math.max(1, Math.round((eggs + larvae) * 0.06));
+    for (let k = 0; k < n; k++) {
+      let pick: Brood | null = null;
+      for (const b of this.brood) {
+        if (b.carried || b.stage === 2 || b.sex) continue;
+        if (!pick || b.stage < pick.stage || (b.stage === pick.stage && b.age < pick.age)) pick = b;
+      }
+      if (!pick) return;
+      this.takeBrood(pick, 'brood eaten before winter');
+      // What it had been fed comes back to the nurses' crops.
+      this.reserve += pick.stage === 1 ? 1 : 0.3;
+      sim.noteYearly('winterCull', { x: pick.x, y: pick.y });
+    }
   }
 
   /** Eat an egg, or failing that the youngest larva. False if there is no brood to eat. */
@@ -839,6 +877,7 @@ export class Colony {
       if (!sim.dormant) this.income = this.income * 0.94 + rate * 0.06;
     }
     this.consume(sim);
+    if (sim.tick % Math.round(DAY_TICKS / 7) === 41) this.winterCull(sim);
     if (this.queen?.alive) this.queen.tick(sim);
     // Who stands where, so ants that meet head-on can stop and touch antennae.
     const occ = this.occ ?? (this.occ = new Int32Array(sim.world.size));

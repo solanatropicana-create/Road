@@ -58,6 +58,8 @@ export class Renderer {
   private base: Uint32Array;
   private backdrop: Backdrop;
   private world: World;
+  /** The tree at the slice's edge (its trunk is shaded round), if any. */
+  private tree: { x: number; r: number } | null = null;
   private lutR = new Uint16Array(512);
   private lutG = new Uint16Array(512);
   private lutB = new Uint16Array(512);
@@ -187,7 +189,25 @@ export class Renderer {
       case SANDY: c = sampleRamp(PAL.sandy, tone); break;
       case LIME: c = sampleRamp(PAL.lime, tone); break;
       case ROCK: c = sampleRamp(PAL.rock, tone); break;
-      case WOOD: c = sampleRamp(PAL.wood, tone); break;
+      case WOOD: {
+        c = sampleRamp(PAL.wood, tone);
+        const t = this.tree;
+        const g = w.ground[x]!;
+        if (t && y < g) {
+          // The trunk above the ground is a column, not a slab: lit on the side
+          // toward the light, falling off round to the shadowed side, with moss
+          // on the cool side near its foot.
+          const above = g - y;
+          const r = t.r + (above < 40 ? (40 - above) * 0.7 : 0);
+          const u = clamp((x - t.x) / r, -1, 1);
+          const nz = Math.sqrt(1 - u * u);
+          const lit = 0.42 + 0.78 * Math.max(0, -0.45 * u + 0.89 * nz);
+          c = [c[0] * lit, c[1] * lit, c[2] * lit];
+          const moss = clamp((u - 0.25) * 1.6, 0, 1) * clamp(1 - above / 120, 0, 1) * (0.5 + 0.5 * Math.sin(y * 0.21 + x * 0.05));
+          if (moss > 0.05) c = mixRGB(c, [86, 104, 52], moss * 0.55);
+        }
+        break;
+      }
       case SAND: {
         // Excavated soil dries paler than the face it came from, and looks grainier.
         const src = soilRamp(w.tint[i]! & 0x3f);
@@ -908,6 +928,26 @@ export class Renderer {
     for (const f of sim.eco.fallers) {
       if (f.x < view.x0 - 4 || f.x > view.x1 + 4 || f.y < view.y0 - 4 || f.y > view.y1 + 4) continue;
       const l = this.lightAt(f.x, Math.max(f.y, 0));
+      if (f.samara) {
+        // A samara: the seed and its papery wing, turning as it comes down.
+        const look = seedLook(f.tone);
+        const c = look.col;
+        const spin = f.samara === 'maple' ? f.t * 0.45 : Math.sin(f.t * 0.07 + f.tone) * 1.2;
+        ctx.save();
+        ctx.translate(f.x, f.y);
+        ctx.rotate(spin);
+        ctx.fillStyle = `rgba(${(c[0] * l[0]) | 0},${(c[1] * l[1]) | 0},${(c[2] * l[2]) | 0},0.85)`;
+        ctx.beginPath();
+        if (f.samara === 'maple') ctx.ellipse(1.6, 0, 2.6, 0.9 + Math.abs(Math.cos(spin)) * 0.3, 0, 0, Math.PI * 2);
+        else ctx.ellipse(0, 0, 1.6, 1.6 * (0.4 + 0.6 * Math.abs(Math.cos(spin * 0.7))), 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgb(${(c[0] * l[0] * 0.55) | 0},${(c[1] * l[1] * 0.5) | 0},${(c[2] * l[2] * 0.45) | 0})`;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 0.6, 0.45, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        continue;
+      }
       if (f.fruit) {
         const c = fruitColor(f.tone);
         ctx.fillStyle = `rgb(${(c[0] * l[0]) | 0},${(c[1] * l[1]) | 0},${(c[2] * l[2]) | 0})`;
@@ -937,6 +977,10 @@ export class Renderer {
 
   /** speed: sim time per real time (0 when paused). */
   render(sim: Sim, cam: Camera, dt: number, speed = 1, selected: Ant | null = null): void {
+    if (this.tree !== sim.tree) {
+      this.tree = sim.tree;
+      this.world.dirtyAll = true;
+    }
     this.time += dt;
     this.lastDt = dt;
     const w = this.world;
@@ -981,6 +1025,11 @@ export class Renderer {
     this.applyLight(lr);
     this.wctx.putImageData(this.img, 0, 0, vr.x0, vr.y0, vr.x1 - vr.x0 + 1, vr.y1 - vr.y0 + 1);
 
+    // The tree beyond the glass: its boughs and their leaves through the year.
+    this.backdrop.tree = sim.tree;
+    this.backdrop.treeKind = sim.eco.treeKind ?? 'elm';
+    this.backdrop.leafCover = sim.eco.leafCover(doy);
+    this.backdrop.autumn = clamp((doy - 262) / 40, 0, 1);
     this.backdrop.draw(solar, this.time, w.w, w.ground, sim.weather.rain, sim.cal.month(doy), sim.snow, sim.gust());
 
     const ctx = this.ctx;

@@ -274,6 +274,10 @@ function upgrade(sim: Sim): void {
   cz.toadLast ??= 0;
   cz.toadNights ??= 0;
   cz.toadKills ??= 0;
+  // Saves from before the tree had a kind and a seed season.
+  const eco = sim.eco as unknown as { treeKind?: string; samaras?: number };
+  eco.treeKind ??= sim.site === 'limestone' || sim.site === 'vineyard' ? 'maple' : 'elm';
+  eco.samaras ??= 0;
   const oc = sim as unknown as { carcasses?: Carcasses };
   oc.carcasses ??= new Carcasses();
   // Saves from before carcasses came apart in parts.

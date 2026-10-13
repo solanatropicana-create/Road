@@ -101,6 +101,8 @@ const SPAN = 256 / KINDS;
 
 /** Colour and half-size (mm) of a seed of this tone. */
 export const seedLook = (tone: number): { col: RGB; rx: number; ry: number } => {
+  // A samara: a papery wing round the seed, pale straw (elm) to rosy tan (maple).
+  if (tone >= SAMARA_TONE[0]) return { col: mixRGB([196, 182, 128], [182, 132, 98], (tone - 240) / 15), rx: 1.5, ry: 1.05 };
   const kind = Math.min(KINDS - 1, Math.floor(tone / SPAN));
   const t = (tone - kind * SPAN) / SPAN;
   const [rx, ry] = SEED_SIZE[kind]!;
@@ -113,8 +115,14 @@ export const SEED_TONE: Record<string, [number, number]> = {
   clover: [52, 101],
   purse: [103, 152],
   stipa: [154, 203],
-  erodium: [205, 255],
+  erodium: [205, 239],
 };
+
+/**
+ * Tone band for tree seed (elm or maple samaras): the top of the stork's
+ * bill band, drawn as a papery wing round the seed (see seedLook).
+ */
+export const SAMARA_TONE: [number, number] = [240, 255];
 
 /** Colour of fallen soft fruit by its tone: 0–99 sloe, 100–199 grape (or old pulp), 200+ rose hip. */
 export const fruitColor = (tone: number): RGB =>
