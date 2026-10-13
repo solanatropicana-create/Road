@@ -286,6 +286,10 @@ Hedef: oyunu açıp izleyen birinin keyif alması. Olgun kolonilerden (node'da �
   - Gömülenler toprağın altında soluk silüet ve üzerlerinde nabız halkası olarak görünüyor. Yakındaki göçük ekranı hafifçe sarsıyor.
   - Ot kökü ağı uzaktan daha sakin. Kar kesiti artık bir kar örtüsü: üstte parlak, tabana doğru mavimsi, ayrı yağışların katmanlarıyla.
   - Evlilik uçuşu açılışı tüm kesit yerine çayırı ve sürüyü çerçeveliyor.
+  - Atmosfer: açık sabah ve akşamlarda otların arasından süzülen hafif ışık huzmeleri; ilkbahar ve sonbahar sabahlarında alçak zemin sisi; mayıs-haziranda rüzgârlı günlerde süzülen karahindiba tohumları; haziran-temmuz gecelerinde çayırın üstünde yanıp sönen ateş böcekleri (*Lamprohiza* erkekleri).
+  - Belgeselde kenarlarda hafif vinyet; her yeni çekimin altyazısı yumuşakça beliriyor. Kuruluş montajında kamera, yavru yığını büyüdükçe kraliçeye yaklaşıyor.
+  - Odalara derinlik: duvara yakın arka duvar biraz daha koyu.
+  - X sahnenin fotoğrafını koloni adı ve tarihle kaydediyor (artifact görüntüleyicisinde indirme izniyle).
 - **Kullanım kolaylığı.**
   - J son olaya atlıyor, Q kraliçeye gidiyor, ok tuşları ve WASD kaydırıyor, Esc belgeselden de çıkıyor.
   - Yeri olan bildirime tıklayınca oraya gidiliyor.
