@@ -110,7 +110,7 @@ export class UI {
   private tab: Tab = 'colony';
   /** Journal lines written while the Notes tab was out of sight. */
   private unread = false;
-  private toastQueue: { html: string; ms: number }[] = [];
+  private toastQueue: { html: string; ms: number; loc?: { x: number; y: number } }[] = [];
   private toastShowing = false;
   private milestone = 0;
   private notedChambers = new Set<number>();
@@ -712,8 +712,8 @@ export class UI {
    * come while one is showing wait their turn (the oldest are dropped when
    * many arrive at once); everything is in the journal anyway.
    */
-  toast(html: string, ms = 5200): void {
-    this.toastQueue.push({ html, ms });
+  toast(html: string, ms = 5200, loc?: { x: number; y: number }): void {
+    this.toastQueue.push({ html, ms, loc });
     while (this.toastQueue.length > 3) this.toastQueue.shift();
     if (!this.toastShowing) this.nextToast();
   }
@@ -732,6 +732,13 @@ export class UI {
     const ms = this.toastQueue.length ? Math.min(item.ms, 3400) : item.ms;
     const el = h('div', 'toast', item.html);
     el.style.animationDuration = `${ms / 1000}s`;
+    // A line with a place on it: click it to go there.
+    const loc = item.loc;
+    if (loc) {
+      el.classList.add('go');
+      el.title = t('toastGo');
+      el.onclick = () => this.lookAt(loc.x, loc.y);
+    }
     box.appendChild(el);
     setTimeout(() => this.nextToast(), ms);
   }
@@ -795,7 +802,7 @@ export class UI {
       this.unread = true;
       this.els['notes-dot']?.classList.add('on');
     } else this.renderNotes();
-    if (opts.toast) this.toast(this.entryText({ at: '', key, vars }));
+    if (opts.toast) this.toast(this.entryText({ at: '', key, vars }), 5200, opts.loc);
   }
 
   /** The last n journal lines as plain text (for tests and the play-test harness). */
@@ -1614,7 +1621,13 @@ export class UI {
       body = t('broodSpots', { n, s: c.floor.length });
     }
     if (c.kind === 'rest') body = t('restBody');
-    tip.innerHTML = `<b>${t(`ch_${c.kind}`)}</b> · ${t('cmDown', { d: depthCm(c, w.ground) })}<br>${body}<div class="fact">${t(`fact_${c.kind}`)}</div>`;
+    // How its roof is holding: the soil, the span, the wet, the shoring (see Ground).
+    const g = game.sim.ground;
+    const strain = g.strain[c.id] ?? 0;
+    const roof = strain >= 0.15
+      ? `<div class="warnline">${t('roofStrain', { p: Math.round(Math.min(1, strain) * 100) })}${g.shore[c.id] ? ' · ' + t('roofShored', { p: Math.round(g.shore[c.id]! * 100) }) : ''}</div>`
+      : '';
+    tip.innerHTML = `<b>${t(`ch_${c.kind}`)}</b> · ${t('cmDown', { d: depthCm(c, w.ground) })}<br>${body}${roof}<div class="fact">${t(`fact_${c.kind}`)}</div>`;
     tip.style.display = 'block';
     tip.style.left = `${Math.min(this.pointer.x + 14, innerWidth - 260)}px`;
     tip.style.top = `${this.pointer.y + 14}px`;
