@@ -536,9 +536,18 @@ export class UI {
         <button data-mode="watch" class="${this.mode === 'watch' ? 'on' : ''}">${t('modeWatch')}</button><button data-mode="guide" class="${this.mode === 'guide' ? 'on' : ''}">${t('modeGuide')}</button></div></div>
       <div class="row langrow"><label>${t('language')}</label><div class="seg" id="lang">
         <button data-lang="en" class="${lang === 'en' ? 'on' : ''}">English</button><button data-lang="tr" class="${lang === 'tr' ? 'on' : ''}">Türkçe</button></div></div>
+      <div class="row langrow"><label>${t('music')}</label><div class="seg" id="musicseg">
+        <button data-music="on" class="${this.game.sound.music ? 'on' : ''}">${t('on')}</button><button data-music="off" class="${this.game.sound.music ? '' : 'on'}">${t('off')}</button></div></div>
       <button class="btn" id="new-colony">${t('newColony')}</button>
       <div class="perf" id="perf"></div>`;
     r.appendChild(keys);
+    keys.querySelectorAll<HTMLElement>('#musicseg [data-music]').forEach((b) => {
+      b.onclick = () => {
+        const on = b.dataset.music === 'on';
+        this.game.sound.setMusic(on);
+        keys.querySelectorAll<HTMLElement>('#musicseg [data-music]').forEach((o) => o.classList.toggle('on', o === b));
+      };
+    });
     keys.querySelectorAll<HTMLElement>('#modeseg [data-mode]').forEach((b) => {
       b.onclick = () => {
         this.setMode(b.dataset.mode as Mode, true);

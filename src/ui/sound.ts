@@ -3,6 +3,13 @@ import { clamp } from '../util/math';
 import { Task } from '../sim/types';
 
 const KEY = 'underfoot.sound';
+const MUSIC_KEY = 'underfoot.music';
+
+/** Pentatonic scales (semitones above the root): open by day, minor at night. */
+const DAY_SCALE = [0, 2, 4, 7, 9];
+const NIGHT_SCALE = [0, 3, 5, 7, 10];
+/** D3. */
+const ROOT_HZ = 146.83;
 
 /**
  * The slice's sound, made on the fly (no recordings): wind in the grass,
@@ -16,6 +23,11 @@ const KEY = 'underfoot.sound';
  */
 export class Soundscape {
   on = true;
+  /** The soft generative music under the soundscape (its own switch). */
+  music = true;
+  private pad!: GainNode;
+  private nextChord = 0;
+  private voices: { osc: OscillatorNode[]; gain: GainNode }[] = [];
   private ctx: AudioContext | null = null;
   private master!: GainNode;
   private earth!: BiquadFilterNode;
@@ -32,6 +44,7 @@ export class Soundscape {
   constructor() {
     try {
       this.on = localStorage.getItem(KEY) !== 'off';
+      this.music = localStorage.getItem(MUSIC_KEY) !== 'off';
     } catch {
       // storage unavailable: keep the default
     }
@@ -93,7 +106,71 @@ export class Soundscape {
       src.connect(lp).connect(gain).connect(this.master);
       this.room = { gain };
     }
+    // The music: a few soft voices through a warm low-pass, never above a murmur.
+    {
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.value = 1100;
+      lp.Q.value = 0.3;
+      this.pad = ctx.createGain();
+      this.pad.gain.value = 0;
+      this.pad.connect(lp).connect(this.master);
+    }
     this.master.gain.setTargetAtTime(0.9, ctx.currentTime, 1.2);
+  }
+
+  setMusic(on: boolean): void {
+    this.music = on;
+    try {
+      localStorage.setItem(MUSIC_KEY, on ? 'on' : 'off');
+    } catch {
+      // not remembered
+    }
+  }
+
+  /** A new chord: each voice glides in slowly while the old one fades (long, overlapping swells). */
+  private chord(now: number, night: boolean, below: number, winter: boolean): void {
+    const ctx = this.ctx!;
+    const scale = night ? NIGHT_SCALE : DAY_SCALE;
+    // Fade out what is sounding.
+    for (const v of this.voices) {
+      v.gain.gain.cancelScheduledValues(now);
+      v.gain.gain.setValueAtTime(v.gain.gain.value, now);
+      v.gain.gain.linearRampToValueAtTime(0, now + 7);
+      for (const o of v.osc) o.stop(now + 7.5);
+    }
+    this.voices = [];
+    // Below ground an octave lower; in winter fewer voices.
+    const octave = below > 0.5 ? 0.5 : 1;
+    const n = winter ? 2 : 3;
+    const used = new Set<number>();
+    for (let k = 0; k < n; k++) {
+      let deg = Math.floor(Math.random() * scale.length);
+      while (used.has(deg)) deg = (deg + 1) % scale.length;
+      used.add(deg);
+      const up = k === n - 1 && Math.random() < 0.5 ? 12 : 0;
+      const hz = ROOT_HZ * octave * Math.pow(2, (scale[deg]! + up) / 12);
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(0.16 / n, now + 6 + Math.random() * 3);
+      const pan = ctx.createStereoPanner();
+      pan.pan.value = (k - (n - 1) / 2) * 0.5;
+      const osc: OscillatorNode[] = [];
+      // Two slightly detuned partials make each voice breathe.
+      for (const [type, det, lvl] of [['sine', -4, 1], ['triangle', 5, 0.35]] as const) {
+        const o = ctx.createOscillator();
+        o.type = type;
+        o.frequency.value = hz;
+        o.detune.value = det;
+        const g = ctx.createGain();
+        g.gain.value = lvl;
+        o.connect(g).connect(gain);
+        o.start(now);
+        osc.push(o);
+      }
+      gain.connect(pan).connect(this.pad);
+      this.voices.push({ osc, gain });
+    }
   }
 
   toggle(): boolean {
@@ -197,6 +274,12 @@ export class Soundscape {
     const rain = sim.weather.snowing ? 0 : sim.weather.rain;
     this.rain.gain.gain.setTargetAtTime(paused ? 0 : clamp(rain * 0.45, 0, 0.7), now, 0.8);
     this.room.gain.gain.setTargetAtTime(paused ? 0 : below * 0.18, now, 0.6);
+    this.pad.gain.setTargetAtTime(this.music && sim.phase !== 'choose' ? 0.2 : 0, now, 2);
+    if (this.music && now > this.nextChord) {
+      const day0 = sim.cal.daylight(sim.dayT, sim.doy);
+      this.chord(now, day0 < 0.2, below, sim.dormant || sim.snow > 2);
+      this.nextChord = now + 14 + Math.random() * 10;
+    }
     if (paused) return;
     // Thunder after a flash, a moment later and long.
     if (sim.flash > 0 && performance.now() - this.lastFlash > 1500) {
