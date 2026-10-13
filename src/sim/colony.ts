@@ -473,6 +473,10 @@ export class Colony {
       const upkeep = adults * (DAY_TICKS / TUNING.adultSeedTicks) * metabolism(this.nestTemp);
       if (this.income * 0.8 < upkeep) return;
       if (this.stored + this.reserve + this.income * weeksLeft * 0.5 < heads * 4) return;
+      // From mid-July the harvest still to come is the winter's: late brood
+      // is paid for out of the stores in hand (or the autumn's newcomers eat
+      // the colony's winter).
+      if (doy > 185 && this.stored + this.reserve < heads * 2.5) return;
     }
     // An established colony stops raising brood at the end of summer (what is
     // laid now would only eat into the winter store); a young one keeps going.

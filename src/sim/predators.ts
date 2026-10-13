@@ -24,6 +24,34 @@ function ground(sim: Sim, cr: Critters, x: number): number {
   return cr.top(sim, clamp(Math.round(x), 2, sim.world.w - 3));
 }
 
+/**
+ * The flattest stretch of ground between x0 and x1 (a toad sits on the level,
+ * not astride a spoil heap).
+ */
+function flatSpot(sim: Sim, cr: Critters, x0: number, x1: number): number {
+  const w = sim.world;
+  const lo = clamp(Math.round(Math.min(x0, x1)), 40, w.w - 41);
+  const hi = clamp(Math.round(Math.max(x0, x1)), 40, w.w - 41);
+  let best = lo;
+  let bs = Infinity;
+  for (let x = lo; x <= hi; x += 3) {
+    let y0 = Infinity;
+    let y1 = -Infinity;
+    for (let d = -26; d <= 26; d += 4) {
+      const y = cr.top(sim, x + d);
+      y0 = Math.min(y0, y);
+      y1 = Math.max(y1, y);
+    }
+    // Level ground, near the trail.
+    const sc = (y1 - y0) + Math.abs(x - x0) * 0.05;
+    if (sc < bs) {
+      bs = sc;
+      best = x;
+    }
+  }
+  return best;
+}
+
 /** A worker out on the open ground near (x, y). */
 function exposed(sim: Sim, a: Ant): boolean {
   const w = sim.world;
@@ -42,15 +70,16 @@ export function spawnPredators(sim: Sim, cr: Critters): void {
   const wet = !sim.raining && sim.snow < 5;
   // A green toad at dusk, in the warm months; once it knows the nest it comes back.
   const dusk = light < 0.25 && sim.dayT > 0.5;
-  const known = cr.toadLast > 0 && sim.tick - cr.toadLast < DAY_TICKS * 3;
-  if (dusk && wet && air > 11 && doy > 105 && doy < 265 && cr.count('toad') === 0 && (col.adults >= 25 || known)) {
+  // (A big colony's evening traffic is what draws a toad; a small one is not worth its while.)
+  const known = cr.toadLast > 0 && sim.tick - cr.toadLast < DAY_TICKS * 3 && col.adults >= 50;
+  if (dusk && wet && air > 11 && doy > 105 && doy < 265 && cr.count('toad') === 0 && (col.adults >= 80 || known)) {
     const rained = sim.tick - sim.lastRain < DAY_TICKS;
-    if (rng.chance(known ? 0.06 : rained ? 0.012 : 0.005)) {
+    if (rng.chance(known ? 0.03 : rained ? 0.012 : 0.005)) {
       const side = rng.chance(0.5) ? -1 : 1;
       const gate = nest.gateNear(nest.foundX + side * 50);
       const x = side < 0 ? 6 : w.w - 7;
-      const spot = clamp(gate + side * rng.int(16, 34), 20, w.w - 21);
-      cr.add({ kind: 'toad', x, y: ground(sim, cr, x), dir: -side, state: 0, px: spot, life: rng.int(12, 30), timer: TICK_HZ, tone: rng.int(0, 255) });
+      const spot = flatSpot(sim, cr, gate + side * 18, gate + side * 70);
+      cr.add({ kind: 'toad', x, y: ground(sim, cr, x), dir: -side, state: 0, px: spot, life: rng.int(6, 16), timer: TICK_HZ, tone: rng.int(0, 255) });
       if (known) {
         cr.toadNights++;
         sim.noteYearly('toadBack', { x: spot, y: ground(sim, cr, spot) });
@@ -121,7 +150,9 @@ export function toad(sim: Sim, c: Critter, cr: Critters): boolean {
     if (--c.timer <= 0) hop(c.dir);
     return true;
   }
-  // Sitting: a worker within reach of the tongue in front of it is flicked up.
+  // Sitting (on the ground under its middle: spoil may pile up around it),
+  // a worker within reach of the tongue in front of it is flicked up.
+  if (c.t % 15 === 0) c.y = ground(sim, cr, c.x + 4 * c.dir);
   if (--c.timer > 0) return true;
   c.timer = rng.int(Math.round(TICK_HZ * 0.3), Math.round(TICK_HZ * 0.6));
   let best: Ant | null = null;
