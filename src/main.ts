@@ -205,6 +205,8 @@ export class Game {
   }
 
   private frame(now: number): void {
+    // The next frame is asked for first: a slip in one frame's drawing must never stop the colony.
+    requestAnimationFrame((t) => this.frame(t));
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
     // Time stands still until the queen lands, so a seed always starts from the same meadow.
@@ -247,7 +249,6 @@ export class Game {
     // Autosave every few in-game hours (not more than every few seconds), and at least once a minute.
     const due = this.sim.tick - this.lastSaveTick >= DAY_TICKS / 6 && now - this.lastSave > 4000;
     if (due || now - this.lastSave > 60000) void this.save();
-    requestAnimationFrame((t) => this.frame(t));
   }
 }
 

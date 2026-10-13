@@ -1,4 +1,5 @@
 import { World } from '../world/world';
+import { PACKED } from '../world/physics';
 import {
   EMPTY, HUMUS, LOAM, CLAY, SUBSOIL, GRAVEL, STONE, ROOT, SAND, WATER, STEM, LEAF, FLOWER,
   SEED, REFUSE, LITTER, FRUIT, BEDROCK, SOLID, SANDY, LIME, ROCK, WOOD, TWIG, BERRY, PREY,
@@ -216,7 +217,9 @@ export class Renderer {
         // Excavated soil dries paler than the face it came from, and looks grainier.
         const src = soilRamp(w.tint[i]! & 0x3f);
         const grain = ((i * 2654435761) >>> 28) / 16;
-        c = mixRGB(sampleRamp(src, tone * 0.7 + grain * 0.3), [230, 215, 190], 0.14);
+        // Loose fill inside the nest (a fall, spoil not yet carried out) stands out paler
+        // still against the packed face of the walls.
+        c = mixRGB(sampleRamp(src, tone * 0.7 + grain * 0.3), [230, 215, 190], w.bg[i] === 1 && !(w.tint[i]! & PACKED) ? 0.3 : 0.14);
         break;
       }
       case SEED:
@@ -496,7 +499,8 @@ export class Renderer {
     for (const b of list) {
       if (b.x < view.x0 - 4 || b.x > view.x1 + 4 || b.y < view.y0 - 4 || b.y > view.y1 + 4) continue;
       if (!this.known(sim, b.x, b.y)) continue;
-      const k = (ph + b.id * 0.37) % 1;
+      // (Brood are listed under negative ids: keep the phase in 0..1.)
+      const k = (((ph + b.id * 0.37) % 1) + 1) % 1;
       ctx.strokeStyle = `rgba(244,206,128,${0.75 * (1 - k)})`;
       ctx.beginPath();
       ctx.arc(b.x + 0.5, b.y + 0.5, 1.2 + k * 3.2, 0, Math.PI * 2);
@@ -547,10 +551,20 @@ export class Renderer {
       }
     }
     if (!worst) return;
-    ctx.strokeStyle = `rgba(22,14,9,${0.3 + 0.6 * Math.min(1, worst)})`;
-    ctx.lineWidth = Math.max(0.25, 1.1 / z);
+    // A fissure: its lit lip a hair below and to the side, then the dark split itself.
+    const a = 0.35 + 0.6 * Math.min(1, worst);
+    ctx.save();
     ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.translate(0.22, 0.22);
+    ctx.strokeStyle = `rgba(214,184,140,${a * 0.55})`;
+    ctx.lineWidth = Math.max(0.3, 1.4 / z);
     ctx.stroke(path);
+    ctx.translate(-0.22, -0.22);
+    ctx.strokeStyle = `rgba(10,6,4,${a})`;
+    ctx.lineWidth = Math.max(0.35, 1.8 / z);
+    ctx.stroke(path);
+    ctx.restore();
   }
 
   private drawPlan(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }, z: number, dt: number): void {

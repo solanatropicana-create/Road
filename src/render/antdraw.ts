@@ -437,6 +437,8 @@ export class AntPainter {
       const v = this.vis.get(a);
       if (!v) continue;
       if (v.x < view.x0 - 8 || v.x > view.x1 + 8 || v.y < view.y0 - 8 || v.y > view.y1 + 8) continue;
+      // Buried under a fall: a faint shape through the soil.
+      ctx.globalAlpha = a.underFall && SOLID[this.world.mat[a.y * this.world.w + a.x]!] ? 0.32 : 1;
       const body = bodyOf(a.caste);
       const k = body.scale * a.size;
       const l = light(v.x, v.y);
@@ -475,6 +477,7 @@ export class AntPainter {
       this.meeting = false;
       ctx.restore();
     }
+    ctx.globalAlpha = 1;
   }
 
   /** A pair of brackets around the followed ant, like a field-guide callout (z: screen pixels per body unit). */
@@ -1082,6 +1085,8 @@ export class AntPainter {
     for (const b of brood) {
       if (b.carried) continue;
       if (b.x < view.x0 - 4 || b.x > view.x1 + 4 || b.y < view.y0 - 4 || b.y > view.y1 + 4) continue;
+      // Under soil (a fall, a slide): only a faint shape shows through.
+      ctx.globalAlpha = SOLID[this.world.mat[b.y * this.world.w + b.x]!] ? 0.3 : 1;
       const l = light(b.x, b.y);
       const cx = b.x + 0.5;
       const fy = b.y + 1;
@@ -1144,6 +1149,7 @@ export class AntPainter {
         ctx.fill();
       }
     }
+    ctx.globalAlpha = 1;
   }
 
   drawCorpses(ctx: CanvasRenderingContext2D, corpses: Corpse[], z: number, light: Light, view: { x0: number; y0: number; x1: number; y1: number }): void {
