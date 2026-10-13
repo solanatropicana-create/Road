@@ -569,8 +569,15 @@ export class Critters {
       c.vy = -c.vy + rng.range(-0.5, 0.5);
       return true;
     }
-    c.body.pop();
+    const tail = c.body.pop()!;
     c.body.unshift(n);
+    // It leaves an open burrow behind it here and there, lined with slime and
+    // casts (never right up to the surface): ants take these as shortcuts.
+    const tx = tail % w.w;
+    const ty = (tail / w.w) | 0;
+    if (tail !== n && SOIL[w.mat[tail]!] && !w.plan[tail] && ty > w.ground[tx]! + 6 && rng.chance(0.1)) {
+      w.set(tail, EMPTY, Math.max(0, w.tone[tail]! - 20), w.mat[tail]);
+    }
     // Its casts darken the soil a little where it passed (never to black).
     const old = w.tone[n]!;
     if (old > 50 && rng.chance(0.5)) {

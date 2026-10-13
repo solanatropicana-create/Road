@@ -121,7 +121,7 @@ if (sk) {
 await page.waitForFunction(() => window.game.sim.phase !== 'choose', null, { timeout: 30000 });
 report.push(await stage('founding', SECS));
 // Through the montage to the first workers, then watch.
-for (let k = 0; k < 80 && (await page.evaluate(() => window.game.sim.phase)) === 'founding'; k++) await page.evaluate(() => window.game.advance(900));
+for (let k = 0; k < 160 && (await page.evaluate(() => window.game.sim.phase)) === 'founding'; k++) await page.evaluate(() => window.game.advance(900));
 await page.evaluate(() => window.game.cine.montage && window.game.cine.skip());
 await page.waitForTimeout(1500);
 report.push(await stage('first-workers', SECS));

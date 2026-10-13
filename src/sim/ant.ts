@@ -77,6 +77,11 @@ export class Ant {
   private dumpDir = 1;
   /** The carcass this worker is helping to drag, and one it found and is fetching help for. */
   haul: Carcass | null = null;
+  /** Gripping a carcass to cut it up: the part being chewed off (see PARTS), or -1. */
+  cutPart = -1;
+  /** A part cut off a carcass in the jaws: what it is (Look) and how many loads of food it holds. */
+  carryPart = 0;
+  carryLoad = 1;
   recruiting: Carcass | null = null;
   /** Called out to a carcass (or leading the others back to the one it found). */
   bound: Carcass | null = null;
@@ -160,6 +165,8 @@ export class Ant {
   returning = false;
   /** Ticks spent cut off from the rest of the nest (walled in by stores, a collapse). */
   private pocketT = 0;
+  /** The founding queen: cells of soil gathered into the pellet she will carry up. */
+  private pellet = 0;
   /** Where the forager came out of the nest (the walk out is measured from here). */
   private exitX = 0;
   /** Where and when a searching forager last made headway (to notice when it is stuck). */
@@ -735,6 +742,8 @@ export class Ant {
         // Stored food in the way: she takes it along, or it goes into the crops.
         if (this.carry === Carry.None) {
           this.carry = carryOf(m);
+          this.carryPart = 0;
+          this.carryLoad = 1;
           this.carryTone = w.tone[n]!;
         } else sim.colony.reserve += rations(carryOf(m));
         w.set(n, EMPTY, w.tone[n], w.tint[n]);
@@ -764,6 +773,8 @@ export class Ant {
           this.dropDist = 0;
         } else {
           this.carry = carryOf(m);
+          this.carryPart = 0;
+          this.carryLoad = 1;
           this.task = Task.Forage;
         }
         return;
@@ -773,6 +784,8 @@ export class Ant {
       this.carryTone = w.tone[n]!;
       this.carryTint = src;
       w.set(n, EMPTY, w.tone[n], w.bg[n] ? src : 0);
+      // The tip of a gallery: the scent there carries the digging on.
+      sim.nest.dug(n);
       if (m === LITTER) {
         // Leaf litter cleared from the mouth goes to the refuse heap, not the spoil mound.
         this.carry = Carry.Refuse;
@@ -782,8 +795,20 @@ export class Ant {
       }
       sim.dust(n, src);
       if (this.caste === 'queen') {
-        // The founding queen shoves spoil up and out rather than carrying it.
-        sim.spoil(this.carryTint, this.carryTone);
+        // The founding queen carries the shaft's soil up and out in her jaws,
+        // a big pellet at a time; the chamber's she packs into the shaft
+        // above her as she seals herself in.
+        if (w.zone[n]) return;
+        if (++this.pellet >= 4) {
+          this.pellet = 0;
+          this.carry = Carry.Soil;
+          this.offLoad = false;
+          this.fromGate = sim.nest.foundX;
+          this.dumpDir = sim.rng.chance(0.5) ? -1 : 1;
+          this.dropDist = sim.rng.int(4, 11);
+          this.stuck = 0;
+          this.trip = 0;
+        }
       } else {
         this.carry = Carry.Soil;
         this.dropDist = 0;
@@ -808,6 +833,8 @@ export class Ant {
         this.search = 0;
       } else if (m === FRUIT || m === PREY) {
         this.carry = carryOf(m);
+        this.carryPart = 0;
+        this.carryLoad = 1;
         if (m === PREY) sim.noteYearly('preyIn', this);
         this.carryTone = w.tone[n]!;
         w.set(n, EMPTY, w.tone[n], w.tint[n]);
@@ -878,7 +905,8 @@ export class Ant {
     const maxHeap = Math.max(1.5, rim - away * 0.12);
     // The chaff pile stays a low drift too (wind takes most of it; see Sim.settleSpoil).
     const cap = refuse ? Math.min(maxHeap, TUNING.middenMax) : maxHeap;
-    if (!this.offLoad && heap > cap && away >= this.dropDist && this.stuck < 200 && this.x > 4 && this.x < w.w - 5) this.dropDist = away + 3;
+    // (A founding queen heaps hers into a little cone right by her hole.)
+    if (!this.offLoad && this.caste !== 'queen' && heap > cap && away >= this.dropDist && this.stuck < 200 && this.x > 4 && this.x < w.w - 5) this.dropDist = away + 3;
     const canDrop = !w.plan[i] && this.grounded(sim, i) && Math.sign(this.x - ex) !== -this.dumpDir;
     if ((canDrop && (away >= this.dropDist || this.stuck > 90)) || (!w.plan[i] && this.stuck > 200)) {
       // Let go: the load becomes a grain on the ground here.
@@ -893,6 +921,13 @@ export class Ant {
         sim.dust(i, this.carryTint & 0x3f);
       } else {
         w.set(i, SAND, this.carryTone, this.carryTint);
+        // The queen's pellet is four grains; they tumble into a little heap.
+        if (this.caste === 'queen') {
+          for (let k = 1; k <= 3; k++) {
+            const j = i - k * w.w;
+            if (w.mat[j] === EMPTY && w.bg[j] === 0 && !w.plan[j]) w.set(j, SAND, this.carryTone, this.carryTint);
+          }
+        }
       }
       this.carry = Carry.None;
       this.dropDist = 0;
@@ -1028,6 +1063,10 @@ export class Ant {
         } else {
           sim.colony.reserve += rations(this.carry);
         }
+        // A hind leg or a head is more than one piece's worth: the rest is shared out at once.
+        if (this.carry === Carry.Prey && this.carryLoad > 1) sim.colony.reserve += (this.carryLoad - 1) * rations(Carry.Prey);
+        this.carryLoad = 1;
+        this.carryPart = 0;
         this.carry = Carry.None;
         this.tapped = false;
         this.delivered++;
@@ -1091,9 +1130,11 @@ export class Ant {
       this.noCarcassUntil = sim.tick + TICK_HZ * 40;
     } else if (cc) {
       if (cc.reach(this)) {
-        // Too heavy for the finder alone: most go back for help first.
-        // (A small colony has nobody to spare at the gate: the finder cuts it up instead.)
-        if (cc.carriers.length === 0 && cc.weight > 1.5 && !cc.atGate && sim.colony.adults >= 18 && sim.rng.chance(0.65)) {
+        // Too heavy for the finder alone: back for help first; whoever finds it
+        // meanwhile holds on and waits. (A small colony has nobody to spare at
+        // the gate: the finder cuts it up instead.)
+        if (!this.bound && cc.carriers.length === 0 && cc.weight > 1.5 && !cc.atGate && sim.colony.adults >= 12 && sim.tick - cc.helpAt > TICK_HZ * 60) {
+          cc.helpAt = sim.tick;
           this.recruiting = cc;
           return;
         }
@@ -1358,6 +1399,8 @@ export class Ant {
         });
         if (cell >= 0) {
           this.carry = carryOf(w.mat[cell]!);
+          this.carryPart = 0;
+          this.carryLoad = 1;
           this.carryTone = w.tone[cell]!;
           w.set(cell, EMPTY, w.tone[cell], w.tint[cell]);
           nb.stolen++;
@@ -1680,6 +1723,8 @@ export class Ant {
         });
         if (cell >= 0) {
           this.carry = carryOf(w.mat[cell]!);
+          this.carryPart = 0;
+          this.carryLoad = 1;
           this.carryTone = w.tone[cell]!;
           this.returning = false;
           w.set(cell, EMPTY, w.tone[cell], w.tint[cell]);
@@ -1798,6 +1843,11 @@ export class Ant {
       return;
     }
     if (this.phase === 1) {
+      // A pellet of soil in her jaws: up the shaft with it and out past the rim.
+      if (this.carry === Carry.Soil) {
+        this.dump(sim, false);
+        return;
+      }
       const qc = sim.nest.queenChamber();
       if (qc && qc.ready && sim.nest.chamberAt(this.y * w.w + this.x) === qc) {
         this.phase = 2;

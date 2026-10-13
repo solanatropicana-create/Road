@@ -109,6 +109,7 @@ export class Camera {
       this.tx = this.follow.x;
       this.ty = this.follow.y;
     }
+    this.tzoom = clamp(this.tzoom, this.minZoom, this.maxZoom);
     const k = 1 - Math.exp(-dt * this.ease);
     this.zoom += (this.tzoom - this.zoom) * k;
     this.x += (this.tx - this.x) * k;

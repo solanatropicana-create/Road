@@ -6,24 +6,74 @@ import { Carry } from './types';
 
 export type CarcassKind = 'beetle' | 'hopper' | 'worm';
 
+/** What a severed part looks like in a worker's jaws. */
+export const Look = {
+  Chunk: 0,
+  Leg: 1,
+  HindLeg: 2,
+  Wing: 3,
+  Head: 4,
+  Thorax: 5,
+  Abdomen: 6,
+  Case: 7,
+  Segment: 8,
+} as const;
+export type LookKind = (typeof Look)[keyof typeof Look];
+
+/** One part a carcass comes apart into: a worker's load home. */
+export interface Part {
+  look: LookKind;
+  /** Food in it, in single-worker loads (pieces). */
+  load: number;
+  /** Seconds of one worker's chewing to sever it (a major chews faster). */
+  secs: number;
+  /** Where it joins the body, mm along the carcass from its middle, toward the head (as drawn alive). */
+  at: number;
+}
+
+const leg = (at: number, secs = 30, load = 1, look: LookKind = Look.Leg): Part => ({ look, load, secs, at });
+
 /**
- * Pieces a whole carcass cuts into (each one a single worker's load), the
- * strength it takes to drag it whole (workers), and its length in mm.
+ * The parts, in the order the workers cut them off: legs first, then wings,
+ * head and thorax; the last one (the trunk) is never cut, it is what is left
+ * to carry. Real Messor workers dismember an insect at the joints, where the
+ * cuticle is thin; the trunk goes down whole if it fits.
  */
-const SIZE: Record<CarcassKind, { pieces: number; strength: number; len: number }> = {
-  beetle: { pieces: 9, strength: 3, len: 10 },
-  hopper: { pieces: 16, strength: 5, len: 20 },
-  worm: { pieces: 16, strength: 6, len: 22 },
+export const PARTS: Record<CarcassKind, Part[]> = {
+  beetle: [
+    leg(3.8), leg(1.4), leg(-1.0), leg(3.4), leg(1.0), leg(-1.4),
+    { look: Look.Head, load: 1, secs: 50, at: 6 },
+    { look: Look.Thorax, load: 1, secs: 60, at: 3.1 },
+    { look: Look.Case, load: 1, secs: 0, at: -2.6 },
+  ],
+  hopper: [
+    leg(4.0), leg(2.0), leg(-0.6, 50, 2, Look.HindLeg), leg(4.4), leg(2.4), leg(1.0, 50, 2, Look.HindLeg),
+    { look: Look.Wing, load: 1, secs: 24, at: -5 },
+    { look: Look.Head, load: 2, secs: 60, at: 8 },
+    { look: Look.Thorax, load: 2, secs: 70, at: 2.5 },
+    { look: Look.Abdomen, load: 3, secs: 0, at: -6 },
+  ],
+  // An earthworm is bitten through into lengths, from the tail (which lies toward +x as drawn).
+  worm: Array.from({ length: 8 }, (_, k): Part => ({ look: Look.Segment, load: 2, secs: 40, at: 11 - (k + 0.5) * 2.75 })),
+};
+
+/** The strength it takes to drag one whole (workers; a major counts double) and its length in mm. */
+const SIZE: Record<CarcassKind, { strength: number; len: number }> = {
+  beetle: { strength: 3, len: 10 },
+  hopper: { strength: 5, len: 20 },
+  worm: { strength: 6, len: 22 },
 };
 
 /**
  * A dead insect or earthworm lying whole on the ground: food for many, too
  * heavy for one. The worker that finds it tries it, then goes back for help,
  * laying a strong trail and stirring up the foragers waiting at the gate.
- * Enough of them together drag it home, slowly, to the nearest gate, where
- * it is cut up and taken down. Too few hands, or stuck on a clod: they cut it
- * up where it lies and carry it home piece by piece. And if the neighbours'
- * workers get hold of it too, each side pulls toward its own nest.
+ * Enough of them together drag it home, slowly, to the nearest gate. There,
+ * too big for the door, it is taken apart: two workers to a joint, chewing
+ * through it, a leg, a wing, the head, until the trunk is light enough for
+ * one to take down. Stuck for good, or no help coming, they take it apart
+ * where it lies. And if the neighbours' workers get hold of it too, each side
+ * pulls toward its own nest.
  */
 export class Carcass {
   x: number;
@@ -37,9 +87,12 @@ export class Carcass {
   dir: number;
   /** Workers with a grip on it (ours and the neighbours'). */
   readonly carriers: Ant[] = [];
+  /** Parts already cut off (bit per part, see PARTS), and the chewing done on each. */
+  gone = 0;
+  prog: number[];
   /** Ticks with hands on it but going nowhere; past a while they start cutting it up. */
   stall = 0;
-  /** Ticks left of cutting the next piece off. */
+  /** Ticks until the gate traffic takes the next part down, when nobody is working on it. */
   cut = 0;
   /** Last net pull, -1..1 (the drawing leans it), and how far it has been dragged. */
   pull = 0;
@@ -47,6 +100,8 @@ export class Carcass {
   age = 0;
   /** It has reached one of our gates: it is being cut up for carrying down. */
   atGate = false;
+  /** When one of ours last went back for help with it (the others who find it hold on and wait). */
+  helpAt = -1e9;
 
   constructor(kind: CarcassKind, x: number, y: number, tone: number, dir: number) {
     this.kind = kind;
@@ -54,18 +109,32 @@ export class Carcass {
     this.y = y;
     this.tone = tone;
     this.dir = dir;
-    this.pieces = SIZE[kind].pieces;
+    this.prog = PARTS[kind].map(() => 0);
+    this.pieces = PARTS[kind].reduce((n, p) => n + p.load, 0);
     this.whole = this.pieces;
   }
 
-  /** Half its length now (it shrinks as pieces are cut off), mm. */
+  /** Half its length, mm (it loses parts, not length). */
   get half(): number {
-    return (SIZE[this.kind].len * (0.45 + 0.55 * (this.pieces / this.whole))) / 2;
+    return SIZE[this.kind].len / 2;
   }
 
-  /** Strength it takes to drag it (a major counts double): less as pieces are cut off. */
+  /** Strength it takes to drag it (a major counts double): less as parts are cut off. */
   get weight(): number {
     return SIZE[this.kind].strength * (0.35 + 0.65 * (this.pieces / this.whole));
+  }
+
+  /** Parts still on it. */
+  get left(): number {
+    let n = 0;
+    for (let p = 0; p < PARTS[this.kind].length; p++) if (!((this.gone >> p) & 1)) n++;
+    return n;
+  }
+
+  /** Where a part joins it, in world x. (Insects lie on their backs, head and tail swapped; worms as they lie.) */
+  partX(p: number): number {
+    const at = PARTS[this.kind][p]!.at;
+    return this.x + (this.kind === 'worm' ? at : -at) * this.dir;
   }
 
   /** Can this worker take hold of it from where it stands? */
@@ -75,7 +144,22 @@ export class Carcass {
 
   /** No room for another pair of jaws. */
   get full(): boolean {
-    return this.carriers.length >= Math.min(this.pieces, Math.ceil(this.weight) + 3);
+    return this.carriers.length >= Math.min(this.left * 2, Math.ceil(this.weight) + 3);
+  }
+
+  /** Bring an old save's carcass (pieces only) up to date: the parts its missing pieces were. */
+  settle(): void {
+    const parts = PARTS[this.kind];
+    this.prog ??= parts.map(() => 0);
+    this.helpAt ??= -1e9;
+    if (this.gone !== undefined) return;
+    this.gone = 0;
+    let have = parts.reduce((n, p) => n + p.load, 0);
+    for (let p = 0; p < parts.length - 1 && have > this.pieces; p++) {
+      this.gone |= 1 << p;
+      have -= parts[p]!.load;
+    }
+    this.pieces = have;
   }
 }
 
@@ -138,6 +222,7 @@ export class Carcasses {
   release(a: Ant): void {
     const c = a.haul;
     a.haul = null;
+    a.cutPart = -1;
     if (!c) return;
     const k = c.carriers.indexOf(a);
     if (k >= 0) c.carriers.splice(k, 1);
@@ -163,15 +248,23 @@ export class Carcasses {
     // Rain and cold send everyone in; carcasses lie a week or two before scavengers and rot take them.
     if (sim.forageWeather < 0.05) for (const a of [...c.carriers]) this.release(a);
     if (c.pieces <= 0) return false;
+    const trunk = PARTS[c.kind].length - 1;
     if (!c.carriers.length) {
       c.stall = 0;
-      // At the gate the traffic in and out takes the rest down piece by piece.
-      if (c.atGate && !sim.dormant && sim.forageWeather > 0.05 && sim.tick % (TICK_HZ * 3) === 0) {
-        c.pieces--;
-        sim.colony.reserve += 2;
+      // At the gate the traffic in and out takes the rest down, part by part.
+      if (c.atGate && !sim.dormant && sim.forageWeather > 0.05 && --c.cut <= 0) {
+        c.cut = TICK_HZ * 6;
+        let p = 0;
+        while ((c.gone >> p) & 1) p++;
+        this.sever(sim, c, p, null);
         return c.pieces > 0;
       }
       return c.age < DAY_TICKS * (sim.dormant ? 1 : 2.5);
+    }
+    // Only the trunk left, and light: one of them takes it home.
+    if (c.left === 1 && PARTS[c.kind][trunk]!.load <= 2) {
+      this.sever(sim, c, trunk, c.carriers[rng.int(0, c.carriers.length - 1)]!);
+      return false;
     }
     let ours = 0;
     let theirs = 0;
@@ -184,30 +277,22 @@ export class Carcasses {
       } else ours += s;
     }
     const gate = sim.nest.founded ? sim.nest.gateNear(c.x) : c.x;
-    // At one of our gates: cut it up, a piece for each worker to take down.
+    // At one of our gates: take it apart, a part for each worker to take down.
     if (!c.atGate && ours > 0 && Math.abs(c.x - gate) <= 5) {
       c.atGate = true;
       sim.noteOnce('teamCarry', { x: Math.round(c.x), y: c.y });
     }
-    // (A lone worker, or a stuck team, soon gives up waiting and cuts.)
-    if (c.atGate || c.stall > TICK_HZ * (c.carriers.length === 1 ? 6 : 15)) {
-      if (c.cut > 0) c.cut--;
-      else {
-        // Someone cuts a piece off and heads home with it.
-        const a = c.carriers[rng.int(0, c.carriers.length - 1)]!;
-        this.release(a);
-        a.carry = Carry.Prey;
-        a.carryTone = c.tone;
-        c.pieces--;
-        c.cut = c.atGate ? TICK_HZ * 1.5 : TICK_HZ * 3;
-        if (!c.atGate && !a.rival) sim.noteOnce('cutUp', { x: Math.round(c.x), y: c.y });
-        if (c.pieces <= 0) return false;
-      }
+    // Carrying it whole comes first. Only a team stuck for half a minute, or a
+    // lone finder nobody comes to help (in a colony too small to spare any, soon), starts cutting.
+    const alone = c.carriers.length === 1;
+    const patience = alone ? (sim.colony.adults < 18 ? 8 : 45) : 30;
+    if (c.atGate || c.stall > TICK_HZ * patience) {
+      if (!this.chew(sim, c)) return false;
       if (c.atGate) {
         this.place(sim, c, 0, 0);
         return true;
       }
-    }
+    } else for (const a of c.carriers) a.cutPart = -1;
     const total = ours + theirs;
     if (total < c.weight) {
       // Not enough of them yet: they tug and wait for help.
@@ -230,7 +315,7 @@ export class Carcasses {
       return true;
     }
     // Slow, and the stronger the team the quicker (a heavy load crawls).
-    const speed = (0.12 + 0.1 * Math.min(1.5, total / c.weight - 1)) * Math.min(1, (Math.abs(net) / total) * 1.5);
+    const speed = (0.06 + 0.06 * Math.min(1.5, total / c.weight - 1)) * Math.min(1, (Math.abs(net) / total) * 1.5);
     const nx = c.x + Math.sign(net) * speed;
     const ny = Carcasses.top(sim, nx);
     // A clod or a stone too high to drag it over: they stall and start cutting.
@@ -256,23 +341,96 @@ export class Carcasses {
     return true;
   }
 
-  /** Put the carriers round it: along both sides, each facing the way it pulls (or the carcass, while waiting). */
+  /**
+   * The workers on it chew at the joints: two to a joint, on the next parts
+   * in order (so a crowd works on several legs at once). A part chewed through
+   * goes home in the jaws of one who cut it. False once nothing is left.
+   */
+  private chew(sim: Sim, c: Carcass): boolean {
+    const parts = PARTS[c.kind];
+    const trunk = parts.length - 1;
+    if (c.left === 1) {
+      // Only the trunk: whoever has the best grip takes it.
+      this.sever(sim, c, trunk, c.carriers[sim.rng.int(0, c.carriers.length - 1)]!);
+      return false;
+    }
+    const crew = new Array<number>(parts.length).fill(0);
+    for (const a of c.carriers) {
+      if (a.cutPart >= 0 && ((c.gone >> a.cutPart) & 1 || a.cutPart >= trunk)) a.cutPart = -1;
+      if (a.cutPart >= 0) crew[a.cutPart]!++;
+    }
+    // The thorax holds everything else: it comes off last, once the rest is gone.
+    const open = (p: number): boolean => parts[p]!.look !== Look.Thorax || (c.gone & ((1 << p) - 1)) === (1 << p) - 1;
+    for (const a of c.carriers) {
+      if (a.cutPart >= 0) continue;
+      for (let p = 0; p < trunk; p++) {
+        if ((c.gone >> p) & 1 || crew[p]! >= 2 || !open(p)) continue;
+        a.cutPart = p;
+        crew[p]!++;
+        break;
+      }
+    }
+    // A major's big head and jaws cut much faster.
+    for (const a of c.carriers) if (a.cutPart >= 0) c.prog[a.cutPart]! += a.caste === 'soldier' ? 2.5 : 1;
+    for (let p = 0; p < trunk; p++) {
+      if ((c.gone >> p) & 1 || c.prog[p]! < parts[p]!.secs * TICK_HZ) continue;
+      this.sever(sim, c, p, c.carriers.find((a) => a.cutPart === p) ?? null);
+    }
+    return c.pieces > 0;
+  }
+
+  /** Part p comes off: into worker a's jaws (or down the gate with the traffic). */
+  private sever(sim: Sim, c: Carcass, p: number, a: Ant | null): void {
+    const part = PARTS[c.kind][p]!;
+    c.gone |= 1 << p;
+    c.pieces -= part.load;
+    if (a) {
+      this.release(a);
+      a.carry = Carry.Prey;
+      a.carryTone = c.tone;
+      a.carryPart = part.look;
+      a.carryLoad = part.load;
+      if (!c.atGate && !a.rival) sim.noteOnce('cutUp', { x: Math.round(c.x), y: c.y });
+    } else sim.colony.reserve += part.load * 2;
+  }
+
+  /**
+   * Put the workers round it: those cutting at their joint, facing it in
+   * pairs; the rest along both sides, each facing the way it pulls (or the
+   * carcass, while waiting).
+   */
   private place(sim: Sim, c: Carcass, dOurs: number, dTheirs: number): void {
     const n = c.carriers.length;
+    let g = 0;
+    let holders = 0;
+    for (const a of c.carriers) if (a.cutPart < 0) holders++;
+    const pair = new Map<number, number>();
     for (let k = 0; k < n; k++) {
       const a = c.carriers[k]!;
-      const side = k % 2 === 0 ? -1 : 1;
-      const along = Math.floor(k / 2) / Math.max(1, Math.ceil(n / 2));
-      const x = Math.round(c.x + side * c.half * (1 - along * 0.8));
+      let x: number;
+      let face: number;
+      if (a.cutPart >= 0) {
+        // Either side of the joint, jaws to it.
+        const nth = pair.get(a.cutPart) ?? 0;
+        pair.set(a.cutPart, nth + 1);
+        const side = nth === 0 ? -1 : 1;
+        const jx = c.partX(a.cutPart);
+        x = Math.round(jx + side * 1.6);
+        face = Math.sign(jx - x) || -side;
+      } else {
+        const side = g % 2 === 0 ? -1 : 1;
+        const along = Math.floor(g / 2) / Math.max(1, Math.ceil(holders / 2));
+        g++;
+        x = Math.round(c.x + side * c.half * (1 - along * 0.8));
+        const pull = a.rival ? dTheirs : dOurs;
+        face = pull !== 0 ? pull : Math.sign(c.x - x) || 1;
+      }
       const y = Carcasses.top(sim, x);
       if (x !== a.x || y !== a.y) {
         a.x = x;
         a.y = y;
         a.step++;
       }
-      // Each faces the way it pulls (toward the carcass while it waits).
-      const pull = a.rival ? dTheirs : dOurs;
-      const face = pull !== 0 ? pull : Math.sign(c.x - x) || 1;
       if (SOLID[sim.world.mat[(y + 1) * sim.world.w + x]!]) a.orient(sim, face, 0);
     }
   }

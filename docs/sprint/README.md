@@ -134,10 +134,48 @@ Bu turda bir kural daha eklendi: Temmuz ortasından sonraki yavru, gelecek hasad
 
 **Son ölçüm (aynı 8 harita, 160 hafta, hepsi bu değişikliklerle):** 8/8 koloni 4. yılın baharında hayatta, 8/8'de iki evlilik uçuşu, **açlıktan ölen işçi 0**, zirve 255–545 işçi. Harita başına kayıplar: kurbağa 6–45, kertenkele 5–42, köstebek 5 haritada 6–30 işçi ve 4 haritada 8–83 yavru, komşu savaşları 31–129. Kraliçeyi köstebek bu 8 haritanın hiçbirinde öldürmedi; risk gerçek ama nadir.
 
-## 5. Sıradaki (öneri)
+## 5. Öğleden sonra turu: oyuncu testi, rüzgâr, büyük av, kendiliğinden kazı, yaşayan toprak
 
-1. **Majörler değirmenci olsun:** Tohumu kırıp "karınca ekmeği" yapsınlar, larvalar ekmekle beslensin. Böylece majör ayarı gerçek bir ekonomi kararı olur.
-2. **Bahar darboğazı:** Büyük kolonilerde (400+ işçi) kış stoğu Nisan'da bitiyor, bahar tohumu da az. Gerçek *Messor* kolonileri sonbaharda çok daha fazla depolar; ambar kapasitesi ve sonbahar hasadı buna göre ayarlanmalı.
-3. **Derin kış odaları** ve gerçek taban suyu. Ardından toprağın 85-95 cm'ye büyütülmesi.
+Geri bildirim: "Skip" tuşuna basılamıyor, kraliçe toprağı taşımıyor (höyük kendiliğinden oluşuyor), büyük av küçülerek eriyor, yuva hâlâ planlı, toprağın altı her haritada aynı ve boş, harita en başta tamamen sisli.
+
+**Neden gözden kaçtı?** Testler düğmelere fareyle değil kodla basıyordu (`cine.skip()`), oyunu da hep hızlı sardırıyordu. İki yeni test:
+- `scripts/playertest.mjs`: üç ekran boyutunda her düğmeye gerçek fareyle tıklıyor, üst üste binen, ekrandan taşan, küçük kalan ya da tıklanamayan her şeyi raporluyor.
+- `scripts/watchtest.mjs`: oyunu 1x hızda izleyici gibi izliyor. Işınlanan yükleri, birden küçülen leşleri, takılan karıncaları ve en uzun sessiz anı sayıyor.
+
+**Kraliçe kendi toprağını taşıyor.** Dört hücrelik bir topak yapıp ağzında yukarı çıkarıyor ve kenara döküyor. Kenarın ötesine "kaybolan" toprak artık yok. Kuruluş 600 saniye kadar sürüyor.
+
+**Rüzgâr.** Esinti hafif, fırtına sert. Kuru ve gevşek hafriyatı ve çöpü rüzgâr yönüne savuruyor, ıslak ya da sıkışmış toprağa dokunmuyor. Höyük rüzgârla ve yağmurla alçalıyor. Çimen ve çiçekler rüzgârla eğiliyor, başlıkta da rüzgâr gösteriliyor.
+
+**Kamera bilinen dünyayla sınırlı.** Başta kraliçenin çevresindeki bir avuç toprak görünüyor. Koloni keşfettikçe ve kazdıkça dünya büyüyor ve yuva hep ortada kalıyor. Sisli boş harita artık gezilemiyor.
+
+**Büyük av.**
+- Önce birlikte taşınıyor. Bulan karınca yardım çağırırken gelen diğerleri leşi tutup bekliyor.
+- Kesmek zor ve yavaş: her ekleme iki işçi, bacak 30 sn, kafa 50–60 sn, göğüs 60–70 sn. Majörler 2,5 kat hızlı kesiyor. Kesen karıncanın başı ileri geri gidiyor.
+- Leş küçülmüyor, parça kaybediyor: bacaklar, kanat, kafa, göğüs. Kopan yerde ham bir kesik görünüyor ve her parça bir karıncanın ağzında ayrı ayrı taşınıyor. Solucan boğum boğum kesiliyor.
+- Kapıdaki bir çekirge yaklaşık bir dakikada bitiyor (önceden 15 saniyede eriyordu).
+
+**Kendiliğinden kazı (stigmerji).** Plan hâlâ odaları başlatıyor, ama büyüme artık karıncalardan geliyor:
+- Kazılan galerinin ucunda bir "kazı kokusu" kalıyor. O ucu kazan bir sonraki parçayı da açıyor, koku zayıfladıkça galeri sona eriyor. Galeriler kıvrılıyor, ara sıra çatallanıyor, başka bir tünele çıkarsa orada bitiyor.
+- Kalabalık bir odada duvara en yakın karıncalar duvarı kazıyor. Oda karıncaların toplandığı yana doğru tabanla aynı hizada genişliyor.
+- Tünelde boş duran bir işçi ara sıra kendi galerisini başlatıyor, diğerleri de devam ettiriyor.
+
+**Yaşayan toprak.**
+- Her haritanın kendi toprağı var: katmanlar farklı dalgalanıyor, kıvrılıyor ve eğiliyor; kum ve çakıl mercekleri bulunuyor.
+- Çürümüş köklerin bıraktığı açık kök kanalları aşağı kıvrılıyor. Bazen bir taşın altında, gizli oyuklar keşfedilmeyi bekliyor (bulununca not düşülüyor).
+- Üst toprakta mayıs böceği kurtçukları var. Bazı haritalarda dalgalı bir taban suyu var: baharda yükseliyor, yazın çekiliyor, yuva onun altına inemiyor.
+- Kökler mevsimde uçlarından büyüyor; kazı planının içine uzanırsa kesilmesi gerekiyor. Sonbaharda ince uçlar ölüp çürüyor ve kanala dönüşüyor.
+- Solucanlar arkalarında ince açık tüneller bırakıyor; karıncalar bunları kestirme olarak kullanabiliyor.
+
+**Arayüz kiti.** Referanslar: Terra Nil (sakin, yuvarlak, az çerçeveli eko arayüzü), Alba (okunaklı, dost canlısı doğa uygulaması), saha rehberleri ve müze etiketleri (serif isimler, italik Latince), Empires of the Undergrowth (koyu toprak üstünde net sayaçlar).
+- Teknik "cihaz" görünümü (her yerde monospace, köşe çentikleri, büyük harf etiketler) kaldırıldı.
+- Yerine sıcak koyu kartlar, 14 px köşe, tek amber vurgu ve çukur bir iz içinde hap düğmeler geldi. Sayılar eşit genişlikli sans, belgesel altyazıları serif italik.
+
+**Ölçüm:** (aşağıda)
+
+## 6. Sıradaki (öneri)
+
+1. **Ağaç ve yarı 3B:** Ağacın gövdesi önde, kesit arkada derinlik bulanıklığıyla.
+2. **Majörler değirmenci olsun:** Tohumu kırıp "karınca ekmeği" yapsınlar.
+3. **Komşu koloniler (ertelendi).**
 4. **Akarlar:** Temasla yayılan, tımarla temizlenen bir parazit.
-5. **Sondan sonra:** Steam için masaüstü paketi (Tauri), yerel fontlar, Steam Deck testi.
+5. **Sondan sonra:** Steam için masaüstü paketi (Tauri).

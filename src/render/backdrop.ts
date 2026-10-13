@@ -62,6 +62,8 @@ export function skyAt(t: number): (typeof SKY)[number] {
  * the soft background of a macro photograph while the slice stays crisp.
  */
 export class Backdrop {
+  /** Wind now, -1..1 (the meadow leans with it). */
+  private wind = 0;
   readonly canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   readonly scale = 0.5;
@@ -146,7 +148,8 @@ export class Backdrop {
    * (the meadow greens up in spring, dries to straw in high summer, browns in
    * autumn and lies flat and pale under winter snow). snow: mm lying.
    */
-  draw(dayT: number, time: number, worldW: number, ground: Int16Array, rain = 0, month = 4, snow = 0): void {
+  draw(dayT: number, time: number, worldW: number, ground: Int16Array, rain = 0, month = 4, snow = 0, wind = 0): void {
+    this.wind = wind;
     const c = this.ctx;
     const s = this.scale;
     const W = this.canvas.width;
@@ -195,7 +198,8 @@ export class Backdrop {
       c.lineCap = 'round';
       for (const b of this.blades) {
         if (b.layer !== layer) continue;
-        const sway = Math.sin(time * (0.5 + layer * 0.15) + b.phase) * (2 + layer * 1.5);
+        // The wind bends the blades its way and sets them shivering.
+        const sway = Math.sin(time * (0.5 + layer * 0.15) * (1 + Math.abs(this.wind) * 2.5) + b.phase) * (2 + layer * 1.5) * (1 + Math.abs(this.wind)) + this.wind * b.h * 0.28;
         const x0 = b.x * s;
         const y0 = (ground[Math.max(0, Math.min(worldW - 1, b.x | 0))]! + 4) * s;
         const tipX = x0 + (b.lean * b.h + sway) * s;
@@ -214,7 +218,7 @@ export class Backdrop {
     for (let fi = 0; fi < this.flowers.length; fi++) {
       const f = this.flowers[fi]!;
       if (fi / this.flowers.length >= bloom) continue;
-      const sway = Math.sin(time * 0.5 + f.phase) * 2;
+      const sway = Math.sin(time * 0.5 * (1 + Math.abs(this.wind) * 2.5) + f.phase) * 2 * (1 + Math.abs(this.wind)) + this.wind * f.h * 0.22;
       const x0 = f.x * s;
       const y0 = (ground[Math.max(0, Math.min(worldW - 1, f.x | 0))]! + 4) * s;
       const tx = x0 + sway * s;
@@ -327,7 +331,7 @@ export class Backdrop {
         c.strokeStyle = css(col, 0.5);
         c.lineWidth = 1.2 * s;
         for (let k = 0; k < 4; k++) {
-          const sway = Math.sin(time * 0.6 + p.phase + k) * 10 + 18;
+          const sway = Math.sin(time * 0.6 * (1 + Math.abs(this.wind) * 2) + p.phase + k) * 10 + 18 * (1 + this.wind * 1.6);
           c.beginPath();
           c.moveTo((p.x + k * 3) * s, base);
           c.quadraticCurveTo((p.x + k * 3 + sway * 0.4) * s, base - p.h * 0.7 * s, (p.x + k * 3 + sway + p.w * 0.4) * s, base - p.h * s + k * 4 * s);

@@ -143,7 +143,7 @@ export class Game {
 
   /**
    * Frame what the colony knows of its world (before the landing, the whole
-   * meadow). The camera is free to roam the slice; the fog shows what is unknown.
+   * meadow). The camera cannot leave what is known (see bound()).
    */
   fitKnown(): void {
     const s = this.sim;
@@ -151,9 +151,29 @@ export class Game {
       this.cam.fit();
       return;
     }
+    this.cam.follow = null;
+    this.cam.fit();
+  }
+
+  /**
+   * The camera sees only the colony's world: before the landing the whole
+   * meadow, after it the known part, which starts as a hand's breadth around
+   * the queen and grows as the colony explores and digs, the nest in the middle.
+   */
+  private bound(): void {
+    const s = this.sim;
+    const w = s.world;
+    if (!s.nest.founded || this.cine.busy) {
+      this.cam.setBounds(0, 0, w.w, w.h);
+      return;
+    }
     const v = s.view;
-    const top = Math.max(0, s.world.ground[Math.round((v.x0 + v.x1) / 2)]! - 70);
-    this.cam.fitRect(v.x0, top, v.x1, Math.max(v.y1, top + 140));
+    // Some air above the ground: little while the colony is a hole in the
+    // ground, enough for the stems over it once it is a big nest.
+    let g = w.ground[s.nest.foundX]!;
+    for (let x = Math.max(0, Math.round(v.x0)); x < Math.min(w.w, v.x1); x += 4) g = Math.min(g, w.ground[x]!);
+    const air = Math.max(60, Math.min(110, (v.y1 - g) * 0.4));
+    this.cam.setBounds(v.x0, Math.max(0, g - air), v.x1, v.y1);
   }
 
   setSpeed(i: number): void {
@@ -196,6 +216,7 @@ export class Game {
     }
     if (this.selected && !this.selected.alive) this.selected = null;
     this.cine.update(dt);
+    this.bound();
     this.renderer.setFlight(this.cine.queenInFlight(), this.cine.swarm);
     if (this.cine.busy || this.cine.montage) {
       // The sequence drives the camera.

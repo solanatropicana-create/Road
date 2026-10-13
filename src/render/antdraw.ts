@@ -4,6 +4,7 @@ import type { World } from '../world/world';
 import { Carry, Task } from '../sim/types';
 import { SOLID } from '../world/mat';
 import { PAL, RGB, hex, mixRGB, sampleRamp, seedLook, preyColor, fruitColor } from './palette';
+import { drawPart } from './critterdraw';
 
 /**
  * Ants are the subject of the shot, so unlike the soil they are drawn at the
@@ -451,7 +452,8 @@ export class AntPainter {
       const turning = Math.abs(s) > 0.03 && z * k >= 1.6 && a.cpose === 0;
       const f = turning ? 1 : Math.abs(s) <= 0.03 ? flip : flip * Math.max(Math.abs(c), 0.4);
       ctx.scale(f * k, k);
-      const busy = a.timer > 0 ? Math.sin(this.time * 18 + a.id) * 0.12 : 0;
+      // Working at something: the head goes back and forth (cutting at a carcass, harder).
+      const busy = a.cutPart >= 0 && a.haul ? Math.sin(this.time * 24 + a.id) * 0.2 : a.timer > 0 ? Math.sin(this.time * 18 + a.id) * 0.12 : 0;
       if (a === selected) {
         if (turning) {
           ctx.save();
@@ -934,12 +936,14 @@ export class AntPainter {
         // A pellet of crumbs packed in the jaws.
         const col = mixRGB(sampleRamp(PAL.loam, a.carryTone / 255), [230, 215, 190], 0.14);
         const t = a.carryTone;
+        // The founding queen hauls a bigger ball: four cells' worth at a time.
+        const k = a.caste === 'queen' ? 1.9 : 1;
         for (let i = 0; i < 5; i++) {
           const ang = i * 1.9 + t * 0.07;
-          const r = i === 0 ? 0 : 0.28;
+          const r = i === 0 ? 0 : 0.28 * k;
           ctx.fillStyle = css(mixRGB(col, i % 2 ? [40, 28, 20] : [250, 236, 210], 0.12), l);
           ctx.beginPath();
-          ctx.ellipse(mx + 0.4 + Math.cos(ang) * r, my + Math.sin(ang) * r * 0.8, 0.3 - i * 0.02, 0.24, ang, 0, Math.PI * 2);
+          ctx.ellipse(mx + 0.4 * k + Math.cos(ang) * r, my + Math.sin(ang) * r * 0.8, (0.3 - i * 0.02) * k, 0.24 * k, ang, 0, Math.PI * 2);
           ctx.fill();
         }
         break;
@@ -952,6 +956,11 @@ export class AntPainter {
         ctx.fill();
         break;
       case Carry.Prey: {
+        if (a.carryPart > 0) {
+          // A part cut off a carcass: a leg, a wing, the head...
+          drawPart(ctx, a.carryPart, a.carryTone, l);
+          break;
+        }
         // A leg segment or a shard of wing case, angular, with a glint.
         const col = preyColor(a.carryTone);
         ctx.fillStyle = css(col, l);

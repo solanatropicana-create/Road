@@ -1308,7 +1308,9 @@ export class UI {
     const clock = `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
     this.els.day!.textContent = dateText(sim);
     // The icon says clear, rain or night; the words would push the temperature off the card.
-    this.els.sky!.textContent = t('tempNow', { t: Math.round(sim.surfaceT) });
+    const gust = sim.gust();
+    const windy = Math.abs(gust) > 0.65 ? t('windGale') : Math.abs(gust) > 0.35 ? t('windBreeze') : '';
+    this.els.sky!.textContent = t('tempNow', { t: Math.round(sim.surfaceT) }) + (windy ? ` · ${windy} ${gust > 0 ? '→' : '←'}` : '');
     this.els.sky!.title = `${t(sky)} · ${t('tempTitle', { s: Math.round(sim.surfaceT), n: Math.round(col.nestTemp) })}`;
     this.els.skyico!.title = t(sky);
     this.els.year!.textContent = `${t(`season_${sim.season}`)} · ${t('yearN', { n: sim.cal.year(sim.simDays) })}`;
@@ -1504,9 +1506,12 @@ export class UI {
       const key = cc.kind === 'beetle' ? 'deadBeetle' : cc.kind === 'hopper' ? 'deadHopper' : 'deadWorm';
       const ours = cc.carriers.filter((a) => !a.rival).length;
       const theirs = cc.carriers.length - ours;
+      const cutting = cc.carriers.filter((a) => a.cutPart >= 0).length;
       const state = cc.atGate
-        ? t('cdCut')
-        : ours && theirs
+        ? t('cdCut', { n: cutting })
+        : cutting
+          ? t('cdCutting', { n: cutting })
+          : ours && theirs
           ? t('cdTug', { n: ours, m: theirs })
           : ours + theirs
             ? ours + theirs >= cc.weight

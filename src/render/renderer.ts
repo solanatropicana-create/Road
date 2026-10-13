@@ -981,7 +981,7 @@ export class Renderer {
     this.applyLight(lr);
     this.wctx.putImageData(this.img, 0, 0, vr.x0, vr.y0, vr.x1 - vr.x0 + 1, vr.y1 - vr.y0 + 1);
 
-    this.backdrop.draw(solar, this.time, w.w, w.ground, sim.weather.rain, sim.cal.month(doy), sim.snow);
+    this.backdrop.draw(solar, this.time, w.w, w.ground, sim.weather.rain, sim.cal.month(doy), sim.snow, sim.gust());
 
     const ctx = this.ctx;
     const W = this.canvas.width;

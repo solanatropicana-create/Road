@@ -10,7 +10,7 @@ import { Fields, F, FIELD_COUNT, FAR } from './fields';
 import { Colony } from './colony';
 import { Ant } from './ant';
 import { Particles } from './particles';
-import { Task, holdsStores } from './types';
+import { Task, Carry, holdsStores } from './types';
 import { TUNING, TICK_HZ, DAY_TICKS, GROUND_Y } from '../config';
 import { pack, sampleRamp, PAL, mixRGB, SEED_TONE } from '../render/palette';
 import { HUMUS, LOAM, CLAY, SUBSOIL } from '../world/mat';
@@ -18,6 +18,7 @@ import { Calendar, Season, forageWindow } from './calendar';
 import { SITES, SiteId, Variant, siteForSeed } from '../world/sites';
 import { Ecology } from './ecology';
 import { Critters } from './critters';
+import { SoilLife } from './soil';
 import { Neighbour } from './rivals';
 import { Fog } from './fog';
 import { Carcasses } from './carcass';
@@ -95,6 +96,8 @@ export class Sim {
   /** Which real place this slice is, and what makes this map of it different. */
   readonly site: SiteId;
   readonly variant: Variant;
+  /** The soil's own life: roots, the water table, grubs, hidden hollows. */
+  readonly soil: SoilLife;
   /** A tree at the edge of the slice (shade, roots, autumn leaves), if any. */
   readonly tree: { x: number; r: number } | null;
   /** The surface's year beyond the meadow: shrub, tree, dead insects. */
@@ -131,6 +134,14 @@ export class Sim {
   /** Cloud cover 0..1 (full under rain). */
   cloud = 0.2;
   private cloudGoal = 0.2;
+  /**
+   * Wind over the ground, -1..1 (sign: blowing toward +x). Mostly still or a
+   * light breeze; now and then a blustery day; a gale with a storm. It lifts
+   * loose spoil and chaff off the tops of heaps and drops them downwind, so
+   * a mound is shaped by the weather and never grows past what it can hold.
+   */
+  wind = 0;
+  private windGoal = 0;
   /** Soil-surface temperature now, °C (refreshed twice a second of sim time). */
   surfaceT = 15;
   season: Season = 'spring';
@@ -182,6 +193,8 @@ export class Sim {
     Object.assign(this.view, { x0: 0, x1: this.world.w, y1: GROUND_Y + 240 });
     Object.assign(this.viewGoal, this.view);
     this.nest = new Nest(this.world, this.rng, seed);
+    this.soil = new SoilLife(gen.waterTop, gen.hollows);
+    this.nest.waterTop = gen.waterTop;
     this.fields = new Fields(this.world);
     this.colony = new Colony(this.world.size, this.world.w);
     this.pher = new Float32Array(this.world.size);
@@ -741,6 +754,7 @@ export class Sim {
     this.plants.tick(this.doy, air, this.tick - this.lastRain < DAY_TICKS * 1.2);
     this.eco.step(this);
     this.critters.step(this);
+    this.soil.step(this);
     if (this.tick % Ecology.PERIOD === 0) {
       const doy = this.doy;
       this.plants.season(doy, air);
@@ -767,6 +781,7 @@ export class Sim {
       const f = this.fields.nextDue(this.tick);
       if (f >= 0) this.buildField(f);
       if (this.tick % (TICK_HZ * 3) === 0 && this.colony.hadWorkers) this.growNest();
+      if (this.tick % (TICK_HZ * 2) === 1 && this.colony.hadWorkers) this.selfDig();
       for (const nb of this.neighbours) nb.step(this);
       this.carcasses.step(this);
       if (this.foreigners.length) this.foundresses();
@@ -788,6 +803,7 @@ export class Sim {
     this.physics.moisture.step();
     this.seasonal();
     if (this.tick % 20 === 0) this.settleSpoil();
+    if (this.tick % 3 === 0) this.blow();
     this.rain();
     const m = this.physics.moisture;
     this.pendingCollapse += m.collapses;
@@ -901,7 +917,7 @@ export class Sim {
     const n = wt.rain * 5;
     const spawn = Math.floor(n) + (this.rng.next() < n % 1 ? 1 : 0);
     for (let k = 0; k < spawn; k++) this.drops.push({ x: this.rng.range(0, w.w), y: this.rng.range(-6, 0) });
-    const wind = wt.storm ? 0.35 : 0.12;
+    const wind = this.gust() * 0.5;
     let j = 0;
     for (let k = 0; k < this.drops.length; k++) {
       const d = this.drops[k]!;
@@ -970,6 +986,50 @@ export class Sim {
     }
   }
 
+  /**
+   * The nest growing without a plan (stigmergy): where a room is crowded the
+   * ants nearest its wall dig into it, so rooms bulge toward where their ants
+   * crowd; and now and then a worker idling in a tunnel starts a gallery of
+   * her own, which her nestmates carry on while its scent lasts.
+   */
+  private selfDig(): void {
+    const col = this.colony;
+    const nest = this.nest;
+    const w = this.world;
+    if (!nest.founded || col.adults < 12 || this.dormant) return;
+    const n = nest.chambers.length;
+    const count = new Array<number>(n).fill(0);
+    const pick: Ant[] = new Array(n);
+    let idler: Ant | null = null;
+    let idlers = 0;
+    for (const a of col.ants) {
+      if (a.away) continue;
+      const i = a.y * w.w + a.x;
+      if (w.bg[i] !== 1) continue;
+      const z = w.zone[i]!;
+      if (z) {
+        // One of them at random (reservoir pick) stands for the crowd.
+        if (this.rng.next() * ++count[z - 1]! < 1) pick[z - 1] = a;
+      } else if (a.task === Task.Idle && a.carry === Carry.None && w.plan[i] && this.rng.next() * ++idlers < 1) idler = a;
+    }
+    if (nest.pendingCells > 60 + col.adults) return;
+    for (const c of nest.chambers) {
+      if (!c.ready || c.kind === 'queen') continue;
+      const k = count[c.id]!;
+      // Crowded: more ants than its floor holds comfortably.
+      if (k < 6 || k < c.floor.length * 0.45 || !this.rng.chance(0.2)) continue;
+      const a = pick[c.id]!;
+      if (nest.bulge(c, a.x, a.y)) nest.zonesChanged = true;
+    }
+    if (idler && this.tick - nest.lastGallery > TICK_HZ * 240 && col.adults >= 20 && this.rng.chance(0.25)) {
+      if (nest.explore(idler.y * w.w + idler.x)) {
+        nest.lastGallery = this.tick;
+        // She starts on it herself.
+        idler.task = Task.Dig;
+      }
+    }
+  }
+
   private growNest(): void {
     const col = this.colony;
     const wanted = Nest.wanted(col.adults, col.brood.length, TUNING.nestCellsPerAnt, TUNING.nestCellsBase);
@@ -1009,6 +1069,58 @@ export class Sim {
    * two cells away (a slope steeper than about 1 in 2) works loose and slides.
    * Wind, foot traffic and drying do this slowly; rain does it fast (see impact).
    */
+  /** The wind right now, with its gusts. */
+  gust(): number {
+    return this.wind * (1 + 0.45 * Math.sin(this.tick * 0.071) * Math.sin(this.tick * 0.0127 + 1.3));
+  }
+
+  /**
+   * Wind at work on the ground: loose grains of spoil and chaff on the top
+   * of a heap (and, in a strong wind, anywhere they lie exposed) are lifted
+   * and come down again downwind, or blow off the slice altogether. The
+   * higher a grain sits above the old ground, the likelier it goes; damp or
+   * settled grains hold; nothing in the crater over a gate is touched.
+   */
+  private blow(): void {
+    const v = this.gust();
+    const a = Math.abs(v);
+    if (a < 0.2 || this.weather.snowing || this.snow > 2) return;
+    const w = this.world;
+    const dir = v > 0 ? 1 : -1;
+    const tries = Math.round(a * a * 10);
+    for (let k = 0; k < tries; k++) {
+      const x = this.rng.int(3, w.w - 4);
+      let y = 1;
+      while (y < w.h - 1 && w.mat[y * w.w + x] === EMPTY) y++;
+      const i = y * w.w + x;
+      const m = w.mat[i]!;
+      if ((m !== SAND && m !== REFUSE) || w.plan[i] || w.bg[i] !== 0 || w.plan[i - w.w]) continue;
+      // Chaff and husks are light; sand blows only off the top of a heap.
+      const high = w.ground[x]! - y;
+      const light = m === REFUSE ? 2.2 : 1;
+      if (m === SAND && high < 1) continue;
+      const damp = w.moist[i]! > 50 ? 0.15 : 1;
+      const set = w.tint[i]! & PACKED ? 0.35 : 1;
+      if (!this.rng.chance(Math.min(0.9, a * a * (0.08 + 0.05 * Math.max(0, high)) * light * damp * set))) continue;
+      const tone = w.tone[i]!;
+      const tint = w.tint[i]! & ~PACKED;
+      w.set(i, EMPTY, 0, 0);
+      // A few grains in the air, streaming downwind.
+      const src = m === SAND ? tint & 0x3f : 0;
+      const ramp = m === REFUSE ? PAL.refuse : src === HUMUS ? PAL.humus : src === CLAY ? PAL.clay : src === SUBSOIL ? PAL.subsoil : PAL.loam;
+      const c = sampleRamp(ramp, this.rng.next());
+      this.particles.add({ x: x + 0.5, y: y - 0.5, vx: dir * this.rng.range(0.6, 1.6) * a, vy: -this.rng.range(0.05, 0.35), life: this.rng.int(18, 50), gravity: 0.012, color: pack(c[0], c[1], c[2]) });
+      // Down again some way off (farther in a strong wind), or off the slice.
+      const nx = x + dir * this.rng.int(4, Math.round(12 + a * 90));
+      if (nx < 3 || nx > w.w - 4) continue;
+      let ny = 1;
+      while (ny < w.h - 1 && w.mat[ny * w.w + nx] === EMPTY) ny++;
+      const j = (ny - 1) * w.w + nx;
+      if (w.bg[j] !== 0 || w.plan[j] || w.plan[j + w.w]) continue;
+      w.set(j, m, tone, tint);
+    }
+  }
+
   private settleSpoil(): void {
     if (!this.nest.founded) return;
     const w = this.world;
@@ -1045,6 +1157,14 @@ export class Sim {
   private climate(): void {
     const doy = this.doy;
     const wt = this.weather;
+    // The wind changes every hour or two (a minute or so of play); a storm brings a gale.
+    // (This runs twice a second.)
+    if (this.rng.next() < 1 / 80) {
+      const keep = this.rng.chance(0.65) ? Math.sign(this.windGoal) || 1 : this.rng.chance(0.5) ? -1 : 1;
+      this.windGoal = keep * Math.pow(this.rng.next(), 1.8) * 0.85;
+    }
+    const windTo = wt.storm && wt.rain > 0.3 ? (Math.sign(this.windGoal) || 1) * 0.95 : this.windGoal;
+    this.wind += (windTo - this.wind) * 0.03;
     // Cloud drifts toward a new cover every few hours; rain closes it.
     if (this.rng.next() < 0.01) this.cloudGoal = Math.pow(this.rng.next(), 1.6) * 0.9;
     const goal = wt.rain > 0.15 ? 1 : this.cloudGoal;
@@ -1162,11 +1282,14 @@ export class Sim {
       const q = this.colony.queen;
       if (q?.alive) see(q, 40);
     }
-    // The view (and the camera's "whole colony" framing) follows what is known.
+    // The view (and the camera's "whole colony" framing) follows what is known,
+    // kept even on both sides of the nest so the nest stays in the middle.
     const b = fog.box;
     const g = this.viewGoal;
-    g.x0 = Math.max(0, b.x0 - 30);
-    g.x1 = Math.min(w.w, b.x1 + 30);
+    const fx = this.nest.foundX;
+    const half = Math.max(fx - b.x0, b.x1 - fx) + 30;
+    g.x0 = Math.max(0, fx - half);
+    g.x1 = Math.min(w.w, fx + half);
     g.y1 = Math.min(w.h, b.y1 + 30);
     const v = this.view;
     const k = 0.08;
@@ -1181,6 +1304,14 @@ export class Sim {
    */
   private discoveries(): void {
     const w = this.world;
+    // Broke into one of the map's hidden spaces: an old root channel, a hollow.
+    for (const n of this.nest.breaches) {
+      const k = this.soil.breach(n, w.w);
+      if (k < 0) continue;
+      const h = this.soil.hollows[k]!;
+      this.events.push({ key: h.kind === 'root' ? 'foundRootChannel' : 'foundHollow', x: n % w.w, y: (n / w.w) | 0 });
+    }
+    this.nest.breaches.length = 0;
     const W = w.w;
     const once = (key: string, ev: SimEvent): void => {
       if (this.discovered[key]) return;

@@ -1,5 +1,5 @@
 import type { Critter } from '../sim/critters';
-import type { Carcass } from '../sim/carcass';
+import { Look, type Carcass } from '../sim/carcass';
 import type { World } from '../world/world';
 import { RGB, hex } from './palette';
 import { clamp } from '../util/math';
@@ -168,8 +168,10 @@ function glint(ctx: CanvasRenderingContext2D, x: number, y: number, rx: number, 
  * Leaping, the hind legs kick out straight behind. `dead`: lying on its side,
  * legs stiff.
  */
-function grasshopper(ctx: CanvasRenderingContext2D, x: number, y: number, dir: number, air: boolean, vx: number, vy: number, t: number, dry: boolean, l: RGB, dead = false): void {
+function grasshopper(ctx: CanvasRenderingContext2D, x: number, y: number, dir: number, air: boolean, vx: number, vy: number, t: number, dry: boolean, l: RGB, dead = false, gone = 0): void {
   const P = dry ? HOPPER_DRY : HOPPER;
+  // Parts cut off a carcass (bits, see PARTS.hopper): legs 0-5, wings 6, head 7, thorax 8.
+  const has = (b: number): boolean => !((gone >> b) & 1);
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(dir, 1);
@@ -185,9 +187,9 @@ function grasshopper(ctx: CanvasRenderingContext2D, x: number, y: number, dir: n
   // Far-side legs, in shadow.
   ctx.fillStyle = css(P.dark, l, 0.85);
   if (!air) {
-    leg(ctx, [[4.0, -3.0], [5.6, -1.4], [5.0, 0], [6.2, 0]], 0.55, 0.3);
-    leg(ctx, [[2.0, -3.0], [3.0, -1.5], [2.0, 0], [3.0, 0]], 0.55, 0.3);
-    leg(ctx, [[-6.6, -4.4], [-2.4, -0.6], [-0.4, -0.1]], 0.55, 0.32);
+    if (has(0)) leg(ctx, [[4.0, -3.0], [5.6, -1.4], [5.0, 0], [6.2, 0]], 0.55, 0.3);
+    if (has(1)) leg(ctx, [[2.0, -3.0], [3.0, -1.5], [2.0, 0], [3.0, 0]], 0.55, 0.3);
+    if (has(2)) leg(ctx, [[-6.6, -4.4], [-2.4, -0.6], [-0.4, -0.1]], 0.55, 0.32);
   }
   // Hind leg (near side): the femur along the flank, back and up to the knee;
   // the tibia folded forward under it to the foot. Leaping, both kick out behind.
@@ -196,21 +198,23 @@ function grasshopper(ctx: CanvasRenderingContext2D, x: number, y: number, dir: n
   const ankle: Pt = air ? [-18, -1.4] : dead ? [-11.2, 2.2] : [-1.8, -0.4];
   const toe: Pt = air ? [-20.5, -0.6] : dead ? [-12.6, 3.0] : [0.4, 0];
   const hip: Pt = [1.0, -3.1];
-  // Tibia (rosy) and foot.
-  ctx.fillStyle = css(P.tibia, l);
-  leg(ctx, [knee, ankle, toe], 0.75, 0.42);
-  // Spines along the back of the tibia.
-  ctx.strokeStyle = css(P.dark, l, 0.8);
-  ctx.lineWidth = 0.12;
-  ctx.beginPath();
-  for (let k = 1; k < 7; k++) {
-    const f = k / 7;
-    const sx = knee[0] + (ankle[0] - knee[0]) * f;
-    const sy = knee[1] + (ankle[1] - knee[1]) * f;
-    ctx.moveTo(sx, sy);
-    ctx.lineTo(sx - 0.35, sy - 0.3);
+  if (has(5)) {
+    // Tibia (rosy) and foot.
+    ctx.fillStyle = css(P.tibia, l);
+    leg(ctx, [knee, ankle, toe], 0.75, 0.42);
+    // Spines along the back of the tibia.
+    ctx.strokeStyle = css(P.dark, l, 0.8);
+    ctx.lineWidth = 0.12;
+    ctx.beginPath();
+    for (let k = 1; k < 7; k++) {
+      const f = k / 7;
+      const sx = knee[0] + (ankle[0] - knee[0]) * f;
+      const sy = knee[1] + (ankle[1] - knee[1]) * f;
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(sx - 0.35, sy - 0.3);
+    }
+    ctx.stroke();
   }
-  ctx.stroke();
   // Abdomen: segmented, tapering to the tip.
   outline(ctx, [[-12.4, -3.6], [-11, -5.0], [-6, -5.6], [-1, -5.9], [0.5, -4.5], [0, -2.4], [-5, -2.1], [-10, -2.7]]);
   litFill(ctx, P.belly, l, -6, -2);
@@ -230,71 +234,99 @@ function grasshopper(ctx: CanvasRenderingContext2D, x: number, y: number, dir: n
   ctx.fillStyle = css(P.body, l);
   if (dead) {
     // Stiff, splayed.
-    leg(ctx, [[4.4, -3.2], [6.8, -1.2], [8.2, 0.6]], 0.6, 0.32);
-    leg(ctx, [[2.4, -3.0], [3.6, -0.6], [3.2, 1.0]], 0.6, 0.32);
+    if (has(3)) leg(ctx, [[4.4, -3.2], [6.8, -1.2], [8.2, 0.6]], 0.6, 0.32);
+    if (has(4)) leg(ctx, [[2.4, -3.0], [3.6, -0.6], [3.2, 1.0]], 0.6, 0.32);
   } else {
     leg(ctx, [[4.4, -3.2], [6.2, -1.7], [5.8, 0], [7.0, 0]], 0.65, 0.35);
     leg(ctx, [[2.4, -3.0], [3.4, -1.6], [2.6, 0], [3.8, 0]], 0.65, 0.35);
   }
-  outline(ctx, [[-0.6, -3.0], [-0.6, -6.6], [2.5, -7.2], [5.6, -6.8], [5.8, -3.0], [2.5, -2.4]]);
-  litFill(ctx, P.body, l, -7.2, -2.4);
-  // Head: tall, the face nearly upright, mouthparts at the bottom.
-  outline(ctx, [[5.0, -3.0], [5.0, -6.6], [7.2, -7.9], [9.6, -7.2], [10.8, -5.0], [10.6, -2.8], [9.6, -1.9], [7.4, -2.0]]);
-  litFill(ctx, P.body, l, -7.9, -1.9);
-  ctx.fillStyle = css(P.dark, l, 0.9);
-  outline(ctx, [[9.2, -2.4], [10.6, -2.6], [10.4, -1.4], [9.4, -1.3]]);
-  ctx.fill();
-  // Pronotum: a saddle with a keel along the top and a lobe down the side.
-  outline(ctx, [[-1.2, -6.4], [0.2, -7.6], [3.2, -7.9], [5.8, -7.4], [6.2, -5.6], [5.6, -3.4], [2.6, -3.0], [-0.6, -3.6]]);
-  litFill(ctx, P.body, l, -7.9, -3.0, 1.35, 0.75);
-  ctx.strokeStyle = css(P.dark, l, 0.6);
-  ctx.lineWidth = 0.18;
-  ctx.beginPath();
-  ctx.moveTo(-0.9, -6.5);
-  ctx.quadraticCurveTo(2.8, -7.6, 5.9, -6.9);
-  ctx.moveTo(1.6, -7.5);
-  ctx.quadraticCurveTo(1.0, -5.6, 1.6, -3.3);
-  ctx.moveTo(3.9, -7.6);
-  ctx.quadraticCurveTo(3.4, -5.6, 3.9, -3.1);
-  ctx.stroke();
-  // The pale stripe running back from the eye across the pronotum.
-  ctx.strokeStyle = css(P.stripe, l, 0.75);
-  ctx.lineWidth = 0.45;
-  ctx.beginPath();
-  ctx.moveTo(8.0, -6.6);
-  ctx.quadraticCurveTo(4, -7.2, -1.0, -6.2);
-  ctx.stroke();
-  // Mottling.
-  ctx.fillStyle = css(P.dark, l, 0.28);
-  for (const [mx, my, mr] of [[1.2, -5.2, 0.6], [3.6, -4.6, 0.7], [4.8, -6.2, 0.4], [-3, -3.4, 0.5], [-7.4, -3.6, 0.45]] as const) {
-    ctx.beginPath();
-    ctx.ellipse(mx, my, mr * 1.3, mr, 0.3, 0, Math.PI * 2);
+  if (has(8)) {
+    outline(ctx, [[-0.6, -3.0], [-0.6, -6.6], [2.5, -7.2], [5.6, -6.8], [5.8, -3.0], [2.5, -2.4]]);
+    litFill(ctx, P.body, l, -7.2, -2.4);
+  } else wound(ctx, -0.6, -4.6, 1.2, l);
+  if (has(7)) {
+    // Head: tall, the face nearly upright, mouthparts at the bottom.
+    outline(ctx, [[5.0, -3.0], [5.0, -6.6], [7.2, -7.9], [9.6, -7.2], [10.8, -5.0], [10.6, -2.8], [9.6, -1.9], [7.4, -2.0]]);
+    litFill(ctx, P.body, l, -7.9, -1.9);
+    ctx.fillStyle = css(P.dark, l, 0.9);
+    outline(ctx, [[9.2, -2.4], [10.6, -2.6], [10.4, -1.4], [9.4, -1.3]]);
     ctx.fill();
+  } else if (has(8)) wound(ctx, 5.4, -4.8, 1.1, l);
+  if (has(8)) {
+    // Pronotum: a saddle with a keel along the top and a lobe down the side.
+    outline(ctx, [[-1.2, -6.4], [0.2, -7.6], [3.2, -7.9], [5.8, -7.4], [6.2, -5.6], [5.6, -3.4], [2.6, -3.0], [-0.6, -3.6]]);
+    litFill(ctx, P.body, l, -7.9, -3.0, 1.35, 0.75);
+    ctx.strokeStyle = css(P.dark, l, 0.6);
+    ctx.lineWidth = 0.18;
+    ctx.beginPath();
+    ctx.moveTo(-0.9, -6.5);
+    ctx.quadraticCurveTo(2.8, -7.6, 5.9, -6.9);
+    ctx.moveTo(1.6, -7.5);
+    ctx.quadraticCurveTo(1.0, -5.6, 1.6, -3.3);
+    ctx.moveTo(3.9, -7.6);
+    ctx.quadraticCurveTo(3.4, -5.6, 3.9, -3.1);
+    ctx.stroke();
+    // The pale stripe running back from the eye across the pronotum.
+    ctx.strokeStyle = css(P.stripe, l, 0.75);
+    ctx.lineWidth = 0.45;
+    ctx.beginPath();
+    ctx.moveTo(has(7) ? 8.0 : 5.6, -6.6);
+    ctx.quadraticCurveTo(4, -7.2, -1.0, -6.2);
+    ctx.stroke();
+    // Mottling.
+    ctx.fillStyle = css(P.dark, l, 0.28);
+    for (const [mx, my, mr] of [[1.2, -5.2, 0.6], [3.6, -4.6, 0.7], [4.8, -6.2, 0.4], [-3, -3.4, 0.5], [-7.4, -3.6, 0.45]] as const) {
+      ctx.beginPath();
+      ctx.ellipse(mx, my, mr * 1.3, mr, 0.3, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   // Wings folded along the back, a little translucent, veined.
-  outline(ctx, [[-0.8, -6.8], [-6, -6.7], [-12.8, -5.6], [-13.4, -4.9], [-12.4, -4.4], [-6, -4.7], [-0.6, -5.0]]);
-  litFill(ctx, P.wing, l, -7, -4.4, 1.3, 0.8, 0.92);
-  ctx.strokeStyle = css(P.vein, l, 0.55);
-  ctx.lineWidth = 0.1;
-  ctx.beginPath();
-  ctx.moveTo(-0.8, -6.0);
-  ctx.quadraticCurveTo(-7, -5.9, -13, -5.1);
-  ctx.moveTo(-0.8, -5.4);
-  ctx.quadraticCurveTo(-7, -5.2, -12.6, -4.7);
-  for (let k = 0; k < 9; k++) {
-    const sx = -2 - k * 1.2;
-    ctx.moveTo(sx, -6.6 + k * 0.08);
-    ctx.lineTo(sx - 0.5, -4.8 + k * 0.03);
-  }
-  ctx.stroke();
-  // Dark flecks on the wing.
-  ctx.fillStyle = css(P.vein, l, 0.5);
-  for (const [fx, fy, fr] of [[-4, -5.9, 0.45], [-7.2, -5.6, 0.55], [-10, -5.3, 0.4]] as const) {
+  if (has(6)) {
+    outline(ctx, [[-0.8, -6.8], [-6, -6.7], [-12.8, -5.6], [-13.4, -4.9], [-12.4, -4.4], [-6, -4.7], [-0.6, -5.0]]);
+    litFill(ctx, P.wing, l, -7, -4.4, 1.3, 0.8, 0.92);
+    ctx.strokeStyle = css(P.vein, l, 0.55);
+    ctx.lineWidth = 0.1;
     ctx.beginPath();
-    ctx.ellipse(fx, fy, fr * 1.4, fr * 0.6, -0.05, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.moveTo(-0.8, -6.0);
+    ctx.quadraticCurveTo(-7, -5.9, -13, -5.1);
+    ctx.moveTo(-0.8, -5.4);
+    ctx.quadraticCurveTo(-7, -5.2, -12.6, -4.7);
+    for (let k = 0; k < 9; k++) {
+      const sx = -2 - k * 1.2;
+      ctx.moveTo(sx, -6.6 + k * 0.08);
+      ctx.lineTo(sx - 0.5, -4.8 + k * 0.03);
+    }
+    ctx.stroke();
+    // Dark flecks on the wing.
+    ctx.fillStyle = css(P.vein, l, 0.5);
+    for (const [fx, fy, fr] of [[-4, -5.9, 0.45], [-7.2, -5.6, 0.55], [-10, -5.3, 0.4]] as const) {
+      ctx.beginPath();
+      ctx.ellipse(fx, fy, fr * 1.4, fr * 0.6, -0.05, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
   // Hind femur over everything: a drumstick, broad at the hip.
+  if (has(5)) femur(ctx, P, hip, knee, l);
+  else if (dead) wound(ctx, hip[0], hip[1], 0.8, l);
+  if (has(7)) {
+    // Eye: big, oval, with a highlight; a small ocellus above.
+    ctx.fillStyle = css(P.eye, l);
+    ctx.beginPath();
+    ctx.ellipse(8.4, -5.5, 1.05, 1.45, 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    if (!dead) glint(ctx, 8.1, -6.1, 0.35, 0.22, 0.4, l, 0.65);
+    // Antennae: short and beaded (a grasshopper's, not a bush cricket's).
+    const sway = dead ? 0 : Math.sin(t * 0.07) * 0.6;
+    ctx.strokeStyle = css(P.dark, l);
+    ctx.fillStyle = css(P.dark, l);
+    antenna(ctx, 9.6, -7.2, 11.6, -9.6 + sway * 0.4, 14.6 + sway * 0.4, -10.4 + sway, 0.2, 11);
+  }
+  ctx.restore();
+}
+
+/** A grasshopper's hind femur from the hip to the knee: a drumstick with herringbone ridges and two dark bands. */
+function femur(ctx: CanvasRenderingContext2D, P: typeof HOPPER, hip: Pt, knee: Pt, l: RGB): void {
   const fx = knee[0] - hip[0];
   const fy = knee[1] - hip[1];
   const flen = Math.hypot(fx, fy);
@@ -327,18 +359,18 @@ function grasshopper(ctx: CanvasRenderingContext2D, x: number, y: number, dir: n
   ctx.ellipse(flen + 0.15, 0, 0.45, 0.4, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
-  // Eye: big, oval, with a highlight; a small ocellus above.
-  ctx.fillStyle = css(P.eye, l);
+}
+
+/** The raw end where a part was cut off a carcass: a dark, glistening stump. */
+function wound(ctx: CanvasRenderingContext2D, x: number, y: number, r: number, l: RGB): void {
+  ctx.fillStyle = css([92, 58, 36], l, 0.95);
   ctx.beginPath();
-  ctx.ellipse(8.4, -5.5, 1.05, 1.45, 0.2, 0, Math.PI * 2);
+  ctx.ellipse(x, y, r * 0.55, r, 0, 0, Math.PI * 2);
   ctx.fill();
-  if (!dead) glint(ctx, 8.1, -6.1, 0.35, 0.22, 0.4, l, 0.65);
-  // Antennae: short and beaded (a grasshopper's, not a bush cricket's).
-  const sway = dead ? 0 : Math.sin(t * 0.07) * 0.6;
-  ctx.strokeStyle = css(P.dark, l);
-  ctx.fillStyle = css(P.dark, l);
-  antenna(ctx, 9.6, -7.2, 11.6, -9.6 + sway * 0.4, 14.6 + sway * 0.4, -10.4 + sway, 0.2, 11);
-  ctx.restore();
+  ctx.fillStyle = css([196, 150, 96], l, 0.55);
+  ctx.beginPath();
+  ctx.ellipse(x, y, r * 0.3, r * 0.6, 0, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function hopper(ctx: CanvasRenderingContext2D, c: Critter, light: Light): void {
@@ -354,7 +386,9 @@ function beetle(ctx: CanvasRenderingContext2D, c: Critter, light: Light): void {
  * with fine grooves and a cold sheen, a squarish pronotum, curved jaws, and
  * red-brown legs and beaded antennae. `dead`: on its back, legs curled.
  */
-function groundBeetle(ctx: CanvasRenderingContext2D, x: number, y: number, dir: number, gait: number, l: RGB, dead: boolean): void {
+function groundBeetle(ctx: CanvasRenderingContext2D, x: number, y: number, dir: number, gait: number, l: RGB, dead: boolean, gone = 0): void {
+  // Parts cut off a carcass (bits, see PARTS.beetle): legs 0-5 (far, then near), head 6, pronotum 7.
+  const has = (b: number): boolean => !((gone >> b) & 1);
   ctx.save();
   ctx.translate(x, y);
   ctx.scale(dir, 1);
@@ -372,6 +406,11 @@ function groundBeetle(ctx: CanvasRenderingContext2D, x: number, y: number, dir: 
     ctx.fillStyle = css(far ? BEETLE.legDark : BEETLE.leg, l);
     for (let k = 0; k < 3; k++) {
       const hx = hips[k]! + (far ? 0.4 : 0);
+      if (!has(far ? k : 3 + k)) {
+        if (!far) wound(ctx, hx, -1.9, 0.45, l);
+        ctx.fillStyle = css(far ? BEETLE.legDark : BEETLE.leg, l);
+        continue;
+      }
       const tripodA = (k === 1) === far;
       const q = gait + (tripodA ? 0 : Math.PI);
       if (dead) {
@@ -407,29 +446,35 @@ function groundBeetle(ctx: CanvasRenderingContext2D, x: number, y: number, dir: 
   ctx.ellipse(-2.2, -4.25, 3.6, 0.55, -0.03, 0, Math.PI * 2);
   ctx.fill();
   // Pronotum: a rounded square.
-  outline(ctx, [[1.3, -2.1], [1.4, -4.2], [3.0, -4.6], [4.8, -4.1], [5.0, -2.3], [3.2, -1.9]]);
-  litFill(ctx, BEETLE.body, l, -4.6, -1.9, 1.6, 0.7);
-  glint(ctx, 3.1, -4.15, 1.2, 0.2, -0.05, l, 0.22);
-  // Head, jaws, eye, palps.
-  outline(ctx, [[4.7, -2.2], [4.8, -3.6], [6.0, -3.9], [7.1, -3.3], [7.2, -2.3], [6.0, -1.9]]);
-  litFill(ctx, BEETLE.body, l, -3.9, -1.9, 1.5, 0.7);
-  ctx.fillStyle = css(BEETLE.jaw, l);
-  outline(ctx, [[6.9, -2.9], [8.1, -2.7], [8.3, -2.2], [7.6, -2.3], [7.0, -2.0]]);
-  ctx.fill();
-  ctx.fillStyle = css([36, 30, 26], l);
-  ctx.beginPath();
-  ctx.ellipse(5.9, -3.25, 0.42, 0.36, 0, 0, Math.PI * 2);
-  ctx.fill();
-  glint(ctx, 5.8, -3.38, 0.14, 0.1, 0, l, 0.6);
-  ctx.fillStyle = css(BEETLE.leg, l);
-  leg(ctx, [[7.0, -2.1], [7.7, -1.5], [8.3, -1.6]], 0.22, 0.14);
+  if (has(7)) {
+    outline(ctx, [[1.3, -2.1], [1.4, -4.2], [3.0, -4.6], [4.8, -4.1], [5.0, -2.3], [3.2, -1.9]]);
+    litFill(ctx, BEETLE.body, l, -4.6, -1.9, 1.6, 0.7);
+    glint(ctx, 3.1, -4.15, 1.2, 0.2, -0.05, l, 0.22);
+  } else wound(ctx, 1.5, -3.2, 1.1, l);
+  if (has(6)) {
+    // Head, jaws, eye, palps.
+    outline(ctx, [[4.7, -2.2], [4.8, -3.6], [6.0, -3.9], [7.1, -3.3], [7.2, -2.3], [6.0, -1.9]]);
+    litFill(ctx, BEETLE.body, l, -3.9, -1.9, 1.5, 0.7);
+    ctx.fillStyle = css(BEETLE.jaw, l);
+    outline(ctx, [[6.9, -2.9], [8.1, -2.7], [8.3, -2.2], [7.6, -2.3], [7.0, -2.0]]);
+    ctx.fill();
+    ctx.fillStyle = css([36, 30, 26], l);
+    ctx.beginPath();
+    ctx.ellipse(5.9, -3.25, 0.42, 0.36, 0, 0, Math.PI * 2);
+    ctx.fill();
+    glint(ctx, 5.8, -3.38, 0.14, 0.1, 0, l, 0.6);
+    ctx.fillStyle = css(BEETLE.leg, l);
+    leg(ctx, [[7.0, -2.1], [7.7, -1.5], [8.3, -1.6]], 0.22, 0.14);
+  } else if (has(7)) wound(ctx, 4.9, -3.0, 0.9, l);
   drawLegs(false);
-  // Antennae: beaded, red-brown, swept forward.
-  ctx.strokeStyle = css(BEETLE.leg, l);
-  ctx.fillStyle = css(BEETLE.leg, l);
-  const sway = dead ? 0 : Math.sin(gait * 0.5) * 0.4;
-  if (dead) antenna(ctx, 6.6, -3.2, 8.4, -0.6, 9.6, 1.6, 0.16, 9);
-  else antenna(ctx, 6.6, -3.6, 8.6, -5.6 + sway, 11.6, -5.2 + sway, 0.16, 10);
+  if (has(6)) {
+    // Antennae: beaded, red-brown, swept forward.
+    ctx.strokeStyle = css(BEETLE.leg, l);
+    ctx.fillStyle = css(BEETLE.leg, l);
+    const sway = dead ? 0 : Math.sin(gait * 0.5) * 0.4;
+    if (dead) antenna(ctx, 6.6, -3.2, 8.4, -0.6, 9.6, 1.6, 0.16, 9);
+    else antenna(ctx, 6.6, -3.6, 8.6, -5.6 + sway, 11.6, -5.2 + sway, 0.16, 10);
+  }
   ctx.restore();
 }
 
@@ -1477,48 +1522,194 @@ const DEAD = {
 };
 
 /**
- * Dead insects and worms lying whole on the ground (see Carcasses): a
- * grasshopper on its side, legs stiff; a beetle on its back, legs curled up;
- * a stranded worm. They shrink as pieces are cut off, and lean the way the
- * workers drag them.
+ * Dead insects and worms lying on the ground (see Carcasses): a grasshopper
+ * on its side, legs stiff; a beetle on its back, legs curled up; a stranded
+ * worm. They lose their parts as the workers cut them off (a raw stump where
+ * a leg was), and lean the way the team pulls.
  */
 export function drawCarcasses(ctx: CanvasRenderingContext2D, list: Carcass[], light: Light, view: { x0: number; y0: number; x1: number; y1: number }): void {
   for (const c of list) {
     if (c.x < view.x0 - 30 || c.x > view.x1 + 30 || c.y < view.y0 - 20 || c.y > view.y1 + 20) continue;
     const l = light(c.x, c.y - 2);
-    const k = 0.45 + 0.55 * (c.pieces / c.whole);
     ctx.save();
     ctx.translate(c.x + 0.5, c.y + 1);
     ctx.rotate(c.pull * 0.06);
-    ctx.scale(c.dir * k, k);
     ctx.lineCap = 'round';
-    if (c.kind === 'hopper') {
-      ctx.restore();
-      ctx.save();
-      ctx.translate(c.x + 0.5, c.y + 1);
-      ctx.rotate(c.pull * 0.06);
-      ctx.scale(k, k);
-      grasshopper(ctx, 0, 0, c.dir, false, 0, 0, 0, true, l, true);
-    } else if (c.kind === 'beetle') {
-      ctx.restore();
-      ctx.save();
-      ctx.translate(c.x + 0.5, c.y + 1);
-      ctx.rotate(c.pull * 0.06);
-      ctx.scale(k, k);
-      groundBeetle(ctx, 0, 0, c.dir, 0, l, true);
-    } else {
-      // A stranded worm, gone dull and limp.
-      ctx.strokeStyle = css(DEAD.wormDark, l);
-      ctx.lineWidth = 2.6;
-      ctx.beginPath();
-      ctx.moveTo(-11, -1.3);
-      ctx.bezierCurveTo(-5, -0.4, -2, -2.4, 4, -1.2);
-      ctx.quadraticCurveTo(8, -0.6, 11, -1.1);
-      ctx.stroke();
-      ctx.strokeStyle = css(DEAD.worm, l);
-      ctx.lineWidth = 1.9;
-      ctx.stroke();
+    if (c.kind === 'hopper') grasshopper(ctx, 0, 0, c.dir, false, 0, 0, 0, true, l, true, c.gone);
+    else if (c.kind === 'beetle') groundBeetle(ctx, 0, 0, c.dir, 0, l, true, c.gone);
+    else {
+      // A stranded worm, gone dull and limp; bitten through, it lies in lengths.
+      ctx.scale(c.dir, 1);
+      for (let k = 7; k >= 0; ) {
+        if ((c.gone >> k) & 1) {
+          k--;
+          continue;
+        }
+        // A run of segments still joined: k down to j (segment k spans 11-(k+1)*2.75 .. 11-k*2.75).
+        let j = k;
+        while (j > 0 && !((c.gone >> (j - 1)) & 1)) j--;
+        deadWorm(ctx, 11 - (k + 1) * 2.75, 11 - j * 2.75, l, k < 7, j > 0);
+        k = j - 1;
+      }
     }
     ctx.restore();
+  }
+}
+
+/** Height of the limp worm's line at x (local mm, -11..11). */
+const wormY = (x: number): number => -1.2 - 0.45 * Math.sin((x + 11) * 0.42) + 0.2 * Math.sin((x + 11) * 1.1);
+
+/** A length of dead worm from x0 to x1 (local mm): banded, with raw ends where it was bitten through. */
+function deadWorm(ctx: CanvasRenderingContext2D, x0: number, x1: number, l: RGB, cut0: boolean, cut1: boolean): void {
+  if (x1 <= x0 + 0.5) return;
+  const path = (): void => {
+    ctx.beginPath();
+    for (let x = x0; x <= x1 + 1e-6; x += 0.5) {
+      const xx = Math.min(x, x1);
+      if (x === x0) ctx.moveTo(xx, wormY(xx));
+      else ctx.lineTo(xx, wormY(xx));
+    }
+  };
+  path();
+  ctx.strokeStyle = css(DEAD.wormDark, l);
+  ctx.lineWidth = 2.6;
+  ctx.stroke();
+  ctx.strokeStyle = css(DEAD.worm, l);
+  ctx.lineWidth = 1.9;
+  ctx.stroke();
+  // Segment rings.
+  ctx.strokeStyle = css(DEAD.wormDark, l, 0.5);
+  ctx.lineWidth = 0.12;
+  ctx.beginPath();
+  for (let x = x0 + 0.6; x < x1 - 0.2; x += 0.7) {
+    const y = wormY(x);
+    ctx.moveTo(x, y - 0.9);
+    ctx.lineTo(x + 0.1, y + 0.9);
+  }
+  ctx.stroke();
+  if (cut0) wound(ctx, x0, wormY(x0), 1.0, l);
+  if (cut1) wound(ctx, x1, wormY(x1), 1.0, l);
+}
+
+/**
+ * A part cut off a carcass, as a worker carries it in her jaws: at the
+ * origin, reaching forward along +x, true size (mm). tone says whose part it
+ * is (see Carcasses.drop: beetle, grasshopper or worm).
+ */
+export function drawPart(ctx: CanvasRenderingContext2D, look: number, tone: number, l: RGB): void {
+  const kind = tone < 150 ? 'beetle' : tone < 220 ? 'hopper' : 'worm';
+  const P = HOPPER_DRY;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  switch (look) {
+    case Look.Leg: {
+      // Held at the hip, the rest sticking out ahead and down.
+      ctx.fillStyle = css(kind === 'beetle' ? BEETLE.leg : P.body, l);
+      leg(ctx, [[0, 0], [1.6, -0.9], [3.2, 0.3], [3.9, 0.2]], 0.42, 0.2);
+      break;
+    }
+    case Look.HindLeg: {
+      // A grasshopper's jumping leg: the drumstick femur and the rosy tibia.
+      ctx.fillStyle = css(P.tibia, l);
+      leg(ctx, [[5.2, -1.2], [2.6, 0.8], [1.6, 1.0]], 0.42, 0.26);
+      femur(ctx, P, [0, 0], [5.2, -1.2], l);
+      break;
+    }
+    case Look.Wing: {
+      outline(ctx, [[0, -0.2], [3, -0.9], [7.2, -0.8], [7.8, -0.2], [7.0, 0.3], [3, 0.4]]);
+      ctx.fillStyle = css(P.wing, l, 0.85);
+      ctx.fill();
+      ctx.strokeStyle = css(P.vein, l, 0.6);
+      ctx.lineWidth = 0.1;
+      ctx.beginPath();
+      ctx.moveTo(0.2, -0.3);
+      ctx.quadraticCurveTo(4, -0.7, 7.6, -0.3);
+      for (let k = 1; k < 7; k++) {
+        ctx.moveTo(k * 1.05, -0.75 + k * 0.02);
+        ctx.lineTo(k * 1.05 + 0.4, 0.3);
+      }
+      ctx.stroke();
+      break;
+    }
+    case Look.Head: {
+      if (kind === 'beetle') {
+        outline(ctx, [[0, 0.2], [0.1, -1.0], [1.2, -1.3], [2.3, -0.8], [2.4, 0.2], [1.2, 0.5]]);
+        litFill(ctx, BEETLE.body, l, -1.3, 0.5, 1.5, 0.7);
+        ctx.fillStyle = css(BEETLE.jaw, l);
+        outline(ctx, [[2.2, -0.4], [3.3, -0.2], [3.4, 0.3], [2.3, 0.2]]);
+        ctx.fill();
+        ctx.fillStyle = css([36, 30, 26], l);
+        ctx.beginPath();
+        ctx.ellipse(1.2, -0.6, 0.38, 0.32, 0, 0, Math.PI * 2);
+        ctx.fill();
+      } else {
+        outline(ctx, [[0, 1.2], [0, -1.6], [2.0, -2.8], [4.2, -2.2], [5.2, -0.2], [5.0, 1.6], [3.8, 2.4], [1.6, 2.2]]);
+        litFill(ctx, P.body, l, -2.8, 2.4);
+        ctx.fillStyle = css(P.eye, l);
+        ctx.beginPath();
+        ctx.ellipse(3.2, -0.6, 0.95, 1.3, 0.2, 0, Math.PI * 2);
+        ctx.fill();
+        wound(ctx, 0.1, -0.2, 1.0, l);
+      }
+      break;
+    }
+    case Look.Thorax: {
+      if (kind === 'beetle') {
+        outline(ctx, [[0, 0.6], [0.1, -1.4], [1.7, -1.8], [3.4, -1.3], [3.6, 0.5], [1.8, 0.9]]);
+        litFill(ctx, BEETLE.body, l, -1.8, 0.9, 1.6, 0.7);
+        glint(ctx, 1.8, -1.35, 1.0, 0.18, -0.05, l, 0.22);
+      } else {
+        outline(ctx, [[0, 1.8], [0, -2.0], [3.2, -2.6], [6.4, -2.0], [6.6, 1.8], [3.2, 2.4]]);
+        litFill(ctx, P.body, l, -2.6, 2.4, 1.35, 0.75);
+        ctx.strokeStyle = css(P.stripe, l, 0.6);
+        ctx.lineWidth = 0.4;
+        ctx.beginPath();
+        ctx.moveTo(6.2, -1.6);
+        ctx.quadraticCurveTo(3, -2.2, 0.2, -1.4);
+        ctx.stroke();
+      }
+      break;
+    }
+    case Look.Abdomen: {
+      outline(ctx, [[0, -1.6], [5, -1.9], [10.5, -1.2], [11.4, -0.2], [10.6, 0.8], [5, 1.3], [0, 1.4]]);
+      litFill(ctx, P.belly, l, -1.9, 1.4);
+      ctx.strokeStyle = css(P.dark, l, 0.35);
+      ctx.lineWidth = 0.14;
+      ctx.beginPath();
+      for (let k = 1; k < 8; k++) {
+        ctx.moveTo(k * 1.35, -1.7);
+        ctx.lineTo(k * 1.35 + 0.25, 1.2);
+      }
+      ctx.stroke();
+      wound(ctx, 0.1, -0.1, 1.2, l);
+      break;
+    }
+    case Look.Case: {
+      // A beetle's wing cases and abdomen, all that was left of it.
+      outline(ctx, [[0, 0.6], [0.4, -1.2], [3.6, -1.9], [7.4, -1.4], [8.6, -0.2], [7.6, 0.9], [3.6, 1.2]]);
+      litFill(ctx, BEETLE.body, l, -1.9, 1.2, 1.6, 0.7);
+      glint(ctx, 4.2, -1.45, 2.6, 0.28, -0.04, l, 0.2);
+      break;
+    }
+    case Look.Segment: {
+      // A length of worm, bitten through at both ends.
+      ctx.strokeStyle = css(DEAD.wormDark, l);
+      ctx.lineWidth = 2.4;
+      ctx.beginPath();
+      ctx.moveTo(0.4, 0);
+      ctx.quadraticCurveTo(1.6, -0.6, 3.0, 0.1);
+      ctx.stroke();
+      ctx.strokeStyle = css(DEAD.worm, l);
+      ctx.lineWidth = 1.8;
+      ctx.stroke();
+      wound(ctx, 3.0, 0.1, 0.9, l);
+      break;
+    }
+    default: {
+      // A chunk of no particular shape.
+      ctx.fillStyle = css(kind === 'worm' ? DEAD.worm : kind === 'beetle' ? BEETLE.body : P.body, l);
+      outline(ctx, [[-0.1, -0.2], [1.5, -0.55], [1.8, -0.15], [0.9, 0.3], [0.1, 0.25]]);
+      ctx.fill();
+    }
   }
 }

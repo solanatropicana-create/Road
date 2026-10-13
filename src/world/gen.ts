@@ -28,6 +28,18 @@ export interface Generated {
   shrub: ShrubInfo | null;
   /** Antlion pits: centre, bottom and radius. */
   pits: { x: number; y: number; r: number }[];
+  /** Hidden open spaces in the soil (old root channels, hollows), for the diggers to find. */
+  hollows: Hollow[];
+  /** Top of the water table per column, or null. */
+  waterTop: Int16Array | null;
+}
+
+export interface Hollow {
+  kind: 'root' | 'hollow';
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
 }
 
 /**
@@ -75,7 +87,11 @@ export function generate(seed: number, siteId: SiteId): Generated {
         continue;
       }
       const base = L.top * variant.depthScale;
-      tops[k]![x] = Math.round(base + noise.fbm1(x / 70 + k * 100) * (base * 0.1 + 8));
+      // Each map's beds wave and dip in their own way: a short wobble, a long fold, a tilt.
+      const wv = variant.waviness ?? 1;
+      const fold = noise.fbm1(x / 260 + k * 50 + 7) * base * 0.14 * wv;
+      const dip = ((x - w / 2) / w) * (variant.tilt ?? 0) * base * 0.2;
+      tops[k]![x] = Math.round(base + noise.fbm1(x / 70 + k * 100) * (base * 0.1 + 8) * (0.6 + wv * 0.4) + fold + dip);
     }
   });
 
@@ -242,6 +258,21 @@ export function generate(seed: number, siteId: SiteId): Generated {
 
   for (let k = 0; k < variant.burrows; k++) burrowSystem(world, rng, noise, site);
 
+  // This map's own underground (from a second stream: the features above stay where they were).
+  const rng2 = new Rng(seed * 97 + 3);
+  const hollows: Hollow[] = [];
+  for (let k = 0; k < variant.lenses; k++) {
+    const cx = rng2.int(60, w - 60);
+    const cy = world.ground[cx]! + rng2.int(50, 260);
+    blob(world, rng2, noise, cx, cy, rng2.range(40, 120), rng2.range(3, 7), rng2.chance(0.6) ? SANDY : GRAVEL, rng2.int(-30, 30));
+  }
+  for (let k = 0; k < variant.rootChannels; k++) hollows.push(rootChannel(world, rng2));
+  for (let k = 0; k < variant.hollows; k++) {
+    const hl = hollow(world, rng2, noise);
+    if (hl) hollows.push(hl);
+  }
+  for (let k = 0; k < variant.grubs; k++) grub(world, rng2);
+
   // Leaf litter and twigs lying on the ground.
   for (let k = 0; k < Math.round(16 * perM); k++) {
     const x0 = rng.int(4, w - 30);
@@ -265,10 +296,15 @@ export function generate(seed: number, siteId: SiteId): Generated {
   if (variant.tree) tree = makeTree(world, rng, noise);
   const shrub = variant.shrub ? makeShrub(world, rng, noise, tree, siteId) : null;
 
-  // Ground water near the bottom of the slice.
+  // The water table: below it the soil is soaked through (see Sim.waterTable, which keeps it so).
   const wet: number[] = [];
-  if (variant.wetBottom) {
-    for (let y = h - 70; y < h - 3; y++) for (let x = 0; x < w; x++) if (SOIL[world.mat[y * w + x]!] && rng.chance(0.7)) wet.push(y * w + x);
+  const waterTop = variant.waterTable ? new Int16Array(w) : null;
+  if (waterTop) {
+    for (let x = 0; x < w; x++) {
+      const top = waterLine(world, noise, variant.waterTable, x);
+      waterTop[x] = top;
+      for (let y = Math.max(top, 0); y < h - 3; y++) if (SOIL[world.mat[y * w + x]!]) wet.push(y * w + x);
+    }
   }
 
   // Antlion pits: steep cones in loose dry sand, the larva buried at the bottom.
@@ -324,7 +360,105 @@ export function generate(seed: number, siteId: SiteId): Generated {
 
   world.recomputeAllWalk();
   world.dirtyAll = true;
-  return { world, plants, horizons: { tops }, variant, wet, tree, shrub, pits };
+  return { world, plants, horizons: { tops }, variant, wet, tree, shrub, pits, hollows, waterTop };
+}
+
+/** Top of the water table in column x (cells), wavy, for a table `depth` mm below the ground. */
+export function waterLine(world: World, noise: Noise, depth: number, x: number): number {
+  return Math.round(world.ground[x]! + depth + noise.fbm1(x / 150 + 9) * 25);
+}
+
+/**
+ * Where a root died and rotted away: an open channel, a cell or two wide,
+ * winding down from just under the surface and forking. Ants follow these.
+ */
+function rootChannel(world: World, rng: Rng): Hollow {
+  const { w, h } = world;
+  const x0 = rng.int(20, w - 21);
+  const box = { kind: 'root' as const, x0: x0, y0: world.ground[x0]!, x1: x0, y1: world.ground[x0]! };
+  const run = (sx: number, sy: number, a: number, len: number, width: number, depth: number): void => {
+    let x = sx;
+    let y = sy;
+    for (let t = 0; t < len; t++) {
+      a += rng.range(-0.28, 0.28);
+      // Mostly down.
+      a = clamp(a, 0.35, Math.PI - 0.35);
+      x += Math.cos(a) * 0.8;
+      y += Math.sin(a) * 0.8;
+      const xx = Math.round(x);
+      const yy = Math.round(y);
+      if (xx < 3 || xx > w - 4 || yy > h - 12) return;
+      for (let oy = 0; oy < width; oy++) {
+        const i = (yy + oy) * w + xx;
+        if (!SOIL[world.mat[i]!] || yy + oy < world.ground[xx]! + 5) continue;
+        world.tint[i] = world.mat[i]!;
+        world.mat[i] = EMPTY;
+        box.x0 = Math.min(box.x0, xx);
+        box.x1 = Math.max(box.x1, xx);
+        box.y1 = Math.max(box.y1, yy + oy);
+      }
+      // A side root, thinner, now and then.
+      if (depth < 2 && t > 8 && rng.chance(0.025)) run(x, y, a + (rng.chance(0.5) ? 0.8 : -0.8), Math.round(len * 0.4), 1, depth + 1);
+    }
+  };
+  run(x0, world.ground[x0]! + rng.int(5, 9), Math.PI / 2 + rng.range(-0.4, 0.4), rng.int(40, 220), rng.chance(0.4) ? 2 : 1, 0);
+  return box;
+}
+
+/**
+ * A hidden hollow: the air pocket under a big stone, or an old den fallen
+ * in, a roof of soil over a floor of loose crumbs.
+ */
+function hollow(world: World, rng: Rng, noise: Noise): Hollow | null {
+  const { w, h } = world;
+  for (let t = 0; t < 20; t++) {
+    const cx = rng.int(30, w - 31);
+    const cy = world.ground[cx]! + rng.int(40, 300);
+    if (cy > h - 30) continue;
+    const rx = rng.range(6, 14);
+    const ry = rng.range(2.8, 5.5);
+    const s = rng.range(0, 50);
+    const box: Hollow = { kind: 'hollow', x0: cx, y0: cy, x1: cx, y1: cy };
+    for (let y = Math.floor(cy - ry - 1); y <= Math.ceil(cy + ry + 1); y++) {
+      for (let x = Math.floor(cx - rx - 1); x <= Math.ceil(cx + rx + 1); x++) {
+        const nx = (x - cx) / rx;
+        const ny = (y - cy) / ry;
+        if (nx * nx + ny * ny > 1 + noise.n2(x / 3 + s, y / 2) * 0.3) continue;
+        const i = y * w + x;
+        if (!SOIL[world.mat[i]!]) continue;
+        world.tint[i] = world.mat[i]!;
+        world.mat[i] = EMPTY;
+        box.x0 = Math.min(box.x0, x);
+        box.x1 = Math.max(box.x1, x);
+        box.y0 = Math.min(box.y0, y);
+        box.y1 = Math.max(box.y1, y);
+      }
+    }
+    if (box.x1 - box.x0 < 3) continue;
+    // Under a stone half the time: a flat stone for its roof.
+    if (rng.chance(0.5)) stampPebble(world, rng, noise, cx, Math.round(box.y0 - 2), rx * 1.2, rng.range(2, 3), rng.int(0, 3));
+    return box;
+  }
+  return null;
+}
+
+/** A chafer grub curled in its cell in the topsoil: a C of soft white protein. */
+function grub(world: World, rng: Rng): void {
+  const { w } = world;
+  const x = rng.int(30, w - 31);
+  const y = world.ground[x]! + rng.int(15, 100);
+  for (let k = 0; k < 14; k++) {
+    const a = (k / 13) * Math.PI * 1.35 - 0.2;
+    const xx = Math.round(x + Math.cos(a) * 3.2);
+    const yy = Math.round(y + Math.sin(a) * 2.6);
+    for (const [dx, dy] of [[0, 0], [1, 0], [0, 1]]) {
+      const i = (yy + dy!) * w + xx + dx!;
+      if (!SOIL[world.mat[i]!]) continue;
+      world.mat[i] = PREY;
+      world.tone[i] = rng.int(160, 205);
+      world.tint[i] = 3;
+    }
+  }
 }
 
 function surfaceTop(world: World, x: number): number {

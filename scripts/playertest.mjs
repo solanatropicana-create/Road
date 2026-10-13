@@ -185,7 +185,8 @@ async function run(vp) {
   await page.waitForFunction(() => window.game.sim.phase !== 'choose', null, { timeout: 30000 }).catch(() => note(S('landing'), 'queen never landed', ''));
 
   // The founding montage starts once she has sealed herself in.
-  for (let k = 0; k < 40 && !(await page.evaluate(() => window.game.cine.montage)); k++) await fastForward(page, 300);
+  // (She digs and carries her own spoil up first: that takes a while.)
+  for (let k = 0; k < 160 && !(await page.evaluate(() => window.game.cine.montage)); k++) await fastForward(page, 300);
   if (await page.evaluate(() => window.game.cine.montage)) {
     await page.waitForTimeout(1500);
     await audit(page, S('montage'));

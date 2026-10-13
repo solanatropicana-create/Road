@@ -17,6 +17,7 @@ import { Critters } from './critters';
 import { Neighbour } from './rivals';
 import { Fog, FOG } from './fog';
 import { Carcass, Carcasses } from './carcass';
+import { SoilLife } from './soil';
 
 /**
  * Saving a colony: the whole simulation object graph, written generically.
@@ -27,7 +28,7 @@ import { Carcass, Carcasses } from './carcass';
  */
 
 const CLASSES: Record<string, { prototype: object }> = {
-  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar, Ecology, Critters, Neighbour, Fog, Carcass, Carcasses,
+  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar, Ecology, Critters, Neighbour, Fog, Carcass, Carcasses, SoilLife,
 };
 
 const TYPED: Record<string, new (b: ArrayBuffer) => ArrayBufferView> = {
@@ -214,7 +215,12 @@ function upgrade(sim: Sim): void {
     st.stallX ??= a.x;
     st.stallY ??= a.y;
     st.stallT ??= 0;
-    (a as unknown as { pocketT?: number }).pocketT ??= 0;
+    (a as unknown as { pocketT?: number; pellet?: number }).pocketT ??= 0;
+    (a as unknown as { pellet?: number }).pellet ??= 0;
+    const ac = a as unknown as { cutPart?: number; carryPart?: number; carryLoad?: number };
+    ac.cutPart ??= -1;
+    ac.carryPart ??= 0;
+    ac.carryLoad ??= 1;
     if (x.alarm === undefined) x.alarm = 0;
     if (x.lastDX === undefined) x.lastDX = 0;
     if (x.sent === undefined) x.sent = false;
@@ -241,6 +247,17 @@ function upgrade(sim: Sim): void {
   const nx = sim.nest as unknown as { gateAt?: number; explored?: number };
   nx.gateAt ??= 120;
   nx.explored ??= 0;
+  // Saves from before the digging scent.
+  const ns = sim.nest as unknown as { scent?: Uint8Array; scentDir?: Uint8Array; lastGallery?: number };
+  ns.scent ??= new Uint8Array(sim.world.size);
+  ns.scentDir ??= new Uint8Array(sim.world.size);
+  ns.lastGallery ??= 0;
+  const nb2 = sim.nest as unknown as { breaches?: number[]; waterTop?: Int16Array | null };
+  nb2.breaches ??= [];
+  nb2.waterTop ??= null;
+  // Saves from before the soil had a life of its own.
+  const sl = sim as unknown as { soil?: SoilLife };
+  sl.soil ??= new SoilLife(null, []);
   for (const c of sim.nest.chambers) {
     const cc = c as unknown as { base?: number; lobes?: number };
     cc.base ??= c.cells.length;
@@ -250,12 +267,17 @@ function upgrade(sim: Sim): void {
   const cl = sim.critters.list as { kind: string }[];
   for (let k = cl.length - 1; k >= 0; k--) if (cl[k]!.kind === 'lark') cl.splice(k, 1);
   sim.critters.burrows ??= [];
+  const sw = sim as unknown as { wind?: number; windGoal?: number };
+  sw.wind ??= 0;
+  sw.windGoal ??= 0;
   const cz = sim.critters as unknown as { toadLast?: number; toadNights?: number; toadKills?: number };
   cz.toadLast ??= 0;
   cz.toadNights ??= 0;
   cz.toadKills ??= 0;
   const oc = sim as unknown as { carcasses?: Carcasses };
   oc.carcasses ??= new Carcasses();
+  // Saves from before carcasses came apart in parts.
+  for (const c of sim.carcasses.list) c.settle();
   if (!o.neighbours) {
     const list = o.neighbour ? [o.neighbour] : [];
     for (const nb of list) {

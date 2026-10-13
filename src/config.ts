@@ -59,11 +59,11 @@ export const TUNING = {
 
   // --- spoil (excavated soil carried to the surface)
   /**
-   * Share of spoil loads that end up off the slice. A real nest's spoil lies
-   * in a ring all round the entrance; a thin slice through it shows only a
-   * little of that ring, so most loads are carried out of view.
+   * Share of spoil and chaff loads set down "off the slice" (shown only as a
+   * puff of dust). None: every load is carried and dropped in view, and the
+   * wind and the rain keep the mound in check (see Sim.blow).
    */
-  spoilOffSlice: 0.6,
+  spoilOffSlice: 0,
   /** Highest the spoil ring may stand at the crater rim, in mm. */
   moundMax: 14,
   /** Highest the chaff (seed husk) pile may stand, in mm. */
