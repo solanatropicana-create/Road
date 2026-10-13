@@ -67,8 +67,8 @@ export class Ground {
     if (m === SANDY || m === SAND) f = wet < 12 ? 0.85 : wet < 100 ? 1.15 : wet < 150 ? 0.85 : 0.5;
     else if (m === CLAY || m === LIME) f = wet < 60 ? 1 : wet < 160 ? 1 - ((wet - 60) / 100) * 0.55 : 0.45;
     else f = wet < 40 ? 1 : wet < 130 ? 1 - ((wet - 40) / 90) * 0.55 : 0.45;
-    // Soil the workers have packed (a shored roof, the spoil of the walls) holds better.
-    if (m === SAND && w.tint[i]! & PACKED) f *= 2.2;
+    // Soil the workers have packed (a shored roof, the spoil of the walls, a plug) holds better.
+    if (m === SAND && w.tint[i]! & (PACKED | PLUG)) f *= 2.2;
     return base * f;
   }
 
@@ -87,9 +87,11 @@ export class Ground {
       const t = top.get(x);
       if (t === undefined || y < t) top.set(x, y);
     }
+    // (A column open further up than a fall can reach is a shaft or a passage, not roof: a
+    // plug of soil far up a shaft holds nothing over the room.)
     for (const [x, t] of top) {
       let y = t;
-      for (let k = 0; k < 24 && y > 1 && w.mat[(y - 1) * w.w + x] === EMPTY; k++) y--;
+      for (let k = 0; k < 12 && y > 1 && w.mat[(y - 1) * w.w + x] === EMPTY; k++) y--;
       if (w.bg[(y - 1) * w.w + x] !== 1 || w.mat[(y - 1) * w.w + x] === EMPTY) top.delete(x);
       else top.set(x, y);
     }
@@ -207,7 +209,7 @@ export class Ground {
     if (!SOIL[m] && m !== SAND) return;
     w.set(i, SAND, w.tone[i], m === SAND ? w.tint[i]! & 0x3f : m);
     w.wake(i);
-    if (!w.plan[i]) w.claimed.push(i);
+    sim.nest.adopt(i);
     sim.dust(i, m === SAND ? w.tint[i]! & 0x3f : m);
   }
 
@@ -239,7 +241,9 @@ export class Ground {
         if (HARD[m] || m === EMPTY || m === WATER || (m === SAND && w.tint[i]! & PLUG)) continue;
         w.set(i, SAND, w.tone[i], m === SAND ? w.tint[i]! & 0x3f : m);
         w.wake(i);
-        if (!w.plan[i]) w.claimed.push(i);
+        // The hollow is the nest's now: the fall comes down at once (spoil outside the
+        // nest never pours into it, see Physics), and the workers will clear it.
+        sim.nest.adopt(i);
         fell++;
         if (rng.chance(0.3)) sim.dust(i, m === SAND ? HUMUS : m);
       }

@@ -10,7 +10,7 @@ const RANGE = 110;
 /** At most this many on the slice at once (the column on the bark is drawn apart, see TreeLife). */
 const MOST = 8;
 /** They pick fights only this close to their tree (mm out from the trunk); further out they give way. */
-const TURF = 70;
+const TURF = 100;
 
 /** Where the trunk meets the slice, and which way is out from it into the slice. */
 function foot(sim: Sim): { x: number; out: number } | null {
@@ -127,7 +127,7 @@ export function lasius(sim: Sim, c: Critter, cz: Critters): boolean {
   for (const a of col.ants) {
     if (a.away || a.paralysed || a.fight > 0 || a.rival) continue;
     if (Math.abs(a.x - c.x) > 2 || Math.abs(a.y - c.y) > 3 || w.bg[a.y * w.w + a.x] !== 0) continue;
-    if (!rng.chance(0.04)) continue;
+    if (!rng.chance(0.07)) continue;
     c.state = 1;
     c.prey = a;
     c.dir = a.x >= c.x ? 1 : -1;

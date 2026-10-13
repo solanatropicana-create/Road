@@ -724,6 +724,13 @@ export class Nest {
     return HARDNESS[m]! > 0;
   }
 
+  /** Take a cell into the nest's plan at once (the hollow a fall leaves). */
+  adopt(i: number): void {
+    if (this.world.plan[i]) return;
+    this.world.plan[i] = 1;
+    this.planCells.push(i);
+  }
+
   /**
    * Recount what's dug, find the digging frontier, refresh chamber floors and
    * stores. `buried`: where nestmates or brood lie buried alive just now.
