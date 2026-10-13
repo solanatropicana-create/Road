@@ -180,7 +180,7 @@ export class Director {
           const seen = sim.critters.list.filter((c) => kinds.includes(c.kind) && sim.fog.at(Math.round(c.x), c.y, w.ground[Math.max(0, Math.min(w.w - 1, Math.round(c.x)))]!) > 0.5);
           critter = seen[Math.floor(Math.random() * seen.length)] ?? null;
           if (critter) {
-            zoom = critter.kind === 'toad' || critter.kind === 'lizard' || critter.kind === 'mole' ? 5 : critter.kind === 'worm' || critter.kind === 'centipede' ? 8 : 11;
+            zoom = critter.kind === 'toad' || critter.kind === 'lizard' || critter.kind === 'mole' ? 5 : critter.kind === 'worm' || critter.kind === 'centipede' || critter.kind === 'hopper' ? 7 : 10;
             this.caption = t(`nm_${critter.kind}`);
           }
           break;
@@ -199,8 +199,8 @@ export class Director {
           const tr = sim.tree!;
           const side = tr.x < w.w / 2 ? -1 : 1;
           const fx = tr.x - side * tr.r;
-          point = { x: fx - side * 30, y: w.ground[Math.max(0, Math.min(w.w - 1, Math.round(fx)))]! - 40 };
-          zoom = 4.5;
+          point = { x: fx - side * 25, y: w.ground[Math.max(0, Math.min(w.w - 1, Math.round(fx)))]! - 28 };
+          zoom = 6;
           this.caption = t('dc_tree');
           break;
         }
