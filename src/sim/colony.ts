@@ -462,15 +462,17 @@ export class Colony {
     // From June the queen lays with the winter in mind: the stores, and what
     // the harvest should still bring in before it ends, must see the colony
     // and all the brood that will hatch into it through to spring.
-    // (What the harvest brings in from now on is net of what the colony eats
-    // meanwhile: a big colony can eat a whole summer's harvest as it comes in.)
     if (adults > 0 && doy > 150) {
       let pupae = 0;
       for (const b of this.brood) if (b.stage === 2) pupae++;
       const weeksLeft = Math.max(0, (280 - doy) / 7);
       const heads = adults + pupae + larvae + eggs + this.alates.length * 1.5;
-      const use = heads * (DAY_TICKS / TUNING.adultSeedTicks) * metabolism(this.nestTemp) + (larvae + eggs * 0.8) * 0.9;
-      if (this.stored + this.reserve + (this.income * 0.8 - use) * weeksLeft < heads * 4) return;
+      // At what the slice can feed: the harvest no longer keeps up with the
+      // workers already here, so more of them would only eat the winter store.
+      // (While it does, each new worker brings in more than she eats.)
+      const upkeep = adults * (DAY_TICKS / TUNING.adultSeedTicks) * metabolism(this.nestTemp);
+      if (this.income * 0.8 < upkeep) return;
+      if (this.stored + this.reserve + this.income * weeksLeft * 0.5 < heads * 4) return;
     }
     // An established colony stops raising brood at the end of summer (what is
     // laid now would only eat into the winter store); a young one keeps going.
