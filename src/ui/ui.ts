@@ -1375,7 +1375,7 @@ export class UI {
       const el = cap.querySelector('.line') as HTMLElement;
       if (el.innerHTML !== line) {
         // A new shot (not just the ant moving on a few millimetres): the line fades in.
-        const shot = dir.caption.split(' · ').slice(0, 2).join(' · ');
+        const shot = dir.caption.split(' · ')[0]!.replace(/^\S+ /, '');
         if (shot !== this.lastShot) {
           this.lastShot = shot;
           el.classList.remove('fresh');
