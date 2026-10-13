@@ -223,6 +223,35 @@ export class Backdrop {
       }
     }
 
+    // Low sun on a clear morning or evening: shafts of light slanting down through the grass,
+    // coming and going as the blades sway across them.
+    const low = daylight > 0.04 && daylight < 0.6 ? Math.min(1, (daylight - 0.04) / 0.1) * Math.min(1, (0.6 - daylight) / 0.2) : 0;
+    const rays = low * (1 - wet) * Math.min(1, sky.haze * 1.4);
+    if (rays > 0.03) {
+      c.save();
+      c.globalCompositeOperation = 'lighter';
+      const dir = sunX < W / 2 ? 1 : -1;
+      for (let k = 0; k < 7; k++) {
+        const slope = 0.55 + k * 0.17 + Math.sin(time * 0.04 + k * 2.1) * 0.05;
+        const x1 = sunX + dir * (gy - sunY) * slope;
+        const half = (14 + ((k * 37) % 23)) * s * 2;
+        const flicker = 0.55 + 0.45 * Math.sin(time * (0.21 + k * 0.03) + k * 1.3);
+        const beam = c.createLinearGradient(sunX, sunY, x1, gy);
+        beam.addColorStop(0, css(sky.sun, 0));
+        beam.addColorStop(0.35, css(sky.sun, 0.13 * rays * flicker));
+        beam.addColorStop(1, css(sky.sun, 0.03 * rays * flicker));
+        c.fillStyle = beam;
+        c.beginPath();
+        c.moveTo(sunX - half * 0.08, sunY);
+        c.lineTo(sunX + half * 0.08, sunY);
+        c.lineTo(x1 + half, gy);
+        c.lineTo(x1 - half, gy);
+        c.closePath();
+        c.fill();
+      }
+      c.restore();
+    }
+
     // The trunk's shadow across the meadow beside it, away from the sun: long
     // and soft in the morning and evening, short at noon.
     if (this.tree && daylight > 0.05) this.trunkShadow(c, s, ground, worldW, dayT, daylight, wet);
