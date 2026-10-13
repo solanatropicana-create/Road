@@ -3,7 +3,7 @@ import type { Ant } from './ant';
 import { EMPTY, SEED, SOIL, SOLID, WATER } from '../world/mat';
 import { TICK_HZ, DAY_TICKS } from '../config';
 import { clamp } from '../util/math';
-import { spawnUnderground, thief, centipede, moleCricket } from './underground';
+import { spawnUnderground, thief, centipede, moleCricket, backfill } from './underground';
 
 /**
  * The other animals of the slice, above and below ground:
@@ -62,6 +62,13 @@ const HOPPER_MONTH = [0, 0, 0, 0, 0.2, 0.8, 1, 1, 0.7, 0.2, 0, 0];
 
 export class Critters {
   readonly list: Critter[] = [];
+  /** Galleries dug by the enemies in the soil, oldest first: cell, tick dug, radius, in threes (see backfill). */
+  burrows: number[] = [];
+
+  /** Remember a gallery step for the soil to fill in later. */
+  dug(i: number, r: number, tick: number): void {
+    if (this.burrows.length < 30000) this.burrows.push(i, tick, r);
+  }
   add(c: Partial<Critter> & { kind: CritterKind; x: number; y: number }): Critter {
     const full: Critter = { vx: 0, vy: 0, dir: 1, t: 0, state: 0, timer: 0, life: 0, peck: 0, air: false, body: [], tone: 0, ...c };
     this.list.push(full);
@@ -121,8 +128,9 @@ export class Critters {
     }
     // Nest guests move in as the colony grows.
     if (nest.founded && sim.tick % (TICK_HZ * 60) < Critters.PERIOD) this.guests(sim);
-    // Enemies through the soil.
+    // Enemies through the soil, and the old galleries they left filling in.
     spawnUnderground(sim, this);
+    backfill(sim, this);
     // Earthworms in the topsoil when it is cool and damp (not in summer drought or frost).
     if (air > 4 && air < 17 && this.count('worm') < 2 && rng.chance(0.05)) {
       const x = rng.int(30, w.w - 31);
@@ -151,9 +159,9 @@ export class Critters {
         case 'cricket':
         case 'beetlet': keep = this.guest(sim, c); break;
         case 'antlion': keep = this.antlion(sim, c); break;
-        case 'thief': keep = thief(sim, c); break;
+        case 'thief': keep = thief(sim, c, this); break;
         case 'centipede': keep = centipede(sim, c, this); break;
-        case 'molecricket': keep = moleCricket(sim, c); break;
+        case 'molecricket': keep = moleCricket(sim, c, this); break;
       }
       if (keep) this.list[j++] = c;
     }

@@ -951,7 +951,8 @@ export class Ant {
       this.carry = Carry.None;
       return;
     }
-    if (w.bg[i] === 1) {
+    // (A searcher crossing a gate's mouth along its lip is still out searching.)
+    if (w.bg[i] === 1 && !(this.fdist > 0 && w.bg[i - w.w] === 0)) {
       this.fdist = 0;
       // (In the rain, the cold or the midday heat everyone waits.)
       if (!this.sent || sim.forageWeather < 0.05) {
@@ -1449,7 +1450,10 @@ export class Ant {
     for (let k = 0; k < 8; k++) {
       if (!fields.canStep(i, k)) continue;
       const n = i + fields.off[k]!;
-      if (w.bg[n] === 1) continue;
+      // The nest is no place to search, but the mouth of a gate is no wall
+      // either: a searcher crosses it along the lip, or every crater would cut
+      // the surface in two and the ground between two gates become a trap.
+      if (w.bg[n] === 1 && w.bg[n - w.w] !== 0) continue;
       const v = entr[n]!;
       const outward = v !== FAR && here !== FAR && v > here;
       const inward = v !== FAR && here !== FAR && v < here;

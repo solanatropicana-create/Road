@@ -1,7 +1,7 @@
 import type { Sim } from './sim';
 import type { Critter, Critters } from './critters';
 import type { Brood } from './brood';
-import { EMPTY, SAND, SOIL, ROOT, WATER, SEED, REFUSE, PREY } from '../world/mat';
+import { EMPTY, SAND, SOIL, ROOT, WATER, SEED, REFUSE, PREY, HUMUS, LOAM } from '../world/mat';
 import { PACKED } from '../world/physics';
 import { F, FAR } from './fields';
 import { TICK_HZ, DAY_TICKS } from '../config';
@@ -156,7 +156,7 @@ export function spawnUnderground(sim: Sim, cr: Critters): void {
     if (diggable(sim, i)) {
       // Heading in across the slice, wandering, toward the nest more often than not.
       const tx = rng.chance(0.65) ? nest.foundX + rng.int(-60, 60) : rng.int(100, w.w - 100);
-      cr.add({ kind: 'molecricket', x, y, dir: left ? 1 : -1, vx: left ? 1 : -1, vy: 0, state: 0, body: [i], life: DAY_TICKS * 0.7, timer: 0, px: tx, tone: rng.int(0, 255) });
+      cr.add({ kind: 'molecricket', x, y, dir: left ? 1 : -1, vx: left ? 1 : -1, vy: 0, state: 0, body: [i], life: DAY_TICKS * 0.35, timer: 0, px: tx, tone: rng.int(0, 255) });
     }
   }
 }
@@ -164,7 +164,7 @@ export function spawnUnderground(sim: Sim, cr: Critters): void {
 // ------------------------------------------------------------------ thief ants
 
 /** States: 0 digging toward the nursery, 1 raiding through the breach, 2 going home with loot, 3 shut out. */
-export function thief(sim: Sim, c: Critter): boolean {
+export function thief(sim: Sim, c: Critter, cr: Critters): boolean {
   const w = sim.world;
   const rng = sim.rng;
   const col = sim.colony;
@@ -209,6 +209,7 @@ export function thief(sim: Sim, c: Critter): boolean {
     }
     carve(sim, best);
     gal.push(best);
+    cr.dug(best, 0, sim.tick);
     c.x = best % w.w;
     c.y = (best / w.w) | 0;
     return true;
@@ -358,7 +359,7 @@ export function centipede(sim: Sim, c: Critter, cr: Critters): boolean {
 // ------------------------------------------------------------------ mole cricket
 
 /** States: 0 digging, 1 broken into the nest (eating, being swarmed). */
-export function moleCricket(sim: Sim, c: Critter): boolean {
+export function moleCricket(sim: Sim, c: Critter, cr: Critters): boolean {
   const w = sim.world;
   const rng = sim.rng;
   const col = sim.colony;
@@ -389,6 +390,9 @@ export function moleCricket(sim: Sim, c: Critter): boolean {
   }
   // Digging: about 3 mm a second; a gallery as wide as its body.
   if (c.t % 10 !== 0) return true;
+  // Done here, it turns away out of the slice (its galleries run in three
+  // dimensions; ours is one plane of them), soon after it starts back.
+  if (leaving && (sim.rng.chance(0.04) || c.life < -DAY_TICKS / 6)) return false;
   const hx = Math.round(c.x);
   const hy = Math.round(c.y);
   const depth = hy - w.ground[clamp(hx, 0, w.w - 1)]!;
@@ -451,12 +455,48 @@ export function moleCricket(sim: Sim, c: Critter): boolean {
       if (diggable(sim, i)) carve(sim, i);
     }
   }
+  cr.dug(ny * w.w + nx, r, sim.tick);
   c.dir = nx > hx ? 1 : nx < hx ? -1 : c.dir;
   c.x = nx;
   c.y = ny;
   c.body.unshift(ny * w.w + nx);
   if (c.body.length > 60) c.body.length = 60;
   return true;
+}
+
+// ------------------------------------------------------------------ old galleries
+
+/**
+ * Abandoned galleries settle full of soil washed and fallen in from above, a
+ * few weeks after they were dug, and are left as krotovinas: streaks of dark
+ * topsoil through the paler layers (pale loam through the black). Oldest
+ * first, a few gallery steps each call; never the nest's own rooms and
+ * tunnels, nor a cell an ant stands in.
+ */
+export function backfill(sim: Sim, cr: Critters): void {
+  const old = cr.burrows;
+  if (!old.length || sim.tick - old[1]! < DAY_TICKS * 3) return;
+  const w = sim.world;
+  const busy = new Set<number>();
+  for (const a of sim.colony.ants) if (!a.away) busy.add(a.y * w.w + a.x);
+  let k = 0;
+  for (let steps = 0; steps < 6 && k < old.length && sim.tick - old[k + 1]! >= DAY_TICKS * 3; steps++, k += 3) {
+    const c = old[k]!;
+    const r = old[k + 2]!;
+    const cx = c % w.w;
+    const cy = (c / w.w) | 0;
+    for (let dy = -r; dy <= r; dy++) {
+      for (let dx = -r; dx <= r; dx++) {
+        if (dx * dx + dy * dy > r * r + 1) continue;
+        const i = (cy + dy) * w.w + cx + dx;
+        if (w.mat[i] !== EMPTY || w.bg[i] !== 1 || w.plan[i] || busy.has(i)) continue;
+        const was = w.tint[i]! & 0x3f;
+        const fill = was === HUMUS ? LOAM : HUMUS;
+        w.set(i, fill, (fill === LOAM ? 80 : 190) + ((i * 37) % 30), 0);
+      }
+    }
+  }
+  old.splice(0, k);
 }
 
 /** An intruder in the nest close to (x, y), for the workers to turn out against. */

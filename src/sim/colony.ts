@@ -491,7 +491,8 @@ export class Colony {
     const meta = metabolism(this.nestTemp);
     const perAdult = (DAY_TICKS / TUNING.adultSeedTicks) * meta;
     const heads = this.adults + pupae + larvae * 0.9 + eggs * 0.8 + this.alates.length * 1.5;
-    const use = heads * perAdult + larvae * 0.9 + (this.queen?.alive ? (DAY_TICKS / TUNING.queenSeedTicks) * meta : 0);
+    // (Today's eggs are next month's larvae: they will want feeding too.)
+    const use = heads * perAdult + (larvae + eggs * 0.8) * 0.9 + (this.queen?.alive ? (DAY_TICKS / TUNING.queenSeedTicks) * meta : 0);
     const net = use - this.income * 0.85;
     return net <= 0 ? Infinity : (this.stored + this.reserve) / net;
   }
