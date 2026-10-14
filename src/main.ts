@@ -5,7 +5,8 @@ import { UI } from './ui/ui';
 import { TICK_HZ, SPEEDS, DAY_TICKS } from './config';
 import type { Ant } from './sim/ant';
 import { Director } from './ui/director';
-import { saveSim, loadSim, SAVE_KEY, META_KEY } from './sim/save';
+import { saveSim, loadSim } from './sim/save';
+import { initSlots, latestSlot, newSlotId, readSlot, removeSlot, writeSlot } from './sim/slots';
 import { SITE_IDS, SiteId, siteForSeed } from './world/sites';
 import { Cinematics, MONTAGE_SPEED } from './ui/cinematics';
 import { Soundscape } from './ui/sound';
@@ -38,6 +39,8 @@ export class Game {
 
   readonly canvas: HTMLCanvasElement;
   private saving = false;
+  /** The slot this colony is kept in (null until its first save). */
+  slotId: string | null = null;
   /** Bumped when the save is cleared, so a save already under way doesn't write it back. */
   private saveGen = 0;
   private lastSave = performance.now();
@@ -52,6 +55,8 @@ export class Game {
     this.director = new Director(this);
     this.cine = new Cinematics(this);
     this.ui = new UI(this, uiRoot);
+    // The kept colonies are read in the background; the title screen lists them when they're in.
+    void initSlots().then(() => this.ui.slotsReady());
     this.resize();
     this.cam.fit();
     this.cam.zoom = this.cam.tzoom;
@@ -88,8 +93,8 @@ export class Game {
     try {
       const { meta, blob } = await saveSim(this.sim, { journal: this.ui.journalData() });
       if (gen !== this.saveGen) return;
-      localStorage.setItem(SAVE_KEY, blob);
-      localStorage.setItem(META_KEY, JSON.stringify(meta));
+      this.slotId ??= newSlotId();
+      await writeSlot({ ...meta, id: this.slotId, colony: this.sim.names.colony, queen: this.sim.names.queen }, blob);
     } catch {
       // Private window, full storage: the colony just won't persist.
     } finally {
@@ -102,19 +107,16 @@ export class Game {
   /** Forget the saved colony (it died, or the player started over). */
   clearSave(): void {
     this.saveGen++;
-    try {
-      localStorage.removeItem(SAVE_KEY);
-      localStorage.removeItem(META_KEY);
-    } catch {
-      // nothing stored
-    }
+    if (this.slotId) void removeSlot(this.slotId);
+    this.slotId = null;
   }
 
   /** Bring back the saved colony in place of the current one. */
-  async resume(): Promise<boolean> {
+  async resume(id = latestSlot()?.id): Promise<boolean> {
+    if (!id) return false;
     let blob: string | null = null;
     try {
-      blob = localStorage.getItem(SAVE_KEY);
+      blob = await readSlot(id);
     } catch {
       return false;
     }
@@ -122,6 +124,8 @@ export class Game {
     try {
       const { sim, extra } = await loadSim(blob);
       this.sim = sim;
+      this.slotId = id;
+      this.saveGen++;
       this.lastSaveTick = sim.tick;
       this.renderer = new Renderer(this.canvas, sim.world, sim.seed, sim.site);
       this.selected = null;
@@ -139,6 +143,8 @@ export class Game {
   /** A fresh, unlanded world from another seed (the title screen's "another site"). */
   newWorld(seed: number, site: SiteId = siteForSeed(seed)): void {
     this.sim = new Sim(seed, site);
+    this.slotId = null;
+    this.saveGen++;
     this.renderer = new Renderer(this.canvas, this.sim.world, seed, site);
     this.selected = null;
     this.director.stop();

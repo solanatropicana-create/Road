@@ -6,7 +6,7 @@ import type { Chamber } from '../sim/nest';
 import { SPEEDS, TICK_HZ, DAY_TICKS, TUNING } from '../config';
 import { ZONE_TINT, SAMARA_TONE } from '../render/palette';
 import { bodyLength } from '../render/antdraw';
-import { savedMeta } from '../sim/save';
+import { latestSlot, listSlots, removeSlot, exportSlot, importSlot, type SlotMeta } from '../sim/slots';
 import { t, num, getLang, setLang, Lang, Vars } from './i18n';
 import { metabolism } from '../sim/calendar';
 import type { Sim } from '../sim/sim';
@@ -129,7 +129,6 @@ export class UI {
   private starvedDay = -1;
   private lowFoodDay = -1;
   private wingsNoted = false;
-  private replaceArmedAt = 0;
   private pluggedNoted = false;
   private followed: Ant | null = null;
   private lifeCardUntil = 0;
@@ -431,6 +430,7 @@ export class UI {
         <button class="mode${this.mode === 'guide' ? ' last' : ''}" data-mode="guide">${ICON.brain}<h3>${t('modeGuide')}</h3><p>${t('modeGuideD')}</p></button>
       </div>
       <button class="btn on" id="resume" hidden></button>
+      <div id="slots" hidden></div>
       ${this.siteCard()}
       <div class="title-foot">
         <div class="seg" id="tlang"><button data-lang="en" class="${lang0 === 'en' ? 'on' : ''}">EN</button><button data-lang="tr" class="${lang0 === 'tr' ? 'on' : ''}">TR</button></div>
@@ -438,16 +438,7 @@ export class UI {
     r.appendChild(title);
     title.querySelectorAll<HTMLElement>('[data-mode]').forEach((b) => {
       b.onclick = () => {
-        // A saved colony would be replaced: ask first (a real second click).
-        if (savedMeta()) {
-          const now = performance.now();
-          if (!this.replaceArmedAt || now - this.replaceArmedAt > 6000) {
-            this.replaceArmedAt = now;
-            this.toast(t('replaceSave'), 6000);
-            return;
-          }
-          if (now - this.replaceArmedAt < CONFIRM_DELAY_MS) return;
-        }
+        // (A new colony goes into a slot of its own: the kept ones stay in the list.)
         this.setMode(b.dataset.mode as Mode, false);
         this.modeChosen = true;
         this.applyPhase(this.game.sim.phase);
@@ -472,24 +463,14 @@ export class UI {
         this.rebuild();
       };
     });
-    const meta = savedMeta();
+    const meta = latestSlot();
     const resume = title.querySelector('#resume') as HTMLButtonElement;
     if (meta) {
       resume.hidden = false;
       resume.textContent = t('continueColony', { d: meta.day, n: meta.adults });
-      resume.onclick = async () => {
-        resume.textContent = t('opening');
-        if (await this.game.resume()) {
-          this.modeChosen = true;
-          this.applyPhase(this.game.sim.phase);
-          this.toast(t('welcomeBack'));
-        }
-        else {
-          resume.textContent = t('saveBroken');
-          this.game.clearSave();
-        }
-      };
+      resume.onclick = () => void this.openSlot(meta.id, resume);
     }
+    this.buildSlots(title.querySelector('#slots') as HTMLElement);
     (prompt.querySelector('#anywhere') as HTMLElement).onclick = () => this.beginLanding();
     const toasts = h('div');
     toasts.id = 'toasts';
@@ -571,8 +552,8 @@ export class UI {
     fresh.onclick = () => {
       const now = performance.now();
       if (armedAt && now - armedAt > CONFIRM_DELAY_MS) {
-        this.game.clearSave();
-        location.reload();
+        // This colony is kept (saved first); the title screen starts the next.
+        void this.game.save().then(() => location.reload());
         return;
       }
       if (armedAt) return;
@@ -641,6 +622,105 @@ export class UI {
   }
 
   /** Rebuild every panel (after a language change), keeping the state. */
+  /** The kept colonies have been read: show them on the title screen. */
+  slotsReady(): void {
+    if (!this.modeChosen && this.game.sim.phase === 'choose') this.rebuild();
+  }
+
+  private async openSlot(id: string, btn: HTMLElement): Promise<void> {
+    btn.textContent = t('opening');
+    if (await this.game.resume(id)) {
+      this.modeChosen = true;
+      this.applyPhase(this.game.sim.phase);
+      this.toast(t('welcomeBack'));
+    } else btn.textContent = t('saveBroken');
+  }
+
+  /** The list of kept colonies under the title: open, save to a file, delete; and bring one in from a file. */
+  private buildSlots(el: HTMLElement): void {
+    const slots = listSlots();
+    el.hidden = false;
+    const name = (m: SlotMeta): string => (m.queen ? `${t('queenTitle', { name: m.queen })}${m.colony ? ` · ${t(m.colony)}` : ''}` : t('slotUnnamed'));
+    const when = (ms: number): string => new Date(ms).toLocaleDateString(getLang() === 'tr' ? 'tr-TR' : 'en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    el.innerHTML = `${slots.length > 1 ? `<button class="linkbtn" id="slots-toggle">${t('slotsShow', { n: slots.length })}</button>` : ''}
+      <div class="slot-list"${slots.length > 1 ? ' hidden' : ''}>${slots
+        .map(
+          (m) => `<div class="slot" data-id="${m.id}"><div class="slot-txt"><b>${name(m)}</b><span>${t('slotLine', { d: m.day, n: m.adults, w: when(m.savedAt) })}</span></div>
+          <button class="btn" data-act="open">${t('slotOpen')}</button><button class="btn" data-act="export" title="${t('slotExportT')}">${t('slotExport')}</button><button class="btn" data-act="delete">${t('slotDelete')}</button></div>`,
+        )
+        .join('')}</div>
+      <button class="linkbtn" id="slot-import">${t('slotImport')}</button><input type="file" id="slot-file" accept=".json,application/json" hidden />`;
+    const toggle = el.querySelector('#slots-toggle') as HTMLElement | null;
+    if (toggle) toggle.onclick = () => {
+      const list = el.querySelector('.slot-list') as HTMLElement;
+      list.hidden = !list.hidden;
+    };
+    el.querySelectorAll<HTMLElement>('.slot').forEach((row) => {
+      const id = row.dataset.id!;
+      const meta = slots.find((m) => m.id === id)!;
+      let armed = 0;
+      row.querySelectorAll<HTMLButtonElement>('[data-act]').forEach((b) => {
+        b.onclick = async () => {
+          const act = b.dataset.act;
+          if (act === 'open') void this.openSlot(id, b);
+          else if (act === 'export') {
+            const f = await exportSlot(id);
+            if (f) await this.offerFile(`underfoot-${(meta.queen || 'colony').toLowerCase().replace(/[^a-z0-9ğüşıöç]+/gi, '-')}-day${meta.day}.json`, new Blob([JSON.stringify(f)], { type: 'application/json' }));
+          } else if (act === 'delete') {
+            // Deleting a colony takes a second, separate click.
+            const now = performance.now();
+            if (armed && now - armed > CONFIRM_DELAY_MS) {
+              await removeSlot(id);
+              this.rebuild();
+              return;
+            }
+            if (armed) return;
+            armed = now;
+            b.textContent = t('slotDeleteConfirm');
+            b.classList.add('danger');
+            setTimeout(() => {
+              armed = 0;
+              b.textContent = t('slotDelete');
+              b.classList.remove('danger');
+            }, 4000);
+          }
+        };
+      });
+    });
+    const file = el.querySelector('#slot-file') as HTMLInputElement;
+    (el.querySelector('#slot-import') as HTMLElement).onclick = () => file.click();
+    file.onchange = async () => {
+      const f = file.files?.[0];
+      if (!f) return;
+      const m = await importSlot(await f.text());
+      if (m) this.rebuild();
+      else this.toast(t('slotImportBad'), 5000);
+    };
+  }
+
+  /** Hand the player a file: through the viewer's downloads capability where there is one, else a plain download. */
+  private async offerFile(filename: string, data: Blob): Promise<boolean> {
+    const claude = (window as unknown as { claude?: { use?: (n: string) => Promise<{ save(r: { filename: string; data: Blob }): Promise<unknown> } | null> } }).claude;
+    if (claude?.use) {
+      try {
+        const dl = await claude.use('downloads');
+        if (dl) {
+          await dl.save({ filename, data });
+          return true;
+        }
+      } catch {
+        return false;
+      }
+    }
+    const url = URL.createObjectURL(data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    return true;
+  }
+
   private rebuild(): void {
     const tipShown = this.els.keys && !this.els.keys.hidden;
     const folded = this.els.drawer?.classList.contains('collapsed');
@@ -1222,6 +1302,13 @@ export class UI {
     for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel']) addEventListener(ev, () => (this.idle = 0), { passive: true });
     addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
+      // Ctrl/Cmd+S: save now (not the browser's "save page").
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        const ph = game.sim.phase;
+        if (ph === 'founding' || ph === 'growing') void game.save().then(() => this.toast(t('savedNow'), 2500));
+        return;
+      }
       // A sequence running: Space, Esc or Enter skip it.
       if ((game.cine.busy || game.cine.montage) && (e.key === ' ' || e.key === 'Escape' || e.key === 'Enter')) {
         game.cine.skip();

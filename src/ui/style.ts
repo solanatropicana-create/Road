@@ -297,6 +297,16 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 .mode p { margin: 0; font-size: 13px; line-height: 1.5; color: var(--ink-dim); }
 .mode.last::before { content: ''; position: absolute; top: 12px; right: 12px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 #title #resume { display: block; width: 100%; padding: 11px; font-size: 13px; margin-bottom: 14px; }
+#slots { margin: -6px 0 14px; text-align: left; }
+#slots .linkbtn { font-size: 12px; }
+#slots #slot-import { display: block; margin: 6px auto 0; color: var(--ink-faint); }
+.slot-list { display: grid; gap: 6px; margin: 8px 0 4px; max-height: 220px; overflow-y: auto; }
+.slot { display: grid; grid-template-columns: 1fr auto auto auto; align-items: center; gap: 6px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: rgba(22,17,13,0.82); }
+.slot-txt { display: grid; gap: 2px; min-width: 0; }
+.slot-txt b { font-family: var(--serif); font-weight: 600; font-size: 13.5px; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.slot-txt span { font-size: 11.5px; color: var(--ink-faint); }
+.slot .btn { padding: 5px 8px; font-size: 11.5px; }
+@media (max-width: 560px) { .slot { grid-template-columns: 1fr 1fr 1fr; } .slot-txt { grid-column: 1 / -1; } }
 .sitecard { display: grid; grid-template-columns: 34px 1fr 34px; align-items: center; gap: 8px; margin: 4px 0 16px; padding: 16px 12px; text-align: left; border: 1px solid var(--line); border-radius: 16px; pointer-events: auto;
   background: linear-gradient(180deg, rgba(36,28,21,0.85), rgba(20,15,11,0.85)); box-shadow: var(--shadow); }
 .sitenav { all: unset; cursor: pointer; display: grid; place-items: center; width: 34px; height: 34px; border-radius: 50%; color: var(--ink-dim); }
