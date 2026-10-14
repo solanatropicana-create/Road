@@ -290,7 +290,11 @@ Hedef: oyunu açıp izleyen birinin keyif alması. Olgun kolonilerden (node'da �
   - Belgeselde kenarlarda hafif vinyet; her yeni çekimin altyazısı yumuşakça beliriyor. Kuruluş montajında kamera, yavru yığını büyüdükçe kraliçeye yaklaşıyor.
   - Odalara derinlik: duvara yakın arka duvar biraz daha koyu.
   - X sahnenin fotoğrafını koloni adı ve tarihle kaydediyor (artifact görüntüleyicisinde indirme izniyle).
+  - Ağacın kalın kökleri toprakta düz, karanlık bir boşluk gibi duruyordu; artık üstten ışık alan, altı gölgeli, lifli yuvarlak dallar. Toprağın içindeki taşlar da yuvarlak yumrular gibi gölgeleniyor (üstte açık kenar, altta gölge).
+- **Belgeselde komşular.** Ambar baskını ya da sınır savaşı sürdükçe belgesel onu çekiyor: kameradaki yağmacının içeri mi indiği, tohumla mı kaçtığı, savaşta iki tarafın ölü sayısı altyazıda. Sorun varken hızlandırılmış çekim yapılmıyor. Kışın kraliçe "yumurtluyor" değil, "soğuğun geçmesini bekliyor".
+- **Ses.** Savaş ve baskın kuru bir çene ve bacak tıkırtısıyla başlıyor. Kanatlı yavrular, evlilik uçuşu ve uçuşun sonu iki yumuşak çanla işaretleniyor (müzikle birlikte kapanıyor).
 - **Kullanım kolaylığı.**
+  - Oyun duraklatılınca üstte sakin bir rozet bunu söylüyor ("Duraklatıldı · devam için Boşluk").
   - J son olaya atlıyor, Q kraliçeye gidiyor, ok tuşları ve WASD kaydırıyor, Esc belgeselden de çıkıyor.
   - Yeri olan bildirime tıklayınca oraya gidiliyor.
   - Oda kartı ve oda listesi tavan gerilimini ve desteği gösteriyor.
