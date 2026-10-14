@@ -921,6 +921,8 @@ export class Colony {
       this.alates.length = j;
     }
     if (this.hadWorkers && this.ants.length === 0 && !this.failed) this.failed = true;
+    // The founding queen dead before her first daughters hatched: that is the end of it.
+    if (!this.hadWorkers && this.queen && !this.queen.alive && !this.failed) this.failed = true;
     if (sim.tick % (TICK_HZ * 5) === 0) {
       this.history.push({ t: sim.tick, pop: this.ants.length, brood: this.brood.length, food: this.stored });
       if (this.history.length > 2000) this.history.splice(0, this.history.length - 2000);

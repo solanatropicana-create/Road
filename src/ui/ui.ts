@@ -1931,7 +1931,8 @@ export class UI {
     const col = sim.colony;
     const peak = Math.max(0, ...col.history.map((s) => s.pop));
     let cause = 'end_old';
-    if (col.queen && !col.queen.alive && col.queen.deathCause === 'killed by a mole') cause = 'end_queenMole';
+    if (!col.hadWorkers && col.queen && !col.queen.alive) cause = 'end_foundress';
+    else if (col.queen && !col.queen.alive && col.queen.deathCause === 'killed by a mole') cause = 'end_queenMole';
     else if (col.prio.forage === 0) cause = 'end_forageOff';
     else if (col.lastDeath === 'starvation') cause = 'end_hunger';
     else if (col.lastDeath === 'drowned') cause = 'end_flood';
@@ -1939,7 +1940,7 @@ export class UI {
     const el = this.els.over!;
     el.style.display = 'block';
     el.innerHTML = `<div class="eyebrow">${t('dateYear', { date: dateText(sim), y: sim.cal.year(sim.simDays) })}</div><h2>${t('overTitle')}</h2>
-      <p>${t(cause)} ${t('overPeak', { n: peak })}</p>
+      <p>${t(cause)}${col.hadWorkers ? ` ${t('overPeak', { n: peak })}` : ''}</p>
       <button class="btn" id="again" style="padding:8px 16px">${t('foundNew')}</button>`;
     (el.querySelector('#again') as HTMLElement).onclick = () => location.reload();
   }
