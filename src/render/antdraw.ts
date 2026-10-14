@@ -314,8 +314,13 @@ export class AntPainter {
    * Ease each ant's drawn position and pose toward the sim's.
    * speed: sim seconds per real second (0 when paused).
    */
+  /** Seconds of brood life (wriggling, twitching), paused with the sim. */
+  private broodT = 0;
+
   update(ants: Ant[], dt: number, speed: number): void {
     this.time += dt;
+    // The brood's own clock: it stops when the sim is paused, and doesn't race at 16x.
+    this.broodT += dt * (speed > 0 ? Math.min(2, Math.sqrt(speed)) : 0);
     const nominal = 15 * Math.max(speed, 0.25);
     const kA = 1 - Math.exp(-dt * 16);
     // A turn takes about a fifth of a second at 1x, and keeps up (less than in proportion) when the sim runs faster.
@@ -1092,56 +1097,127 @@ export class AntPainter {
       const fy = b.y + 1;
       // Each lies a little differently, from a hash of its id.
       const tilt = (((b.id * 2654435761) >>> 24) / 255 - 0.5) * 0.6;
+      const t = this.broodT;
+      const ph = ((b.id * 40503) & 1023) / 163;
       if (b.stage === 0) {
+        // Eggs: still, but wet and glossy; the shine creeps over them as the light moves.
         ctx.fillStyle = css([242, 236, 220], l);
         ctx.beginPath();
         ctx.ellipse(cx, fy - 0.38, 0.48, 0.36, tilt, 0, Math.PI * 2);
         ctx.fill();
-        ctx.fillStyle = css([255, 255, 250], l, 0.6);
+        ctx.fillStyle = css([255, 255, 250], l, 0.45 + 0.3 * Math.sin(t * 0.7 + ph));
         ctx.beginPath();
         ctx.ellipse(cx - 0.12, fy - 0.52, 0.16, 0.1, 0, 0, Math.PI * 2);
         ctx.fill();
       } else if (b.stage === 1) {
-        // A grub that fattens as it is fed, curled like a comma.
+        // A grub curled like a comma, never quite still: it slowly curls and uncurls,
+        // a wave runs down its segments, and a hungry one rears its head and sways,
+        // begging (Messor larvae are fed by hand).
         const s = (0.55 + b.size * 0.75) * (b.major ? 1.35 : 1);
-        ctx.fillStyle = css([236, 226, 200], l);
+        const hungry = b.fed < 1;
+        const dir = (b.id & 1) === 0 ? 1 : -1;
+        const curl = 1.9 + 0.35 * Math.sin(t * 0.9 + ph) + (hungry ? 0 : 0.25);
+        const beg = hungry ? 0.55 * Math.max(0, Math.sin(t * 1.7 + ph * 2)) + 0.12 * Math.sin(t * 6.3 + ph) : 0.08 * Math.sin(t * 2.1 + ph);
+        const R = [0.4, 0.58, 0.64, 0.56, 0.4];
+        const px: number[] = [];
+        const py: number[] = [];
+        let x = 0;
+        let y = 0;
+        let a = Math.PI - curl / 2 + tilt * 0.5;
+        for (let k = 0; k < 5; k++) {
+          px.push(x);
+          py.push(y);
+          const turn = curl / 4 + (k === 3 ? -beg : 0);
+          a -= turn;
+          x += Math.cos(a) * 0.48 * s;
+          y += Math.sin(a) * 0.48 * s;
+        }
+        // Rest the lowest part of the body on the floor.
+        let low = -Infinity;
+        let mx = 0;
+        for (let k = 0; k < 5; k++) {
+          low = Math.max(low, py[k]! + R[k]! * s);
+          mx += px[k]! / 5;
+        }
+        const ox = cx - mx * dir;
+        const oy = fy - low;
+        // One smooth, plump tube along the curve, thickest in the middle, the
+        // neck narrower; a peristaltic wave swells it a little as it passes.
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+        const X = (k: number): number => ox + px[k]! * dir;
+        const Y = (k: number): number => oy + py[k]!;
+        const tube = (extra: number): void => {
+          for (let k = 0; k < 4; k++) {
+            const r = Math.min(R[k]!, R[k + 1]!) * s * (1 + 0.08 * Math.sin(t * 3.4 - k * 1.3 + ph));
+            ctx.lineWidth = r * 2 + (k === 1 || k === 2 ? 0.12 * s : 0) + extra;
+            ctx.beginPath();
+            ctx.moveTo(X(k), Y(k));
+            ctx.quadraticCurveTo(X(k) + (X(k + 1) - X(k)) * 0.5 + (Y(k + 1) - Y(k)) * 0.08 * dir, Y(k) + (Y(k + 1) - Y(k)) * 0.5, X(k + 1), Y(k + 1));
+            ctx.stroke();
+          }
+        };
+        // A fine dark rim, so each grub in a heap reads as itself.
+        ctx.strokeStyle = css([150, 128, 96], l, 0.85);
+        tube(0.16);
+        ctx.strokeStyle = css([236, 226, 200], l);
+        tube(0);
+        ctx.lineCap = 'butt';
+        ctx.lineJoin = 'miter';
+        // A soft sheen along the back.
+        ctx.strokeStyle = css([255, 250, 236], l, 0.35);
+        ctx.lineWidth = 0.18 * s;
         ctx.beginPath();
-        ctx.ellipse(cx, fy - 0.55 * s, 1.0 * s, 0.6 * s, tilt, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.ellipse(cx + 0.85 * s, fy - 0.85 * s, 0.38 * s, 0.34 * s, 0, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.moveTo(X(1), Y(1) - R[1]! * s * 0.55);
+        ctx.quadraticCurveTo(X(2), Y(2) - R[2]! * s * 0.7, X(3), Y(3) - R[3]! * s * 0.55);
+        ctx.stroke();
         if (z * s > 3) {
-          ctx.strokeStyle = css([200, 186, 154], l, 0.8);
-          ctx.lineWidth = 0.08;
+          // Segment rings and the dark mouthparts.
+          ctx.strokeStyle = css([200, 186, 154], l, 0.4);
+          ctx.lineWidth = 0.06;
           ctx.beginPath();
-          for (let k = -2; k <= 2; k++) {
-            ctx.moveTo(cx + k * 0.3 * s, fy - 0.15 * s);
-            ctx.lineTo(cx + k * 0.3 * s + 0.08, fy - 1.0 * s);
+          for (let k = 1; k < 4; k++) {
+            const r = R[k]! * s * 0.8;
+            const ang = Math.atan2(py[k + 1]! - py[k - 1]!, (px[k + 1]! - px[k - 1]!) * dir) + Math.PI / 2;
+            const qx = ox + px[k]! * dir;
+            const qy = oy + py[k]!;
+            ctx.moveTo(qx + Math.cos(ang) * r, qy + Math.sin(ang) * r);
+            ctx.lineTo(qx - Math.cos(ang) * r, qy - Math.sin(ang) * r);
           }
           ctx.stroke();
+          ctx.fillStyle = css([150, 104, 60], l, 0.9);
+          ctx.beginPath();
+          ctx.arc(ox + px[4]! * dir + Math.cos(a) * dir * 0.22 * s, oy + py[4]! + Math.sin(a) * 0.22 * s, 0.12 * s, 0, Math.PI * 2);
+          ctx.fill();
           // A mouthful of crushed seed in the gut shows the larva has been fed.
           if (b.fed > 0) {
-            ctx.fillStyle = css(sampleRamp(PAL.seed, 0.6), l, 0.55);
+            ctx.fillStyle = css(sampleRamp(PAL.seed, 0.6), l, 0.4);
             ctx.beginPath();
-            ctx.ellipse(cx - 0.1 * s, fy - 0.55 * s, 0.4 * s, 0.22 * s, tilt, 0, Math.PI * 2);
+            ctx.ellipse(ox + px[2]! * dir, oy + py[2]!, 0.42 * s, 0.24 * s, tilt, 0, Math.PI * 2);
             ctx.fill();
           }
         }
       } else {
-        // Naked pupa (Myrmicinae spin no cocoon): an ant folded up, darkening as it matures.
+        // Naked pupa (Myrmicinae spin no cocoon): an ant folded up, darkening as it
+        // matures. Now and then the gaster flexes (more often as it nears eclosion).
         const ripe = Math.min(1, b.age / Math.max(1, pupaTicks));
         const col = mixRGB([232, 216, 182], [120, 92, 70], ripe * ripe * 0.8);
         const s = b.major ? 1.25 : 1;
+        const cyc = (t * (0.09 + ripe * 0.16) + ph * 0.37) % 1;
+        const flex = cyc < 0.05 ? Math.sin((cyc / 0.05) * Math.PI) * (0.22 + ripe * 0.15) : 0;
         ctx.fillStyle = css(col, l);
+        ctx.save();
+        ctx.translate(cx - 0.25 * s, fy - 0.72 * s);
+        ctx.rotate(-flex);
         ctx.beginPath();
-        ctx.ellipse(cx - 0.9 * s, fy - 0.75 * s, 1.0 * s, 0.72 * s, 0.1, 0, Math.PI * 2);
+        ctx.ellipse(-0.65 * s, -0.03 * s, 1.0 * s, 0.72 * s, 0.1, 0, Math.PI * 2);
         ctx.fill();
+        ctx.restore();
         ctx.beginPath();
         ctx.ellipse(cx + 0.35 * s, fy - 0.8 * s, 0.75 * s, 0.5 * s, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.beginPath();
-        ctx.ellipse(cx + 1.25 * s, fy - 0.7 * s, 0.55 * s, 0.5 * s, 0, 0, Math.PI * 2);
+        ctx.ellipse(cx + 1.25 * s, fy - 0.7 * s, 0.55 * s, 0.5 * s, flex * 0.3, 0, Math.PI * 2);
         ctx.fill();
         ctx.fillStyle = css(mixRGB(col, [40, 28, 20], 0.5 + ripe * 0.4), l);
         ctx.beginPath();
