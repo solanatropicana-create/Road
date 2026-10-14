@@ -203,11 +203,15 @@ function upgrade(sim: Sim): void {
     Object.assign(fog.box, { x0: v.x0, x1: v.x1, y1: v.y1 });
     o.fog = fog;
   }
-  // Saves from before alarm, temperament, the gate queue, the second gate and the searcher's heading.
+  // Saves from before alarm, temperament, the gate queue, the second gate, the searcher's heading, group fights and casting about.
   const ants = [...sim.colony.ants, ...sim.colony.alates, ...(o.neighbours ?? (o.neighbour ? [o.neighbour] : [])).flatMap((nb) => nb.ants)];
   for (const a of ants) {
-    const x = a as unknown as { alarm?: number; zeal?: number; sent?: boolean; waiting?: boolean; lastDX?: number };
+    const x = a as unknown as { alarm?: number; zeal?: number; sent?: boolean; waiting?: boolean; lastDX?: number; holders?: Ant[]; towardCheck?: number; towardDist?: number; casting?: number };
     if (x.alarm === undefined) x.alarm = 0;
+    if (x.holders === undefined) x.holders = [];
+    x.towardCheck ??= 0;
+    x.towardDist ??= 0;
+    x.casting ??= 0;
     if (x.lastDX === undefined) x.lastDX = 0;
     if (x.sent === undefined) x.sent = false;
     if (x.waiting === undefined) x.waiting = false;
@@ -223,8 +227,11 @@ function upgrade(sim: Sim): void {
     nest.gateX = -1;
     nest.gateShaft = [];
   }
-  const oc = sim as unknown as { carcasses?: Carcasses };
+  const oc = sim as unknown as { carcasses?: Carcasses; goneHarvest?: number; gleanWeek?: number; gleanMark?: { taken: number; ours: number } };
   oc.carcasses ??= new Carcasses();
+  oc.goneHarvest ??= 0;
+  oc.gleanWeek ??= -1;
+  oc.gleanMark ??= { taken: 0, ours: 0 };
   if (!o.neighbours) {
     const list = o.neighbour ? [o.neighbour] : [];
     for (const nb of list) {

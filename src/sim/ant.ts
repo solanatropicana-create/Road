@@ -110,6 +110,10 @@ export class Ant {
   /** Which way the last sideways step went (-1 / 1), kept through steps straight up or down. */
   private lastDX = 0;
   private stuck = 0;
+  /** Walking toward a column: when progress was last checked, how far it was then, and ticks left casting about. */
+  private towardCheck = 0;
+  private towardDist = 0;
+  private casting = 0;
   /** Steps walked on the surface with the current load. */
   private trip = 0;
   /** Ticks left foraging off the slice (out of view, in the meadow beyond). */
@@ -124,6 +128,12 @@ export class Ant {
   /** Ticks left boxing or fighting, and with whom. */
   fight = 0;
   foe: Ant | null = null;
+  /**
+   * The other side's ants that have joined in and hold this one by a leg or
+   * an antenna (a fight's foe is not among them). Two or more stretch it out
+   * on the ground: an ant spread-eagled like that seldom gets up again.
+   */
+  readonly holders: Ant[] = [];
   /** Paralysed by a spider's bite: it will not recover. Once the spider lets go, ticks since. */
   paralysed = false;
   venom = 0;
@@ -1110,15 +1120,30 @@ export class Ant {
   private toward(sim: Sim, tx: number, under: boolean): void {
     const w = sim.world;
     const i = this.y * w.w + this.x;
+    // Got nowhere for a few seconds (a hollow in the spoil heap, a clod in the
+    // way): cast about at random for a while, then try again.
+    if (this.casting > 0) {
+      this.casting--;
+      this.wander(sim);
+      return;
+    }
+    const d = Math.abs(this.x - tx);
+    if (sim.tick >= this.towardCheck) {
+      if (d > 3 && d >= this.towardDist - 2 && this.towardCheck > 0 && sim.tick - this.towardCheck < TICK_HZ) this.casting = TICK_HZ * sim.rng.int(3, 6);
+      this.towardCheck = sim.tick + TICK_HZ * 4;
+      this.towardDist = d;
+    }
     const fields = sim.fields;
     const dir = Math.sign(tx - this.x) || 1;
+    // Up a grass stem or a shrub (a dead end at its tip): climb back down first.
+    const aloft = this.y < w.ground[this.x]! - 3 ? 1.2 : 0;
     let bestK = -1;
     let bestS = -Infinity;
     for (let k = 0; k < 8; k++) {
       if (!fields.canStep(i, k)) continue;
       const n = i + fields.off[k]!;
       if (!under && w.bg[n] === 1 && w.mat[n - w.w] !== EMPTY) continue;
-      const s = DX[k]! * dir + (SOLID[w.mat[n + w.w]!] ? 0.4 : -0.6) + (k === this.lastDir ? 0.3 : 0) + sim.rng.next() * 0.5;
+      const s = DX[k]! * dir + DY[k]! * aloft + (SOLID[w.mat[n + w.w]!] ? 0.4 : -0.6) + (k === this.lastDir ? 0.3 : 0) + sim.rng.next() * 0.5;
       if (s > bestS) {
         bestS = s;
         bestK = k;

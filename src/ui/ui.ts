@@ -1511,6 +1511,7 @@ export class UI {
       [t('rvSeeds'), String(col.stored + col.reserve)],
     ];
     if (y.wars || y.raids) rows.push([t('rvNeighbours'), t('rvNeighboursV', { w: y.wars, r: y.raids })]);
+    if (y.taken > 0 && sim.neighbours.some((nb) => nb.found)) rows.push([t('rvTaken'), t('rvTakenV', { n: y.taken, m: y.gathered })]);
     if (y.flown) rows.push([t('rvFlown'), String(y.flown)]);
     const el = this.els.review!;
     el.innerHTML = `<div class="eyebrow">${t('yearN', { n: y.year })}${sim.names.colony ? ` · ${t(sim.names.colony)}` : ''}</div><h2>${t('rvTitle')}</h2>
@@ -1553,7 +1554,8 @@ export class UI {
     if (a.rival) {
       const nb = a.rivalOf;
       const whose = t(nb?.young ? 'tipYoungColony' : nb && nb.side < 0 ? 'tipNeighbourL' : 'tipNeighbourR');
-      const doing = t(a.fight > 0 ? 'dc_boxing' : a.haul ? 'tipRivalHaul' : a.carry ? 'tipRivalCarry' : a.rstate === 3 ? 'tipRivalRaid' : a.rstate === 4 ? 'tipRivalWar' : a.rstate === 2 ? 'tipRivalBack' : 'tipRivalForage');
+      const held = a.holders.filter((h) => h.alive && h.foe === a).length + 1;
+      const doing = a.fight > 0 && held >= 2 ? t('dc_pinned', { n: held }) : t(a.fight > 0 ? 'dc_boxing' : a.haul ? 'tipRivalHaul' : a.carry ? 'tipRivalCarry' : a.rstate === 3 ? 'tipRivalRaid' : a.rstate === 4 ? 'tipRivalWar' : a.rstate === 2 ? 'tipRivalBack' : 'tipRivalForage');
       return `<b>${t(a.caste === 'soldier' ? 'tipStrangerMajor' : 'tipStranger')}</b> · ${whose}<br>${doing}<div class="fact">${t(nb?.young ? 'tipYoungFact' : 'tipStrangerFact')}</div>`;
     }
     if (a.foreign) return `<b>${t('dc_gyne')}</b><div class="fact">${t('tipForeignQueen')}</div>`;
@@ -1665,10 +1667,13 @@ export class UI {
     else if (col.lastDeath === 'starvation') cause = 'end_hunger';
     else if (col.lastDeath === 'drowned') cause = 'end_flood';
     else if (col.prio.nurse === 0) cause = 'end_nurseOff';
+    // Starved on a slice the neighbours were gleaning: say how much they took.
+    const taken = sim.rivalTaken();
+    const rivals = cause === 'end_hunger' && taken >= 100 && sim.neighbours.some((nb) => nb.found) ? ` ${t('end_rivalsTook', { n: taken, m: col.delivered })}` : '';
     const el = this.els.over!;
     el.style.display = 'block';
     el.innerHTML = `<div class="eyebrow">${t('dateYear', { date: dateText(sim), y: sim.cal.year(sim.simDays) })}</div><h2>${t('overTitle')}</h2>
-      <p>${t(cause)} ${t('overPeak', { n: peak })}</p>
+      <p>${t(cause)}${rivals} ${t('overPeak', { n: peak })}</p>
       <button class="btn" id="again" style="padding:8px 16px">${t('foundNew')}</button>`;
     (el.querySelector('#again') as HTMLElement).onclick = () => location.reload();
   }

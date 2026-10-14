@@ -4,6 +4,10 @@ import { TUNING, TICK_HZ, DAY_TICKS } from '../config';
 import { EMPTY, SOLID, WOOD, SAND, LOAM } from '../world/mat';
 import { clamp } from '../util/math';
 import { Task } from './types';
+import { F } from './fields';
+
+/** How long a battle lasts: long enough for their workers to walk in from their edge and fight it out. */
+const WAR_TICKS = Math.round(DAY_TICKS / 4);
 
 /**
  * The neighbours. Harvester-ant colonies live a few metres apart and their
@@ -98,6 +102,7 @@ export class Neighbour {
     if (this.war > 0 && --this.war === 0) this.endWar(sim);
     if (this.raid > 0 && --this.raid === 0) this.endRaid(sim);
     if (sim.tick % 30 === 0) this.spawn(sim);
+    if ((this.war > 0 || this.raid > 0) && sim.tick % 150 === 0) this.callOut(sim);
     for (const a of this.ants) if (a.alive) a.tick(sim);
     // Meetings with our workers: boxing, or a real fight.
     const occ = col.occ;
@@ -126,11 +131,97 @@ export class Neighbour {
         }
       }
     }
+    // Others join in: in a battle or a raid a bout seldom stays one against one.
+    if (occ && sim.tick % 6 === 0) this.joinFights(sim);
     if (this.ants.some((a) => !a.alive)) {
       let j = 0;
       for (const a of this.ants) if (a.alive) this.ants[j++] = a;
       this.ants.length = j;
     }
+  }
+
+  /**
+   * The scent of the fight comes in at the gate (with the workers running
+   * home from the front, or with the raiders themselves): the foragers
+   * waiting there, and the majors, turn out, and the alarm passes on from
+   * them into the nest.
+   */
+  private callOut(sim: Sim): void {
+    const col = sim.colony;
+    const w = sim.world;
+    const entr = sim.fields.dist[F.Entr]!;
+    for (const a of col.ants) {
+      if (a.away || a.alarm > 0 || a.task === Task.Nurse || a.caste === 'queen') continue;
+      const i = a.y * w.w + a.x;
+      if (w.bg[i] !== 1 || entr[i]! > 16) continue;
+      if (a.task === Task.Forage || a.caste === 'soldier' || sim.rng.chance(0.3)) a.alarm = TICK_HZ * 50;
+    }
+  }
+
+  /**
+   * A nestmate that comes upon a fight seizes the stranger by a leg or an
+   * antenna; in a battle the strangers do the same for theirs (raiders come
+   * to carry seed off, not to fight). Only alarmed ants of ours join: a
+   * ritual bout out on the meadow draws no crowd. Numbers tell: the side
+   * with more on the other's legs wins, and an ant held by two or more is
+   * stretched out on the ground and killed.
+   */
+  private joinFights(sim: Sim): void {
+    const col = sim.colony;
+    const occ = col.occ!;
+    const w = sim.world;
+    const rng = sim.rng;
+    const hot = this.war > 0 || this.raid > 0;
+    for (const r of this.ants) {
+      if (!r.alive || r.fight === 0 || !r.foe || r.foe.foe !== r || r.holders.length >= 3) continue;
+      for (let dy = -2; dy <= 2 && r.holders.length < 3; dy++) {
+        for (let dx = -2; dx <= 2 && r.holders.length < 3; dx++) {
+          const k = occ[(r.y + dy) * w.w + r.x + dx];
+          if (!k) continue;
+          const o = col.ants[k - 1];
+          if (!o || !o.alive || o.fight > 0 || o.paralysed || o.away || o.caste === 'queen' || o.carry || o.carryBrood) continue;
+          // A ritual bout's touch of alarm draws nobody: only the alarm of a real fight does.
+          if (o.alarm < (hot ? 1 : TICK_HZ * 12) || !rng.chance(hot ? 0.5 : 0.25)) continue;
+          this.grab(o, r, hot);
+        }
+      }
+    }
+    if (this.war === 0) return;
+    for (const r of this.ants) {
+      if (!r.alive || r.fight > 0 || r.paralysed || r.carry) continue;
+      for (let dy = -2; dy <= 2 && r.fight === 0; dy++) {
+        for (let dx = -2; dx <= 2 && r.fight === 0; dx++) {
+          const k = occ[(r.y + dy) * w.w + r.x + dx];
+          if (!k) continue;
+          const o = col.ants[k - 1];
+          if (!o || !o.alive || o.fight === 0 || !o.foe?.rival || o.foe.foe !== o || o.holders.length >= 3) continue;
+          if (rng.chance(0.4)) this.grab(r, o, true);
+        }
+      }
+    }
+  }
+
+  /** `a` takes hold of `b`, already locked in a bout with one of a's side (in a battle or a raid, raising the alarm). */
+  private grab(a: Ant, b: Ant, hot: boolean): void {
+    // Held until the bout is settled (which lets it go).
+    a.fight = b.fight + 2;
+    a.foe = b;
+    b.holders.push(a);
+    if (hot) a.alarm = Math.max(a.alarm, TICK_HZ * 30);
+  }
+
+  /** Everyone holding `a` lets go. */
+  private letGo(a: Ant): Ant[] {
+    const out: Ant[] = [];
+    for (const h of a.holders) {
+      if (h.alive && h.foe === a) {
+        out.push(h);
+        h.fight = 0;
+        h.foe = null;
+      }
+    }
+    a.holders.length = 0;
+    return out;
   }
 
   /**
@@ -205,25 +296,43 @@ export class Neighbour {
   /**
    * A bout between one of theirs (r) and one of ours ends. Most are ritual:
    * nobody is hurt and the weaker backs off. In a battle, or inside our nest,
-   * one of them is killed. Majors, with their big heads, usually win.
+   * one of them is killed. Majors, with their big heads, usually win; and
+   * whichever side has more holding on wins more often, and kills.
    */
   resolve(sim: Sim, r: Ant): void {
     const o = r.foe;
     r.foe = null;
-    if (!o || !o.alive) return;
+    if (o && o.foe !== r) {
+      // It only joined in on one of ours: that bout settles it.
+      const k = o.holders.indexOf(r);
+      if (k >= 0) o.holders.splice(k, 1);
+      return;
+    }
+    if (!o || !o.alive) {
+      this.letGo(r);
+      return;
+    }
     o.foe = null;
     o.fight = 0;
+    const ours = [o, ...this.letGo(r)];
+    const theirs = [r, ...this.letGo(o)];
     const rng = sim.rng;
     const w = sim.world;
     const inside = w.bg[r.y * w.w + r.x] === 1 && w.mat[(r.y - 1) * w.w + r.x] !== EMPTY;
-    const so = o.caste === 'soldier' ? 2.4 : 1;
-    const sr = r.caste === 'soldier' ? 2.4 : 1;
+    const weight = (list: Ant[]) => list.reduce((s, a) => s + (a.caste === 'soldier' ? 2.4 : 1), 0);
+    const so = weight(ours);
+    const sr = weight(theirs);
     const theyLose = rng.next() < so / (so + sr);
     // A bout on the open meadow almost never ends in a death; in a battle, or an intruder in the nest, often.
-    const deadly = this.war > 0 ? 0.55 : inside ? 0.35 : 0.03;
+    // Held by two or more, the loser is stretched out on the ground: few get up again.
+    const holding = theyLose ? ours.length : theirs.length;
+    const base = this.war > 0 ? 0.55 : inside ? 0.35 : 0.03;
+    const deadly = holding >= 3 ? Math.max(base, 0.9) : holding === 2 ? Math.max(base, 0.6) : base;
     if (rng.next() < deadly) {
-      if (theyLose) this.killRival(sim, r);
-      else {
+      if (theyLose) {
+        this.killRival(sim, r);
+        if (holding >= 2) sim.noteYearly('spreadEagle', r);
+      } else {
         sim.colony.kill(o, 'killed by neighbours');
         this.killed.ours++;
         if (this.war > 0) this.warDead.ours++;
@@ -237,7 +346,9 @@ export class Neighbour {
       o.task = Task.Idle;
       o.reevalAt = sim.tick + TICK_HZ * 8;
     }
-    if (this.war === 0) sim.noteYearly('ritualFight', r);
+    // The losing side's helpers let go and back off too.
+    if (theyLose) for (const a of theirs) if (a !== r && a.alive) a.rstate = 2;
+    if (this.war === 0 && holding === 1) sim.noteYearly('ritualFight', r);
   }
 
   killRival(sim: Sim, r: Ant): void {
@@ -247,6 +358,8 @@ export class Neighbour {
     // The body lies where it fell (our cleaners or scavengers deal with it).
     sim.colony.corpses.push({ x: r.x, y: r.y, carried: false });
     this.killed.theirs++;
+    // One fewer of them (a young colony feels every loss).
+    this.workers = Math.max(1, this.workers - 1);
     if (this.war > 0) this.warDead.theirs++;
   }
 
@@ -278,7 +391,7 @@ export class Neighbour {
     const air = sim.cal.airMean(doy);
     // Battles break out on warm, humid days after rain.
     if (col.adults >= 50 && this.workers >= 250 && doy > 120 && doy < 270 && air > 15 && sim.recentRain(DAY_TICKS / 4) && !sim.raining && rng.chance(0.03)) {
-      this.war = Math.round(DAY_TICKS / 10);
+      this.war = WAR_TICKS;
       this.front = clamp(sim.nest.foundX + this.side * rng.int(110, 280), 40, sim.world.w - 41);
       this.warDead = { ours: 0, theirs: 0 };
       this.lastTrouble = week;
@@ -350,7 +463,7 @@ export class Neighbour {
     // Where both colonies' grounds overlap, a meeting on a humid day after rain turns into a battle.
     const air = sim.cal.airMean(doy);
     if (this.workers >= 40 && col.adults >= 40 && air > 15 && sim.recentRain(DAY_TICKS / 4) && !sim.raining && rng.chance(0.02)) {
-      this.war = Math.round(DAY_TICKS / 10);
+      this.war = WAR_TICKS;
       this.front = clamp(Math.round((this.homeX + gate) / 2), 40, w.w - 41);
       this.warDead = { ours: 0, theirs: 0 };
       this.lastTrouble = week;

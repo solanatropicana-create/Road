@@ -57,7 +57,7 @@ export class Director {
    */
   notice(x: number, y: number, caption: string, key: string): void {
     if (!this.active) return;
-    const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds', 'neighbourMetL', 'neighbourMetR', 'youngColony', 'teamCarry', 'cutUp', 'recruitHeavy', 'tugOfWar'];
+    const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'spreadEagle', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds', 'neighbourMetL', 'neighbourMetR', 'youngColony', 'teamCarry', 'cutUp', 'recruitHeavy', 'tugOfWar'];
     const wide = ['war', 'raid', 'flight', 'lark', 'leafFall', 'otherQueens', 'wormsUp', 'youngColonyGone', 'secondGate', 'raidYoung', 'warYoung'];
     const zoom = close.includes(key) ? 11 : wide.includes(key) ? 3.4 : 6;
     this.story = { x, y, caption, zoom };
@@ -198,7 +198,11 @@ export class Director {
     if (a.away > 0) return `${who} ${a.name} · ${t('dc_away')}`;
     if (a.paralysed) return `${who} ${a.name} · ${t('dc_paralysed')}`;
     if (a.cpose > 0) return `${who} ${a.name} · ${t('dc_cpose')}`;
-    if (a.fight > 0) return `${who} ${a.name} · ${t('dc_boxing')}`;
+    if (a.fight > 0) {
+      const held = a.holders.filter((h) => h.alive && h.foe === a).length + 1;
+      const what = a.foe && a.foe.foe !== a ? t('dc_holding') : held >= 2 ? t('dc_pinned', { n: held }) : t('dc_boxing');
+      return `${who} ${a.name} · ${what}`;
+    }
     if (a.sick > 0.6) return `${who} ${a.name} · ${t('dc_sick')}`;
     if (a.haul) return `${who} ${a.name} · ${t('dc_hauling', { n: a.haul.carriers.length - 1 })}`;
     if (a.recruiting) return `${who} ${a.name} · ${t('dc_recruiting')}`;

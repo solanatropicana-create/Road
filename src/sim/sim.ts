@@ -102,7 +102,11 @@ export class Sim {
   /** Birds, grasshoppers, ground beetles, earthworms. */
   readonly critters = new Critters();
   /** What the year brought, for the review at the start of the winter rest. */
-  private yearStart = { born: 0, deaths: {} as Record<string, number>, flown: 0 };
+  private yearStart: { born: number; deaths: Record<string, number>; flown: number; taken?: number; delivered?: number } = { born: 0, deaths: {}, flown: 0, taken: 0, delivered: 0 };
+  /** Seed carried off our slice by neighbours since wiped out, and the weekly tally for the gleaning note. */
+  private goneHarvest = 0;
+  private gleanWeek = -1;
+  private gleanMark = { taken: 0, ours: 0 };
   readonly yearCount = { wars: 0, raids: 0, peak: 0 };
   /** The queen's name (from the site's own region) and the colony's (from the place it chose). */
   names = { queen: '', colony: '' };
@@ -546,7 +550,11 @@ export class Sim {
         break;
       }
       case F.Entr: {
-        for (const e of nest.entrances) {
+        // A mouth buried under spoil or wash leads nowhere: home by the others
+        // (until the diggers inside open it again). If every one is shut, as
+        // under a rain plug, they all still count.
+        const open = nest.entrances.filter((e) => this.mouthOpen(e));
+        for (const e of open.length ? open : nest.entrances) {
           const ex = e % w.w;
           const ey = (e / w.w) | 0;
           for (let dy = -3; dy <= 1; dy++)
@@ -723,7 +731,9 @@ export class Sim {
       this.eco.season(this);
       this.critters.season(this);
       for (const nb of this.neighbours) nb.season(this);
+      this.gleanCheck();
       if (this.neighbours.some((nb) => nb.dead)) {
+        for (const nb of this.neighbours) if (nb.dead) this.goneHarvest += nb.harvested;
         const left = this.neighbours.filter((nb) => !nb.dead);
         this.neighbours.length = 0;
         this.neighbours.push(...left);
@@ -786,21 +796,85 @@ export class Sim {
   }
 
   /**
+   * Can an ant walk from the shaft out into the air at this entrance? (A
+   * small flood fill around the mouth, through cells an ant can step to.)
+   */
+  private mouthOpen(e: number): boolean {
+    const w = this.world;
+    const fields = this.fields;
+    const ex = e % w.w;
+    const ey = (e / w.w) | 0;
+    const inBox = (i: number): boolean => Math.abs((i % w.w) - ex) <= 6 && Math.abs(((i / w.w) | 0) - ey) <= 8;
+    const stack: number[] = [];
+    const seen = new Set<number>();
+    for (let dy = -2; dy <= 6; dy++) {
+      for (let dx = -3; dx <= 3; dx++) {
+        const i = (ey + dy) * w.w + ex + dx;
+        if (w.walk[i] && w.bg[i] === 1) {
+          stack.push(i);
+          seen.add(i);
+        }
+      }
+    }
+    while (stack.length) {
+      const i = stack.pop()!;
+      if (w.bg[i] === 0) return true;
+      for (let k = 0; k < 8; k++) {
+        if (!fields.canStep(i, k)) continue;
+        const n = i + fields.off[k]!;
+        if (seen.has(n) || !inBox(n)) continue;
+        seen.add(n);
+        stack.push(n);
+      }
+    }
+    return false;
+  }
+
+  /** Seed the neighbours have carried off our slice (gleaned or stolen), the wiped-out ones' included. */
+  rivalTaken(): number {
+    return this.neighbours.reduce((s, nb) => s + nb.harvested, this.goneHarvest);
+  }
+
+  /**
+   * Once a week: if the neighbours took a big share of our slice's harvest,
+   * say so (once a year). Their foragers glean quietly, one seed at a time,
+   * and a hungry winter can be their doing as much as the weather's.
+   */
+  private gleanCheck(): void {
+    const week = Math.floor(this.simDays);
+    if (week === this.gleanWeek) return;
+    const taken = this.rivalTaken();
+    const ours = this.colony.delivered;
+    const dt = taken - this.gleanMark.taken;
+    const dours = ours - this.gleanMark.ours;
+    const first = this.gleanWeek < 0;
+    this.gleanWeek = week;
+    this.gleanMark = { taken, ours };
+    if (first || this.dormant || !this.colony.hadWorkers || dt < 25 || dt < dours * 0.5) return;
+    if (!this.neighbours.some((nb) => nb.found)) return;
+    const y = this.cal.year(this.simDays);
+    if (this.noted['rivalsGlean'] === y) return;
+    this.noted['rivalsGlean'] = y;
+    this.events.push({ key: 'rivalsGlean', n: dt, m: dours });
+  }
+
+  /**
    * Close the year's books: births, deaths by cause, battles and raids, the
    * nuptial flight, since the last review. (Called by the field notes when
    * the colony goes into its winter rest.)
    */
-  closeYear(): { year: number; born: number; deaths: [string, number][]; flown: number; wars: number; raids: number; peak: number } {
+  closeYear(): { year: number; born: number; deaths: [string, number][]; flown: number; wars: number; raids: number; peak: number; taken: number; gathered: number } {
     const c = this.colony;
     const s = this.yearStart;
+    const taken = this.rivalTaken();
     const deaths: [string, number][] = [];
     for (const [k, v] of Object.entries(c.deaths)) {
       const d = v - (s.deaths[k] ?? 0);
       if (d > 0) deaths.push([k, d]);
     }
     deaths.sort((a, b) => b[1] - a[1]);
-    const out = { year: this.cal.year(this.simDays), born: c.born - s.born, deaths, flown: c.flown.total - s.flown, wars: this.yearCount.wars, raids: this.yearCount.raids, peak: Math.max(this.yearCount.peak, c.adults) };
-    this.yearStart = { born: c.born, deaths: { ...c.deaths }, flown: c.flown.total };
+    const out = { year: this.cal.year(this.simDays), born: c.born - s.born, deaths, flown: c.flown.total - s.flown, wars: this.yearCount.wars, raids: this.yearCount.raids, peak: Math.max(this.yearCount.peak, c.adults), taken: taken - (s.taken ?? taken), gathered: c.delivered - (s.delivered ?? c.delivered) };
+    this.yearStart = { born: c.born, deaths: { ...c.deaths }, flown: c.flown.total, taken, delivered: c.delivered };
     this.yearCount.wars = 0;
     this.yearCount.raids = 0;
     this.yearCount.peak = c.adults;
