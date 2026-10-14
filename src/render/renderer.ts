@@ -181,7 +181,22 @@ export class Renderer {
       case CLAY: c = sampleRamp(PAL.clay, tone); break;
       case SUBSOIL: c = sampleRamp(PAL.subsoil, tone); break;
       case GRAVEL: c = sampleRamp(PAL.gravel, tone); break;
-      case STONE: c = sampleRamp(PAL.stone[w.tint[i]! & 7] ?? PAL.stone[0]!, tone); break;
+      case STONE: {
+        c = sampleRamp(PAL.stone[w.tint[i]! & 7] ?? PAL.stone[0]!, tone);
+        // A stone is a rounded lump, lit from above: a pale upper rim, its belly in shadow.
+        const W = w.w;
+        let l = 0, r = 0, u = 0, d = 0;
+        while (l < 12 && x - l - 1 >= 0 && w.mat[i - l - 1] === STONE) l++;
+        while (r < 12 && x + r + 1 < W && w.mat[i + r + 1] === STONE) r++;
+        while (u < 12 && y - u - 1 >= 0 && w.mat[i - (u + 1) * W] === STONE) u++;
+        while (d < 12 && y + d + 1 < w.h && w.mat[i + (d + 1) * W] === STONE) d++;
+        const sx = (l - r) / (l + r + 1);
+        const sy = (u - d) / (u + d + 1);
+        const nz = Math.sqrt(Math.max(0, 1 - Math.min(1, sx * sx * 0.5 + sy * sy)));
+        const lit = 0.74 + 0.4 * Math.max(0, -0.25 * sx - 0.75 * sy + 0.6 * nz) - (sy > 0.6 ? (sy - 0.6) * 0.35 : 0);
+        c = [Math.min(255, c[0] * lit), Math.min(255, c[1] * lit), Math.min(255, c[2] * lit)];
+        break;
+      }
       case ROOT: {
         // Fine roots: pale threads in whatever soil they run through.
         const soil = sampleRamp(soilRamp(this.guessSoil(x, y)), 0.35 + tone * 0.3);
