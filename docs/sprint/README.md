@@ -315,7 +315,7 @@ Hedef: oyunu açıp izleyen birinin keyif alması. Olgun kolonilerden (node'da �
   - Bahçe karıncalarına giden: ağaçlı haritalarda 3 yılda 27–40 işçi.
   - Göçükte ölen: 3 yılda harita başına 4–82 işçi.
   - Ara ölçüm: 80 haritada kurucu kraliçenin mühürlenmesi 80/80.
-- **Testler.** Oyuncu testi 0 bulgu; izleme testi (kuruluş, ilk işçiler, bir yıl sonra) ışınlanma, takılma, leş sıçraması yok.
+- **Testler.** Son kodla oyuncu testi (masaüstü, dizüstü, telefon) 0 bulgu. Bir önceki turda telefondaki kuruluş takılması bu testte yakalanmıştı. İzleme testinde (kuruluş, ilk işçiler, bir yıl sonra) ışınlanma, takılma ya da leş sıçraması yok.
 - **Yakalanan hatalar.**
   - Gömülü yavru kimliği negatif olduğu için nabız halkasının yarıçapı negatife düşüyor, çizim istisna atıp oyunu donduruyordu. Düzeltildi. Kare döngüsü artık bir sonraki kareyi her şeyden önce istiyor, tek karelik bir çizim hatası koloniyi durduramaz.
   - Tıklanabilir bildirimler günlük bağlantısının stilini alıp tek satıra yayılıyordu. Düzeltildi.
