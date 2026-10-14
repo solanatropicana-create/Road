@@ -358,6 +358,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #ui.doc #bar { opacity: .32; }
 #ui::before { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 1.2s ease; background: radial-gradient(ellipse 75% 70% at 50% 48%, transparent 55%, rgba(8,5,3,0.42) 100%); }
 #ui.doc::before { opacity: 1; }
+/* gamepad: the crosshair A picks at, and the button the d-pad is on */
+#padcross { display: none; } #ui.padcross #padcross { display: block; position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; margin: -11px 0 0 -11px; border: 1.5px solid rgba(231,183,95,0.75); border-radius: 50%; box-shadow: 0 0 0 1px rgba(0,0,0,0.35); pointer-events: none; }
+.padfocus { outline: 2px solid var(--accent) !important; outline-offset: 2px; }
 #dip { position: absolute; inset: 0; background: #0a0705; opacity: 0; pointer-events: none; }
 #ui.paused::after { content: attr(data-paused); position: absolute; top: 70px; left: 50%; transform: translateX(-50%); padding: 4px 12px; border-radius: 999px; background: rgba(20,15,11,0.72); border: 1px solid var(--line); color: var(--ink-faint); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; pointer-events: none; }
 @media (max-width: 700px) { #ui.paused::after { top: 102px; } }

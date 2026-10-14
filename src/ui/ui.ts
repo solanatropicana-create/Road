@@ -7,6 +7,7 @@ import { SPEEDS, TICK_HZ, DAY_TICKS, TUNING } from '../config';
 import { ZONE_TINT, SAMARA_TONE } from '../render/palette';
 import { bodyLength } from '../render/antdraw';
 import { getPrefs, setPref } from './prefs';
+import { Pad } from './gamepad';
 import { latestSlot, listSlots, removeSlot, exportSlot, importSlot, type SlotMeta } from '../sim/slots';
 import { t, num, getLang, setLang, Lang, Vars } from './i18n';
 import { metabolism } from '../sim/calendar';
@@ -518,7 +519,8 @@ export class UI {
       <dt>M</dt><dd>${t('keyM')}</dd>
       <dt>X</dt><dd>${t('keyX')}</dd>
       <dt>Q</dt><dd>${t('keyQ')}</dd>
-      <dt>${t('keyArrows')}</dt><dd>${t('keyArrowsD')}</dd></dl>
+      <dt>${t('keyArrows')}</dt><dd>${t('keyArrowsD')}</dd>
+      <dt>${t('keyPad')}</dt><dd>${t('keyPadD')}</dd></dl>
       <div class="row langrow"><label>${t('modeLabel')}</label><div class="seg" id="modeseg">
         <button data-mode="watch" class="${this.mode === 'watch' ? 'on' : ''}">${t('modeWatch')}</button><button data-mode="guide" class="${this.mode === 'guide' ? 'on' : ''}">${t('modeGuide')}</button></div></div>
       <div class="row langrow"><label>${t('language')}</label><div class="seg" id="lang">
@@ -599,6 +601,9 @@ export class UI {
     const caption = h('div', '', `<div class="eyebrow">${t('watching')}</div><div class="line"></div>`);
     caption.id = 'caption';
     r.appendChild(caption);
+    const cross = h('div', '', '');
+    cross.id = 'padcross';
+    r.appendChild(cross);
     // The documentary's dip to dark between far-apart shots (under everything else).
     const dip = h('div', '', '');
     dip.id = 'dip';
@@ -652,6 +657,60 @@ export class UI {
   }
 
   /** Rebuild every panel (after a language change), keeping the state. */
+  /** A gamepad drives the same controls as the keys and the mouse. */
+  private pad = new Pad({
+    menu: () => this.padMenu() !== null,
+    pan: (dx, dy) => {
+      const game = this.game;
+      if (game.cine.busy) return;
+      if (game.director.active) game.director.stop();
+      game.selected = null;
+      game.cam.pan(-dx, -dy);
+    },
+    zoom: (f) => {
+      if (this.game.director.active) this.game.director.stop();
+      this.game.cam.zoomAt(innerWidth / 2, innerHeight / 2, f);
+    },
+    pick: () => this.click(innerWidth / 2, innerHeight / 2),
+    key: (k) => this.padKey(k),
+    speedStep: (d) => {
+      const i = (SPEEDS as readonly number[]).indexOf(this.game.speed);
+      this.game.setSpeed((i < 0 ? 0 : i) + d);
+    },
+    cross: (on) => this.root.classList.toggle('padcross', on),
+  });
+
+  /** The menu a gamepad is in (title, closing card, year review, settings), if any. */
+  private padMenu(): HTMLElement | null {
+    for (const id of ['review', 'over', 'title', 'keys']) {
+      const el = this.els[id];
+      if (el && !el.hidden && el.getClientRects().length > 0 && getComputedStyle(el).display !== 'none') return el;
+    }
+    return null;
+  }
+
+  private padKey(k: string): void {
+    const menu = this.padMenu();
+    if (menu && (k === 'Tab' || k === 'Shift+Tab' || k === 'Enter')) {
+      const items = [...menu.querySelectorAll<HTMLElement>('button, input, [data-mode]')].filter((e) => e.getClientRects().length > 0 && !(e as HTMLButtonElement).disabled);
+      if (!items.length) return;
+      const cur = document.activeElement as HTMLElement | null;
+      let i = cur ? items.indexOf(cur) : -1;
+      if (k === 'Enter') {
+        if (i < 0) i = 0;
+        items[i]!.click();
+        return;
+      }
+      i = i < 0 ? 0 : (i + (k === 'Tab' ? 1 : -1) + items.length) % items.length;
+      document.querySelectorAll('.padfocus').forEach((e) => e.classList.remove('padfocus'));
+      items[i]!.classList.add('padfocus');
+      items[i]!.focus();
+      items[i]!.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    dispatchEvent(new KeyboardEvent('keydown', { key: k }));
+  }
+
   /** Apply the display preferences (interface scale, shake). */
   applyPrefs(): void {
     const p = getPrefs();
@@ -1479,6 +1538,7 @@ export class UI {
   // ------------------------------------------------------------------ per frame
 
   update(dt: number): void {
+    this.pad.poll(dt, performance.now());
     const game = this.game;
     const sim = game.sim;
     const col = sim.colony;
