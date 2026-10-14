@@ -309,12 +309,12 @@ Hedef: oyunu açıp izleyen birinin keyif alması. Olgun kolonilerden (node'da �
   - Sonuç: 80/80 haritada kraliçe mühürleniyor (ortalama ~20 bin tik).
 - **Kayıp kraliçe.** Bir 160 haftalık turda köstebek yuvayı yarınca kraliçe çöken tünelde, odasından uzak kapalı bir cepte kaldı. Bir daha hiç yumurtlamadı ve koloni söndü. Kapalı kalan işçiler kendini kazarak çıkarıyordu, kraliçe çıkaramıyordu; artık o da kazıyor.
 - **Bitiş.** İlk işçiler çıkmadan ölen kurucu kraliçe oyunu bitiriyor (önceden oyun ölü bir kraliçeyle sonsuza dek sürüyordu); kapanış kartında kendi cümlesi var.
-- **Son ölçüm (8 harita, 160 hafta):**
-  - 8/8 koloni hayatta, açlıktan ölen işçi 0, 8/8'de evlilik uçuşu.
-  - Son nüfus 96–414 işçi.
-  - Bahçe karıncalarına giden: ağaçlı haritalarda 3 yılda 4–45 işçi (önceki turda 21–81).
-  - Göçükte ölen: 3 yılda harita başına 0–72 işçi.
-  - Bir harita (96 işçi) ikinci yazında az yavruladı. Bu turlar arasında oynayan, daha önce de görülen bir seyir (aynı harita 301 ve 562 işçiye de çıkmıştı); bu gecenin değişikliklerinden gelmiyor.
+- **Son ölçüm (8 harita, 160 hafta, kuruluş düzeltmelerinden sonra):**
+  - 8/8 koloni hayatta, açlıktan ölen işçi 0, 8/8'de evlilik uçuşu (6–47 kanatlı).
+  - Son nüfus 152–565 işçi (bir önceki turda 96–414).
+  - Bahçe karıncalarına giden: ağaçlı haritalarda 3 yılda 27–40 işçi.
+  - Göçükte ölen: 3 yılda harita başına 4–82 işçi.
+  - Ara ölçüm: 80 haritada kurucu kraliçenin mühürlenmesi 80/80.
 - **Testler.** Oyuncu testi 0 bulgu; izleme testi (kuruluş, ilk işçiler, bir yıl sonra) ışınlanma, takılma, leş sıçraması yok.
 - **Yakalanan hatalar.**
   - Gömülü yavru kimliği negatif olduğu için nabız halkasının yarıçapı negatife düşüyor, çizim istisna atıp oyunu donduruyordu. Düzeltildi. Kare döngüsü artık bir sonraki kareyi her şeyden önce istiyor, tek karelik bir çizim hatası koloniyi durduramaz.
