@@ -320,7 +320,24 @@ Hedef: oyunu açıp izleyen birinin keyif alması. Olgun kolonilerden (node'da �
   - Gömülü yavru kimliği negatif olduğu için nabız halkasının yarıçapı negatife düşüyor, çizim istisna atıp oyunu donduruyordu. Düzeltildi. Kare döngüsü artık bir sonraki kareyi her şeyden önce istiyor, tek karelik bir çizim hatası koloniyi durduramaz.
   - Tıklanabilir bildirimler günlük bağlantısının stilini alıp tek satıra yayılıyordu. Düzeltildi.
 
-## 10. Sıradaki (öneri)
+## 10. Canlı kreş, kraliçenin güvenliği, sürüm altyapısı
+
+- **Canlı yavrular.** Larvalar kıvrık, dolgun kurtçuklar: yavaşça kıvrılıp açılıyor, gövdelerinden bir dalga geçiyor, aç olanlar başını kaldırıp sallanarak yem istiyor. Pupalar ara sıra kasılıyor (çıkışa yaklaştıkça daha sık), yumurtalar ıslak ıslak parlıyor. Yığındaki her larvanın ince bir konturu var. Oyun duraklatılınca hepsi duruyor.
+- **Kraliçenin güvenliği.** Dört kayıtta da kraliçenin altında yalnızca 0–2 mm toprak vardı: kurucu odası zamanla tünellerin geçtiği bir kavşağa dönüşüyordu.
+  - Kraliçe odası güvensizleşince işçiler yuvanın en derin kısmında yeni bir kraliçe odası kazıyor (bu kazı çoğu işin önüne geçiyor). Güvensiz sayılan durumlar: taban alttaki tünellerin üstünde kabuğa döndü, tavan zorlanıyor, her yandan tünel geçiyor ya da yuva derinleşirken oda sığ kaldı.
+  - Oda hazır olunca kraliçe bakıcılarıyla birlikte oraya yürüyor; eski oda dinlenme odası oluyor. Günlük ve belgesel bunu izliyor.
+  - Kraliçe tabanının altındaki şeride yeni hiçbir şey kazılmıyor.
+  - 8 haritada 160 hafta: her kolonide kraliçe bir kez, 9–13 cm derinliğe taşındı. 8/8 hayatta, 145–515 işçi, 8/8 uçuş, açlık 0.
+- **Sürüm altyapısı.**
+  - Yazı tipleri pakette (OFL lisanslarıyla); oyun internetsiz çalışıyor.
+  - Kayıt yuvaları: her koloni ayrı kayıtta (IndexedDB; eski kayıt ilk açılışta aktarılıyor). Başlıkta liste var: aç, dosyaya kaydet, sil. Dosyadan koloni açılabiliyor. Yeni koloni eskisini silmiyor. Ctrl+S kaydediyor.
+  - Ayarlar: ses, doğa ve müzik düzeyleri; arayüz boyutu (S–XL); sarsıntı aç/kapa; tam ekran (F11).
+  - Oyun kolu ve Steam Deck: çubuklar bakar ve yakınlaştırır, A nişangâhtaki karıncayı izler, menülerde yön tuşları gezinir.
+  - Hata kaydı: yakalanmayan hatalar saklanıyor, ilkinde koloni kaydedilip oyuncuya söyleniyor. "Sorun bildir" sürüm, sistem, ayarlar, koloni durumu ve son hatalarla bir metin dosyası kaydediyor.
+  - Masaüstü: Electron 44 kabuğu, karınca simgesi, Windows zip paketi. Xvfb altında denendi: yazı tipleri çevrimdışı, kayıt yeniden açılışta duruyor. Windows'ta elle denenmedi.
+- **Testler.** Oyuncu testi 0 bulgu (ayar kaydırıcıları ve panel yüksekliği ilk turda yakalanıp düzeltildi).
+
+## 11. Sıradaki (öneri)
 
 1. **Ağacın devamı:** yaprak biti kolonileri, kabuk altında kışlayan böcekler; *Lasius* ile yol paylaşımı (bir kayıptan sonra toplayıcıların gövde dibinden kaçınması).
 2. **Majörler değirmenci olsun:** Tohumu kırıp "karınca ekmeği" yapsınlar.
