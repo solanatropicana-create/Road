@@ -173,6 +173,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #keys dd { margin: 0; color: var(--ink-dim); }
 #keys .langrow { grid-template-columns: 80px 1fr; margin: 0 0 10px; }
 #keys .vol input { width: 100%; accent-color: var(--accent); margin: 0; }
+#keys #report { display: block; margin: 8px auto 0; font-size: 12px; color: var(--ink-faint); }
+#keys .version { margin-top: 4px; text-align: center; font-size: 10.5px; color: var(--ink-faint); opacity: 0.7; }
 #keys #fullscreen { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
 #keys { max-height: calc((100vh - 96px) / var(--uizoom, 1)); overflow-y: auto; }
 #keys .btn { display: block; width: 100%; text-align: center; }

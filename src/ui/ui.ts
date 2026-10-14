@@ -8,6 +8,7 @@ import { ZONE_TINT, SAMARA_TONE } from '../render/palette';
 import { bodyLength } from '../render/antdraw';
 import { getPrefs, setPref } from './prefs';
 import { Pad } from './gamepad';
+import { installErrorLog, errorLog, VERSION } from '../util/errors';
 import { latestSlot, listSlots, removeSlot, exportSlot, importSlot, type SlotMeta } from '../sim/slots';
 import { t, num, getLang, setLang, Lang, Vars } from './i18n';
 import { metabolism } from '../sim/calendar';
@@ -150,6 +151,11 @@ export class UI {
     this.build();
     this.bindInput(game.renderer.canvas);
     this.applyPrefs();
+    // Something broke: keep the colony, and say how to tell us (once a session).
+    installErrorLog(() => {
+      this.toast(t('errorToast'), 10000);
+      void game.save();
+    });
   }
 
   // ------------------------------------------------------------------ building
@@ -535,6 +541,8 @@ export class UI {
         <button data-shake="on" class="${getPrefs().shake ? 'on' : ''}">${t('on')}</button><button data-shake="off" class="${getPrefs().shake ? '' : 'on'}">${t('off')}</button></div></div>
       <button class="btn" id="fullscreen">${t('fullscreen')}</button>
       <button class="btn" id="new-colony">${t('newColony')}</button>
+      <button class="linkbtn" id="report">${t('reportProblem')}</button>
+      <div class="version">Underfoot ${VERSION}</div>
       <div class="perf" id="perf"></div>`;
     r.appendChild(keys);
     keys.querySelectorAll<HTMLElement>('#musicseg [data-music]').forEach((b) => {
@@ -565,6 +573,10 @@ export class UI {
       };
     });
     (keys.querySelector('#fullscreen') as HTMLElement).onclick = () => this.toggleFullscreen();
+    (keys.querySelector('#report') as HTMLElement).onclick = async () => {
+      const day = new Date().toISOString().slice(0, 10);
+      if (await this.offerFile(`underfoot-report-${day}.txt`, new Blob([this.problemReport()], { type: 'text/plain' }))) this.toast(t('reportSaved'), 7000);
+    };
     keys.querySelectorAll<HTMLElement>('#modeseg [data-mode]').forEach((b) => {
       b.onclick = () => {
         this.setMode(b.dataset.mode as Mode, true);
@@ -709,6 +721,31 @@ export class UI {
       return;
     }
     dispatchEvent(new KeyboardEvent('keydown', { key: k }));
+  }
+
+  /** A plain-text report of what the player's game looks like, for a bug report. */
+  private problemReport(): string {
+    const g = this.game;
+    const sim = g.sim;
+    const col = sim.colony;
+    const lines = [
+      `Underfoot ${VERSION}`,
+      `Date: ${new Date().toISOString()}`,
+      `Browser: ${navigator.userAgent}`,
+      `Screen: ${innerWidth}x${innerHeight} @${devicePixelRatio}x · language ${getLang()}`,
+      `Settings: ${JSON.stringify({ prefs: getPrefs(), volume: g.sound.vol, sound: g.sound.on, music: g.sound.music, mode: this.mode })}`,
+      '',
+      `Colony: seed ${sim.seed} · site ${sim.site} · phase ${sim.phase} · day ${sim.day} · tick ${sim.tick}`,
+      `Workers ${col.adults} (majors ${col.majors}) · brood ${col.brood.length} · seeds ${col.stored} · rooms ${sim.nest.chambers.map((c) => c.kind[0] + (c.ready ? '' : '*')).join('')}`,
+      `Speed ${g.speed}× · paused ${g.paused} · documentary ${g.director.active} · ${g.tps.toFixed(0)} ticks/s`,
+      '',
+      'Recent errors:',
+      ...(errorLog().length ? errorLog().map((e) => `- ${new Date(e.t).toISOString()} ${e.msg}${e.stack ? `\n  ${e.stack.split('\n').slice(0, 6).join('\n  ')}` : ''}`) : ['(none)']),
+      '',
+      'What happened (please write a line or two here):',
+      '',
+    ];
+    return lines.join('\n');
   }
 
   /** Apply the display preferences (interface scale, shake). */
