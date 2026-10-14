@@ -254,6 +254,23 @@ export class Soundscape {
     src.stop(at + dur + 0.05);
   }
 
+  /** A soft bell (a sine and its octave, struck and dying away), above the earth filter. */
+  private bell(at: number, freq: number, vol: number): void {
+    const ctx = this.ctx!;
+    for (const [mul, v] of [[1, 1], [2.01, 0.35]] as const) {
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = freq * mul;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, at);
+      g.gain.linearRampToValueAtTime(vol * v, at + 0.01);
+      g.gain.exponentialRampToValueAtTime(0.0001, at + 2.6);
+      o.connect(g).connect(this.master);
+      o.start(at);
+      o.stop(at + 2.7);
+    }
+  }
+
   /** A field cricket's chirp: three or four quick pulses of a pure tone. */
   private chirp(at: number, pitch: number, pan: number, vol: number): void {
     const ctx = this.ctx!;
@@ -348,13 +365,30 @@ export class Soundscape {
   event(game: Game, key: string, loc?: { x: number; y: number }): void {
     const ctx = this.ctx;
     if (!ctx || !this.on || ctx.state !== 'running') return;
-    if (key !== 'caveIn' && key !== 'caveInDead') return;
+    const fight = ['war', 'warYoung', 'raid', 'raidYoung', 'lasiusKill'];
+    const milestone = ['firstAlates', 'flight', 'flightDone'];
+    if (key !== 'caveIn' && key !== 'caveInDead' && !fight.includes(key) && !milestone.includes(key)) return;
     const cam = game.cam;
     // Louder the nearer it is to what is on screen.
     const d = loc ? (Math.hypot(loc.x - cam.x, loc.y - cam.y) * cam.zoom) / Math.max(cam.screenW, cam.screenH) : 1;
     const vol = clamp(1 - d / 1.6, 0.15, 1);
     const pan = loc ? clamp(((loc.x - cam.x) * cam.zoom) / (cam.screenW / 2), -1, 1) * 0.7 : 0;
     const now = ctx.currentTime;
+    if (milestone.includes(key)) {
+      // A turn in the colony's year: a soft pair of bells over the bed (part of the music).
+      if (!this.music) return;
+      const base = 523.25;
+      this.bell(now, base, 0.05);
+      this.bell(now + 0.35, base * 1.5, 0.04);
+      if (key === 'flight') this.bell(now + 0.7, base * 2, 0.03);
+      return;
+    }
+    if (fight.includes(key)) {
+      // A melee: a patter of mandibles and legs, close and dry.
+      for (let k = 0; k < 16; k++) this.burst(now + Math.random() * 1.6, 0.025, 'bandpass', 2400 + Math.random() * 2600, 4, 0.26 * vol, pan + (Math.random() - 0.5) * 0.4);
+      this.burst(now, 0.5, 'lowpass', 180, 0.7, 0.8 * vol, pan, true);
+      return;
+    }
     this.burst(now, 1.8, 'lowpass', 240, 0.8, 2.2 * vol, pan, true, 0.3);
     for (let k = 0; k < 7; k++) this.burst(now + 0.08 + Math.random() * 0.9, 0.05, 'bandpass', 900 + Math.random() * 1500, 1.5, 0.22 * vol, pan + (Math.random() - 0.5) * 0.3);
   }
