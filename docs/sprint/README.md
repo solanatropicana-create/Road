@@ -301,6 +301,14 @@ Hedef: oyunu açıp izleyen birinin keyif alması. Olgun kolonilerden (node'da �
   - Karınca seçmek daha toleranslı.
   - Yıl özetine "toprak altı" (çöken tavan, sağ çıkarılan) ve "ağaçta" (bahçe karıncalarıyla itişme) satırları eklendi.
 - **Denge.** Sonbaharda ağacın altına düşen kanatlı tohumlar toplayıcıları gövdenin dibine çekiyordu. Bir haritada yılın kayıplarının yarısından fazlası bahçe karıncalarındandı (64 işçi). Saldırı ve ölüm olasılığı düşürüldü.
+- **Kuruluş takılmaları (oyuncu testinin telefondaki turunda yakalandı).** 80 haritanın 4–5'inde kurucu kraliçe kendini hiç mühürleyemiyordu. Nedenleri ve düzeltmeler:
+  - Kazı noktası bir hücrenin yalnızca ilk yürünebilir komşusuydu; o komşu bir düşüşün kapattığı ulaşılamaz bir cep olunca kazı duruyordu. Artık her yandan kazılabiliyor.
+  - Üstteki topraktan odaya yuvarlanan böcek kurtçukları oda bölgesinde "kazılamaz" sayılıyor, oda hiç bitmiyordu. Artık temizleniyor; kurucu kraliçe onları yiyor.
+  - Altı kaya olan bir yere inen kraliçenin aşağı yolu yoktu. İniş yeri artık aşağı yol bulunabilen yerlerden seçiliyor; varılacak nokta taşa denk gelirse yanına ya da biraz yukarı/aşağı deneniyor.
+  - Toprak topağıyla çukurun yanlış kenarında ileri geri gidip gelen kraliçe hiç "takıldı" sayılmıyordu. Artık bir süre sonra yön değiştiriyor ya da topağı bırakıyor.
+  - Sonuç: 80/80 haritada kraliçe mühürleniyor (ortalama ~20 bin tik).
+- **Kayıp kraliçe.** Bir 160 haftalık turda köstebek yuvayı yarınca kraliçe çöken tünelde, odasından uzak kapalı bir cepte kaldı. Bir daha hiç yumurtlamadı ve koloni söndü. Kapalı kalan işçiler kendini kazarak çıkarıyordu, kraliçe çıkaramıyordu; artık o da kazıyor.
+- **Bitiş.** İlk işçiler çıkmadan ölen kurucu kraliçe oyunu bitiriyor (önceden oyun ölü bir kraliçeyle sonsuza dek sürüyordu); kapanış kartında kendi cümlesi var.
 - **Son ölçüm (8 harita, 160 hafta):**
   - 8/8 koloni hayatta, açlıktan ölen işçi 0, 8/8'de evlilik uçuşu.
   - Son nüfus 96–414 işçi.
