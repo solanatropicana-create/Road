@@ -270,6 +270,22 @@ export class Nest {
     return true;
   }
 
+  /**
+   * A way down for a founding queen from column x to her chamber's depth, or
+   * null (rock below). Where she meant to stop may be a stone: then a little
+   * to the side, or higher or deeper.
+   */
+  burrowPath(x: number): number[] | null {
+    const g = this.world.ground[x]!;
+    let path: number[] | null = null;
+    for (let k = 0; k < 8 && !path; k++) {
+      const tx = x + (k === 0 ? this.rng.int(-5, 5) : this.rng.int(-10, 10));
+      const ty = g + 48 + (k === 0 ? 0 : this.rng.int(-10, 8));
+      path = this.astar(x, g, tx, ty);
+    }
+    return path;
+  }
+
   /** The queen's claustral burrow: a narrow shaft and a small sealed chamber. */
   found(x: number): { shaft: number[]; chamber: Chamber } {
     const w = this.world;
@@ -278,11 +294,10 @@ export class Nest {
     this.gateAt = this.rng.int(SECOND_GATE_WORKERS[0], SECOND_GATE_WORKERS[1]);
     const g = w.ground[x]!;
     // Claustral chamber a few centimetres down: below the worst of the day's heat and the rain.
-    const depth = 48;
-    const tx = x + this.rng.int(-5, 5);
-    const path = this.astar(x, g, tx, g + depth) ?? [];
-    const pts: [number, number][] = path.map((i) => [i % w.w, (i / w.w) | 0]);
-    if (pts.length === 0) pts.push([x, g + depth]);
+    const path = this.burrowPath(x);
+    const pts: [number, number][] = (path ?? []).map((i) => [i % w.w, (i / w.w) | 0]);
+    // (No way down at all: straight down, around whatever won't give.)
+    if (pts.length === 0) for (let y = g; y <= g + 48; y++) pts.push([x, y]);
     const shaft: number[] = [];
     // (Just wide enough for her: every grain of it she will carry up herself.)
     for (const [px, py] of pts) this.stampDisc(px, py, 1.5, shaft);
@@ -718,6 +733,8 @@ export class Nest {
     if (!w.plan[i]) return false;
     const m = w.mat[i]!;
     if (w.sealed && m === SAND && w.tint[i]! & PLUG) return false;
+    // (A grub that tumbled into a room from the soil above is cleared out, room or not.)
+    if (m === PREY && w.tint[i] === 3) return w.bg[i] === 1;
     if (m === SEED || m === FRUIT || m === PREY) return w.zone[i] === 0 && w.bg[i] === 1;
     // Chaff in a tunnel, or heaped over a mouth the plan keeps open.
     if (m === REFUSE) return w.zone[i] === 0;
@@ -764,13 +781,12 @@ export class Nest {
       }
       if (!Nest.diggable(w, i)) continue;
       pending++;
-      // Diggable if an ant can stand right beside it.
-      const n4 = [i - 1, i + 1, i - W, i + W];
-      let spot = -1;
-      for (const n of n4) if (walk[n]) { spot = n; break; }
-      if (spot >= 0) {
+      // Diggable if an ant can stand right beside it: from any side she can stand
+      // (one side may be a pocket nobody can reach, cut off by a fall).
+      for (const n of [i - 1, i + 1, i - W, i + W]) {
+        if (!walk[n]) continue;
         this.frontier.push(i);
-        this.digSpots.push(spot);
+        this.digSpots.push(n);
       }
     }
     // Rooms the colony needs come first: while a nursery, granary or the royal

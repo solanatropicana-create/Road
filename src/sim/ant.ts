@@ -338,6 +338,9 @@ export class Ant {
       return;
     }
     if (this.caste === 'queen') {
+      // Shut in a pocket away from her chamber (a mole's tunnel fallen in behind
+      // her, a slump): she digs her own way back, as a worker would.
+      if (this.phase === 2 && this.escape(sim)) return;
       this.queenThink(sim);
       return;
     }
@@ -861,6 +864,12 @@ export class Ant {
         // (A seed in undug soil was buried in the seed bank: a find.)
         if (m === SEED && w.bg[n] === 1 && !w.zone[n] && w.tint[n] === 0) sim.buriedSeed();
         if (m === PREY && w.tint[n] === 3) sim.noteOnce('foundNymph', this);
+        if (this.caste === 'queen') {
+          // The founding queen, walled in with it, eats what falls into her chamber.
+          sim.colony.reserve += rations(carryOf(m));
+          w.set(n, EMPTY, w.tone[n], w.tint[n]);
+          return;
+        }
         this.carryTone = w.tone[n]!;
         const sprout = m === REFUSE && w.tint[n] === SPROUT;
         w.set(n, EMPTY, w.tone[n], w.tint[n]);
@@ -986,12 +995,14 @@ export class Ant {
       this.trip = 0;
     }
     // Hopelessly lost on the surface with a load: drop it and go back to work.
-    if (++this.trip > 900) {
+    // (A founding queen has the whole burrow to dig alone: she gives up sooner.)
+    if (++this.trip > (this.caste === 'queen' ? 300 : 900)) {
       this.discard(sim);
       return;
     }
     // Sent to the far side but can't get across the crater: use this side instead.
-    if (Math.sign(this.x - ex) === -this.dumpDir && this.stuck > 40) {
+    // (Or dithering at the rim a long while without getting anywhere.)
+    if (Math.sign(this.x - ex) === -this.dumpDir && (this.stuck > 40 || this.trip > 160)) {
       this.dumpDir = -this.dumpDir;
       this.stuck = 0;
     }

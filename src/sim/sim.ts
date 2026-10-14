@@ -251,7 +251,7 @@ export class Sim {
 
   /** Is this column a reasonable place for a queen to dig in? (Not on a tree or a bush.) */
   canFound(x: number): boolean {
-    return x > 40 && x < this.world.w - 40 && !this.woodNear(Math.round(x), 8) && !this.inPit(x, 10);
+    return x > 40 && x < this.world.w - 40 && !this.woodNear(Math.round(x), 8) && !this.inPit(x, 10) && this.nest.burrowPath(Math.round(x)) !== null;
   }
 
   /** Within an antlion's pit (or this close to its rim)? */
