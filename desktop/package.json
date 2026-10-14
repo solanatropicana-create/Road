@@ -1,0 +1,37 @@
+{
+  "name": "underfoot-desktop",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Underfoot: a harvester-ant colony at true scale",
+  "main": "main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win zip --x64",
+    "dist:linux": "electron-builder --linux dir --x64"
+  },
+  "devDependencies": {
+    "electron": "44.7.2",
+    "electron-builder": "26.15.3"
+  },
+  "build": {
+    "appId": "com.underfoot.game",
+    "productName": "Underfoot",
+    "files": [
+      "main.cjs",
+      "app/**/*",
+      "build/icon.png"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "win": {
+      "target": "zip"
+    },
+    "linux": {
+      "target": "dir",
+      "category": "Game"
+    },
+    "icon": "build/icon.png",
+    "publish": null
+  }
+}
