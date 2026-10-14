@@ -6,6 +6,7 @@ import type { Chamber } from '../sim/nest';
 import { SPEEDS, TICK_HZ, DAY_TICKS, TUNING } from '../config';
 import { ZONE_TINT, SAMARA_TONE } from '../render/palette';
 import { bodyLength } from '../render/antdraw';
+import { getPrefs, setPref } from './prefs';
 import { latestSlot, listSlots, removeSlot, exportSlot, importSlot, type SlotMeta } from '../sim/slots';
 import { t, num, getLang, setLang, Lang, Vars } from './i18n';
 import { metabolism } from '../sim/calendar';
@@ -147,6 +148,7 @@ export class UI {
     document.head.appendChild(style);
     this.build();
     this.bindInput(game.renderer.canvas);
+    this.applyPrefs();
   }
 
   // ------------------------------------------------------------------ building
@@ -523,6 +525,13 @@ export class UI {
         <button data-lang="en" class="${lang === 'en' ? 'on' : ''}">English</button><button data-lang="tr" class="${lang === 'tr' ? 'on' : ''}">Türkçe</button></div></div>
       <div class="row langrow"><label>${t('music')}</label><div class="seg" id="musicseg">
         <button data-music="on" class="${this.game.sound.music ? 'on' : ''}">${t('on')}</button><button data-music="off" class="${this.game.sound.music ? '' : 'on'}">${t('off')}</button></div></div>
+      <div class="row langrow vol"><label>${t('volMaster')}</label><input type="range" min="0" max="100" data-vol="master" value="${Math.round(this.game.sound.vol.master * 100)}" /></div>
+      <div class="row langrow vol"><label>${t('volSound')}</label><input type="range" min="0" max="100" data-vol="sound" value="${Math.round(this.game.sound.vol.sound * 100)}" /></div>
+      <div class="row langrow vol"><label>${t('volMusic')}</label><input type="range" min="0" max="100" data-vol="music" value="${Math.round(this.game.sound.vol.music * 100)}" /></div>
+      <div class="row langrow"><label>${t('uiScale')}</label><div class="seg" id="scaleseg">${[0.9, 1, 1.15, 1.3].map((v, k) => `<button data-scale="${v}" class="${getPrefs().uiScale === v ? 'on' : ''}">${['S', 'M', 'L', 'XL'][k]}</button>`).join('')}</div></div>
+      <div class="row langrow"><label>${t('shakeLabel')}</label><div class="seg" id="shakeseg">
+        <button data-shake="on" class="${getPrefs().shake ? 'on' : ''}">${t('on')}</button><button data-shake="off" class="${getPrefs().shake ? '' : 'on'}">${t('off')}</button></div></div>
+      <button class="btn" id="fullscreen">${t('fullscreen')}</button>
       <button class="btn" id="new-colony">${t('newColony')}</button>
       <div class="perf" id="perf"></div>`;
     r.appendChild(keys);
@@ -533,6 +542,27 @@ export class UI {
         keys.querySelectorAll<HTMLElement>('#musicseg [data-music]').forEach((o) => o.classList.toggle('on', o === b));
       };
     });
+    keys.querySelectorAll<HTMLInputElement>('[data-vol]').forEach((el) => {
+      el.oninput = () => {
+        this.game.sound.wake();
+        this.game.sound.setVolume(el.dataset.vol as 'master' | 'sound' | 'music', Number(el.value) / 100);
+      };
+    });
+    keys.querySelectorAll<HTMLElement>('#scaleseg [data-scale]').forEach((b) => {
+      b.onclick = () => {
+        setPref('uiScale', Number(b.dataset.scale));
+        this.applyPrefs();
+        keys.querySelectorAll<HTMLElement>('#scaleseg [data-scale]').forEach((o) => o.classList.toggle('on', o === b));
+      };
+    });
+    keys.querySelectorAll<HTMLElement>('#shakeseg [data-shake]').forEach((b) => {
+      b.onclick = () => {
+        setPref('shake', b.dataset.shake === 'on');
+        this.applyPrefs();
+        keys.querySelectorAll<HTMLElement>('#shakeseg [data-shake]').forEach((o) => o.classList.toggle('on', o === b));
+      };
+    });
+    (keys.querySelector('#fullscreen') as HTMLElement).onclick = () => this.toggleFullscreen();
     keys.querySelectorAll<HTMLElement>('#modeseg [data-mode]').forEach((b) => {
       b.onclick = () => {
         this.setMode(b.dataset.mode as Mode, true);
@@ -622,6 +652,23 @@ export class UI {
   }
 
   /** Rebuild every panel (after a language change), keeping the state. */
+  /** Apply the display preferences (interface scale, shake). */
+  applyPrefs(): void {
+    const p = getPrefs();
+    this.root.style.zoom = p.uiScale === 1 ? '' : String(p.uiScale);
+    this.root.style.setProperty('--uizoom', String(p.uiScale));
+    if (this.game.cam) this.game.cam.shakeOn = p.shake;
+  }
+
+  toggleFullscreen(): void {
+    try {
+      if (document.fullscreenElement) void document.exitFullscreen();
+      else void document.documentElement.requestFullscreen();
+    } catch {
+      // not allowed here (some embedded views)
+    }
+  }
+
   /** The kept colonies have been read: show them on the title screen. */
   slotsReady(): void {
     if (!this.modeChosen && this.game.sim.phase === 'choose') this.rebuild();
@@ -1302,6 +1349,11 @@ export class UI {
     for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel']) addEventListener(ev, () => (this.idle = 0), { passive: true });
     addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
+      if (e.key === 'F11') {
+        e.preventDefault();
+        this.toggleFullscreen();
+        return;
+      }
       // Ctrl/Cmd+S: save now (not the browser's "save page").
       if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();

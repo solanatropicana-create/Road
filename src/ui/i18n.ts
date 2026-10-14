@@ -109,6 +109,8 @@ const EN = {
   slotImport: 'Open a colony file…',
   slotImportBad: 'That file is not an Underfoot colony',
   savedNow: 'Colony saved',
+  volMaster: 'Volume', volSound: 'Nature', volMusic: 'Music level',
+  uiScale: 'Interface', shakeLabel: 'Shake', fullscreen: 'Full screen (F11)',
   welcomeBack: 'Welcome back to your colony',
   replaceSave: 'Landing here starts a <b>new colony</b> and replaces the saved one. Click again to land.',
   // keys panel
@@ -730,6 +732,8 @@ const TR: Record<Key, string> = {
   slotImport: 'Koloni dosyası aç…',
   slotImportBad: 'Bu dosya bir Underfoot kolonisi değil',
   savedNow: 'Koloni kaydedildi',
+  volMaster: 'Ses düzeyi', volSound: 'Doğa', volMusic: 'Müzik düzeyi',
+  uiScale: 'Arayüz', shakeLabel: 'Sarsıntı', fullscreen: 'Tam ekran (F11)',
   welcomeBack: 'Kolonine tekrar hoş geldin',
   replaceSave: 'Buraya inmek <b>yeni bir koloni</b> başlatır ve kayıtlı olanın yerine geçer. İnmek için tekrar tıkla.',
   keysTitle: 'Tuşlar ve görünümler',

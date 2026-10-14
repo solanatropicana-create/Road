@@ -172,6 +172,9 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #keys dt { font-family: var(--mono); font-size: 12px; color: var(--accent); }
 #keys dd { margin: 0; color: var(--ink-dim); }
 #keys .langrow { grid-template-columns: 80px 1fr; margin: 0 0 10px; }
+#keys .vol input { width: 100%; accent-color: var(--accent); margin: 0; }
+#keys #fullscreen { width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+#keys { max-height: calc((100vh - 96px) / var(--uizoom, 1)); overflow-y: auto; }
 #keys .btn { display: block; width: 100%; text-align: center; }
 
 #inspect { left: 14px; top: 160px; width: 320px; display: none; }

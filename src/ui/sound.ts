@@ -4,6 +4,7 @@ import { Task } from '../sim/types';
 
 const KEY = 'underfoot.sound';
 const MUSIC_KEY = 'underfoot.music';
+const VOL_KEY = 'underfoot.volumes';
 
 /** Pentatonic scales (semitones above the root): open by day, minor at night. */
 const DAY_SCALE = [0, 2, 4, 7, 9];
@@ -30,6 +31,11 @@ export class Soundscape {
   private voices: { osc: OscillatorNode[]; gain: GainNode }[] = [];
   private ctx: AudioContext | null = null;
   private master!: GainNode;
+  /** Volume buses the player sets: the natural sound, and the music. */
+  private sfx!: GainNode;
+  private mus!: GainNode;
+  /** The player's volumes, 0..1 (remembered). */
+  vol = { master: 1, sound: 1, music: 1 };
   private earth!: BiquadFilterNode;
   private wind!: { gain: GainNode; filter: BiquadFilterNode };
   private rain!: { gain: GainNode };
@@ -47,9 +53,32 @@ export class Soundscape {
     try {
       this.on = localStorage.getItem(KEY) !== 'off';
       this.music = localStorage.getItem(MUSIC_KEY) !== 'off';
+      const v = localStorage.getItem(VOL_KEY);
+      if (v) this.vol = { ...this.vol, ...(JSON.parse(v) as Partial<typeof this.vol>) };
     } catch {
       // storage unavailable: keep the default
     }
+  }
+
+  /** The master level: 0.9 at full, eased so the slider feels even. */
+  private level(): number {
+    return 0.9 * this.vol.master * this.vol.master;
+  }
+
+  /** Set one of the player's volumes (0..1) and remember it. */
+  setVolume(which: 'master' | 'sound' | 'music', v: number): void {
+    this.vol[which] = Math.max(0, Math.min(1, v));
+    try {
+      localStorage.setItem(VOL_KEY, JSON.stringify(this.vol));
+    } catch {
+      // storage unavailable: the volume holds for this session
+    }
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    if (which === 'master' && this.on) this.master.gain.setTargetAtTime(this.level(), now, 0.05);
+    if (which === 'sound') this.sfx.gain.setTargetAtTime(this.vol.sound, now, 0.05);
+    if (which === 'music') this.mus.gain.setTargetAtTime(this.vol.music, now, 0.05);
   }
 
   /** The first gesture: build the graph (or resume a suspended context). */
@@ -70,7 +99,13 @@ export class Soundscape {
     this.earth = ctx.createBiquadFilter();
     this.earth.type = 'lowpass';
     this.earth.frequency.value = 16000;
-    this.earth.connect(this.master);
+    this.sfx = ctx.createGain();
+    this.sfx.gain.value = this.vol.sound;
+    this.sfx.connect(this.master);
+    this.mus = ctx.createGain();
+    this.mus.gain.value = this.vol.music;
+    this.mus.connect(this.master);
+    this.earth.connect(this.sfx);
     this.noise = this.makeNoise(false);
     this.brown = this.makeNoise(true);
     // Wind: noise through a low band that breathes with the gusts.
@@ -105,7 +140,7 @@ export class Soundscape {
       lp.frequency.value = 220;
       const gain = ctx.createGain();
       gain.gain.value = 0;
-      src.connect(lp).connect(gain).connect(this.master);
+      src.connect(lp).connect(gain).connect(this.sfx);
       this.room = { gain };
     }
     // A swarm's hum: a low band of noise, trembling at wingbeat-ish rates.
@@ -136,9 +171,9 @@ export class Soundscape {
       lp.Q.value = 0.3;
       this.pad = ctx.createGain();
       this.pad.gain.value = 0;
-      this.pad.connect(lp).connect(this.master);
+      this.pad.connect(lp).connect(this.mus);
     }
-    this.master.gain.setTargetAtTime(0.9, ctx.currentTime, 1.2);
+    this.master.gain.setTargetAtTime(this.level(), ctx.currentTime, 1.2);
   }
 
   setMusic(on: boolean): void {
@@ -204,7 +239,7 @@ export class Soundscape {
     }
     if (this.on) {
       this.wake();
-      if (this.ctx) this.master.gain.setTargetAtTime(0.9, this.ctx.currentTime, 0.3);
+      if (this.ctx) this.master.gain.setTargetAtTime(this.level(), this.ctx.currentTime, 0.3);
     } else if (this.ctx) this.master.gain.setTargetAtTime(0, this.ctx.currentTime, 0.15);
     return this.on;
   }
@@ -265,7 +300,7 @@ export class Soundscape {
       g.gain.setValueAtTime(0, at);
       g.gain.linearRampToValueAtTime(vol * v, at + 0.01);
       g.gain.exponentialRampToValueAtTime(0.0001, at + 2.6);
-      o.connect(g).connect(this.master);
+      o.connect(g).connect(this.mus);
       o.start(at);
       o.stop(at + 2.7);
     }

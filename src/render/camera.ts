@@ -107,7 +107,10 @@ export class Camera {
   /** A jolt (a roof coming down nearby): screen pixels of shake, dying away. */
   private shakeAmp = 0;
   private shakeT = 0;
+  /** The player can turn the shaking off (settings). */
+  shakeOn = true;
   shake(px: number): void {
+    if (!this.shakeOn) return;
     this.shakeAmp = Math.max(this.shakeAmp, px);
   }
   /** The current shake offset, in screen pixels. */
