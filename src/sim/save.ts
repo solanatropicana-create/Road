@@ -255,6 +255,11 @@ function upgrade(sim: Sim): void {
   ns.lastGallery ??= 0;
   const nb2 = sim.nest as unknown as { breaches?: number[]; waterTop?: Int16Array | null };
   nb2.breaches ??= [];
+  // Saves from before the queen could be moved to a safer chamber.
+  const nr = sim.nest as unknown as { royalMove?: unknown; queenMoving?: boolean; lastRoyalMove?: number };
+  nr.royalMove ??= null;
+  nr.queenMoving ??= false;
+  nr.lastRoyalMove ??= -999;
   nb2.waterTop ??= null;
   // Saves from before the soil had a life of its own.
   const sl = sim as unknown as { soil?: SoilLife };

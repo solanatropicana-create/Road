@@ -707,6 +707,8 @@ export class Colony {
     }
     // A nestmate or brood buried alive under a fall: diggers drop everything to dig it out.
     if (nest.rescuing) need[Task.Dig] = need[Task.Dig]! + 1.2;
+    // A new royal chamber being dug for the queen: it comes before most other work.
+    if (nest.royalMove && nest.frontier.length > 0) need[Task.Dig] = need[Task.Dig]! + 0.7;
     // A roof cracking: a few diggers go to shore it up.
     else if (sim.ground.strained > 0 && !sim.dormant) need[Task.Dig] = need[Task.Dig]! + Math.min(0.5, 0.2 * sim.ground.strained);
     need[Task.Nurse] = this.brood.length > 0 ? 0.12 + Math.min(1.2, (this.looseEggs + this.hungryLarvae * 1.5) / (adults * 0.15 + 2)) : 0;

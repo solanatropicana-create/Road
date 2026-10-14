@@ -118,7 +118,92 @@ export class Nest {
   }
 
   queenChamber(): Chamber | undefined {
-    return this.chambers.find((c) => c.kind === 'queen');
+    return this.chambers.find((c) => c.kind === 'queen' && c !== this.royalMove);
+  }
+
+  /**
+   * In the band of soil just under the royal chamber's floor? Nothing new is
+   * dug there: a tunnel under her floor would leave her laying on a crust.
+   */
+  underRoyal(i: number): boolean {
+    const b = this.royalBox;
+    if (!b) return false;
+    const w = this.world;
+    const x = i % w.w;
+    const y = (i / w.w) | 0;
+    return y > b.y0 && y <= b.y0 + 5 && x >= b.x0 && x <= b.x1 && w.zone[i] !== b.zone;
+  }
+
+  /** The band underRoyal guards (refreshed each scan). */
+  private royalBox: { x0: number; x1: number; y0: number; zone: number } | null = null;
+
+  /**
+   * Is the royal chamber still a safe place for her? What is wrong with it,
+   * or null: its floor worn to a crust over the hollows below, its roof
+   * strained, a crossroads of tunnels, or left shallow while the nest has
+   * gone deep (Messor queens keep to the deep rooms).
+   */
+  royalTrouble(strain: number): 'floor' | 'roof' | 'crossroads' | 'shallow' | null {
+    const c = this.queenChamber();
+    if (!c || !c.ready) return null;
+    const w = this.world;
+    const W = w.w;
+    let thin = 0;
+    let n = 0;
+    for (const i of c.floor) {
+      n++;
+      let d = 0;
+      while (d < 3 && w.mat[i + (d + 1) * W] !== EMPTY) d++;
+      if (d < 3) thin++;
+    }
+    if (n >= 4 && thin / n > 0.35) return 'floor';
+    if (strain >= 0.35) return 'roof';
+    let doors = 0;
+    const zi = c.id + 1;
+    for (const i of c.cells) {
+      if (w.mat[i] !== EMPTY) continue;
+      for (const nb of [i - 1, i + 1, i - W, i + W]) if (w.plan[nb] && !w.zone[nb] && w.mat[nb] === EMPTY && w.zone[i] === zi) doors++;
+    }
+    if (doors > Math.max(22, c.w * 1.3)) return 'crossroads';
+    let deepest = 0;
+    for (const o of this.chambers) if (o.ready && o !== c) deepest = Math.max(deepest, o.floorY - w.ground[Math.round(o.cx)]!);
+    const depth = c.floorY - w.ground[Math.round(c.cx)]!;
+    if (deepest > 95 && depth < deepest * 0.5) return 'shallow';
+    return null;
+  }
+
+  /** Plan a new royal chamber deeper down: the queen is walked there once it is dug. */
+  planRoyalMove(): boolean {
+    const before = this.chambers.length;
+    if (!this.placeChamber('queen')) return false;
+    this.royalMove = this.chambers[before] ?? null;
+    return this.royalMove !== null;
+  }
+
+  /**
+   * The move, step by step: when the new chamber is dug it becomes the royal
+   * chamber (the old one a resting room) and she sets off; she is in. Returns
+   * what just happened, if anything.
+   */
+  royalStep(qx: number, qy: number): 'ready' | 'arrived' | null {
+    const w = this.world;
+    const m = this.royalMove;
+    if (m && m.ready) {
+      const old = this.chambers.find((c) => c.kind === 'queen' && c !== m);
+      if (old) old.kind = 'rest';
+      this.royalMove = null;
+      this.queenMoving = true;
+      this.zonesChanged = true;
+      return 'ready';
+    }
+    if (this.queenMoving) {
+      const c = this.queenChamber();
+      if (!c || w.zone[qy * w.w + qx] === c.id + 1) {
+        this.queenMoving = false;
+        return 'arrived';
+      }
+    }
+    return null;
   }
 
   chamberAt(i: number): Chamber | undefined {
@@ -127,6 +212,13 @@ export class Nest {
   }
 
   // ------------------------------------------------------------ founding
+
+  /** A new royal chamber being dug deeper; the queen is walked there once it is ready. */
+  royalMove: Chamber | null = null;
+  /** The queen is on her way to a new royal chamber. */
+  queenMoving = false;
+  /** Sim day of the last move planned. */
+  lastRoyalMove = -999;
 
   /** A second gate being dug up from the nest (its mouth column), or -1, and its shaft. */
   gateX = -1;
@@ -407,6 +499,7 @@ export class Nest {
     const w = this.world;
     const m = w.mat[i]!;
     if (HARD[m]) return false;
+    if (this.underRoyal(i)) return false;
     // Never down into the water table (with room for it to rise in spring).
     if (this.waterTop && ((i / w.w) | 0) >= this.waterTop[i % w.w]! - 36) return false;
     // Above ground only open air and litter can be claimed (to keep the mouth clear).
@@ -701,7 +794,7 @@ export class Nest {
       const d = dirs[this.rng.int(0, dirs.length - 1)]!;
       const j = i + d;
       const m = w.mat[j]!;
-      if (w.plan[j] || w.bg[j] !== 1 || !SOIL[m] || HARD[m]) continue;
+      if (w.plan[j] || this.underRoyal(j) || w.bg[j] !== 1 || !SOIL[m] || HARD[m]) continue;
       const zi = w.zone[i]!;
       // Keep rooms apart: no nibbling toward a cell that touches another room or the surface.
       let clash = false;
@@ -832,6 +925,8 @@ export class Nest {
     }
     this.openCells = open;
     this.pendingCells = pending;
+    const rc = this.queenChamber();
+    this.royalBox = rc && rc.ready ? { x0: Math.floor(rc.cx - rc.w / 2 - 2), x1: Math.ceil(rc.cx + rc.w / 2 + 2), y0: rc.floorY, zone: rc.id + 1 } : null;
     // Planned work that nobody can reach (cut off by a slump, a pile of stores):
     // after a while, dig a fresh link to it from the nearest open tunnel.
     this.cutOff = this.frontier.length === 0 && pending > 0 ? this.cutOff + 1 : 0;
@@ -1106,6 +1201,12 @@ export class Nest {
       maxDepth = Math.max(maxDepth, ((i / w.w) | 0) - w.ground[x]!);
     }
     const pref = kind === 'queen' ? maxDepth + 14 : Math.min(spec.depth, maxDepth + 10);
+    // A royal chamber buds off the deepest part of the nest.
+    if (kind === 'queen' && tunnels.length > 20) {
+      const depthOf = (i: number): number => ((i / w.w) | 0) - w.ground[i % w.w]!;
+      tunnels.sort((a, b) => depthOf(b) - depthOf(a));
+      tunnels.length = Math.max(10, Math.round(tunnels.length * 0.3));
+    }
 
     type Cand = { cx: number; cy: number; cw: number; ch: number; ax: number; ay: number; side: number; score: number };
     const cands: Cand[] = [];
@@ -1159,7 +1260,7 @@ export class Nest {
       for (let x = x0; x <= x1; x++) {
         const i = y * w.w + x;
         if (w.bg[i] !== 1 || y < w.ground[x]! + 8) return -1;
-        if (this.planDist[i]! < 4) return -1;
+        if (this.planDist[i]! < 4 || this.underRoyal(i)) return -1;
         const m = w.mat[i]!;
         if (HARD[m] || m === ROOT || m === LIME) rock++;
         n++;
@@ -1176,6 +1277,7 @@ export class Nest {
     const m = w.mat[i]!;
     if (HARD[m]) return Infinity;
     if (w.bg[i] !== 1) return Infinity;
+    if (!w.plan[i] && this.underRoyal(i)) return Infinity;
     // Route around rooms full of stores rather than through them.
     if (avoidRooms && w.zone[i] && m !== EMPTY) return Infinity;
     if (w.plan[i]) return 0.3;

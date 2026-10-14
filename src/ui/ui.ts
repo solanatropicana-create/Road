@@ -1433,7 +1433,7 @@ export class UI {
           if (d < 1.2) cam.shake((e.key === 'caveInDead' ? 9 : 6) * (1 - d / 1.2) + 1.5);
         }
         this.note(`ev_${e.key}`, vars, { toast: true, merge: !e.kind, loc });
-        if (loc) dir.notice(loc.x, loc.y, t(`ev_${e.key}`, vars), e.key);
+        if (loc) dir.notice(loc.x, loc.y, t(`ev_${e.key}`, vars.kind ? { ...vars, kind: t(String(vars.kind)) } : vars), e.key);
         // Big news gets a ring on the spot, so the eye finds it.
         if (loc && ['neighbourMetL', 'neighbourMetR', 'youngColony', 'youngColonyGone', 'war', 'raid', 'secondGate', 'raidYoung', 'warYoung', 'tugOfWar', 'moleNest', 'queenKilledMole', 'toad', 'caveIn', 'caveInDead', 'lasiusFight', 'lasiusKill'].includes(e.key)) game.renderer.mark(loc.x, loc.y);
       }

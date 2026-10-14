@@ -351,6 +351,14 @@ export class Ant {
     // Walled in (stores heaped round her, a slump): she digs her way out
     // toward the queen's chamber rather than waiting there for ever.
     if (this.escape(sim)) return;
+    // The queen on her way to a new chamber: the nurses near her keep round her.
+    if (sim.nest.queenMoving && this.task === Task.Nurse && this.carry === Carry.None) {
+      const q = sim.colony.queen;
+      if (q && q.alive && Math.abs(q.x - this.x) + Math.abs(q.y - this.y) < 26 && ((this.id + sim.tick) & 3) !== 0) {
+        this.approach(sim, q.x + ((this.id % 5) - 2) * 2, q.y);
+        return;
+      }
+    }
     // Hopelessly lost with a load: let it go and rethink.
     if (this.lost > 240) this.discard(sim);
     // Dying of a fungus: out, and away from the others.

@@ -1048,10 +1048,50 @@ export class Sim {
     }
   }
 
+  /**
+   * The queen's safety. A royal chamber gone bad (its floor worn to a crust
+   * over the tunnels below, its roof straining, become a crossroads, or left
+   * shallow while the nest went deep) is replaced: the workers dig a new one
+   * deeper down and walk her to it once it is ready.
+   */
+  private royalSafety(): void {
+    const col = this.colony;
+    const nest = this.nest;
+    const q = col.queen;
+    if (!q?.alive || q.phase !== 2) return;
+    const step = nest.royalStep(q.x, q.y);
+    if (step === 'ready') {
+      this.fields.hurry(F.Royal, this.tick);
+      this.events.push({ key: 'queenMoving', x: q.x, y: q.y });
+      return;
+    }
+    if (step === 'arrived') {
+      this.events.push({ key: 'queenMoved', n: Math.round((q.y - this.world.ground[q.x]!) / 10), x: q.x, y: q.y });
+      return;
+    }
+    // A move that can't be finished is given up (the room left as a resting room).
+    if (nest.royalMove && this.simDays - nest.lastRoyalMove > 20) {
+      nest.royalMove.kind = 'rest';
+      nest.royalMove = null;
+      nest.zonesChanged = true;
+    }
+    if (nest.queenMoving && this.simDays - nest.lastRoyalMove > 24) nest.queenMoving = false;
+    if (nest.royalMove || nest.queenMoving || col.adults < 40 || this.dormant || this.simDays - nest.lastRoyalMove < 26) return;
+    if (this.tick % (TICK_HZ * 30) >= TICK_HZ * 3) return;
+    const qc = nest.queenChamber();
+    if (!qc) return;
+    const why = nest.royalTrouble(this.ground.strain[qc.id] ?? 0);
+    if (why && nest.planRoyalMove()) {
+      nest.lastRoyalMove = this.simDays;
+      this.events.push({ key: `royal_${why}`, x: qc.cx, y: qc.floorY - 3 });
+    }
+  }
+
   private growNest(): void {
     const col = this.colony;
     const wanted = Nest.wanted(col.adults, col.brood.length, TUNING.nestCellsPerAnt, TUNING.nestCellsBase);
     this.nest.grow({ adults: col.adults, brood: col.brood.length, seeds: col.stored, orders: col.orders, harvestSide: col.harvestRight >= col.harvestLeft ? 1 : -1 }, wanted);
+    this.royalSafety();
     // The second gate is dug through: the colony starts using it at once.
     if (this.nest.gateOpened()) {
       const e = this.nest.entrances[this.nest.entrances.length - 1]!;

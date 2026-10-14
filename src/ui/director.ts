@@ -78,10 +78,10 @@ export class Director {
    */
   notice(x: number, y: number, caption: string, key: string): void {
     if (!this.active) return;
-    const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds', 'neighbourMetL', 'neighbourMetR', 'youngColony', 'teamCarry', 'cutUp', 'recruitHeavy', 'tugOfWar', 'lasiusFight', 'lasiusKill', 'lasiusCaught', 'buriedOut', 'guestWoodlouse', 'guestCricket', 'guestBeetle', 'parasitoidKills', 'foundBone', 'foundSeeds'];
+    const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds', 'neighbourMetL', 'neighbourMetR', 'youngColony', 'teamCarry', 'cutUp', 'recruitHeavy', 'tugOfWar', 'lasiusFight', 'lasiusKill', 'lasiusCaught', 'buriedOut', 'queenMoving', 'queenMoved', 'guestWoodlouse', 'guestCricket', 'guestBeetle', 'parasitoidKills', 'foundBone', 'foundSeeds'];
     const wide = ['war', 'raid', 'flight', 'moleBreach', 'moleNest', 'queenKilledMole', 'toad', 'toadBack', 'lizard', 'leafFall', 'otherQueens', 'wormsUp', 'youngColonyGone', 'secondGate', 'raidYoung', 'warYoung'];
     // A room's roof: close enough to see the cracks and the fall, wide enough for the room.
-    const room = ['caveIn', 'caveInDead', 'roofCracks', 'seepage', 'shoring'];
+    const room = ['caveIn', 'caveInDead', 'roofCracks', 'seepage', 'shoring', 'royal_floor', 'royal_roof', 'royal_crossroads', 'royal_shallow'];
     const zoom = close.includes(key) ? 11 : wide.includes(key) ? 3.4 : room.includes(key) ? 7.5 : 6;
     this.story = { x, y, caption, zoom };
     // Big moments play out at normal speed, however fast the film was running.
@@ -192,7 +192,8 @@ export class Director {
       ['digger', 2],
       ['hauler', 1.5],
       ['nurse', 1.5],
-      ['queen', 1],
+      // (The queen walked to a new chamber: worth following all the way.)
+      ['queen', sim.nest.queenMoving ? 25 : 1],
       ['major', 1],
       ['granary', 1],
       ['wide', 1],
@@ -371,6 +372,7 @@ export class Director {
     const depth = (a.y - w.ground[a.x]!) / 10;
     const away = Math.abs(a.x - sim.nest.foundX) / 10;
     const where = depth > 0.3 ? t('dc_down', { d: num(depth) }) : t('dc_from', { d: num(away) });
+    if (a.caste === 'queen' && this.game.sim.nest.queenMoving) return t('dc_queenMoving');
     if (a.caste === 'queen') return a.phase < 2 ? t('dc_queenDig') : t(this.game.sim.dormant ? 'dc_queenRest' : 'dc_queenLay', { where });
     if (a.caste === 'gyne' || a.caste === 'male') return `${t(a.caste === 'gyne' ? 'dc_gyne' : 'dc_male')} ${a.name} · ${t(this.game.sim.flight ? 'dc_flying' : 'dc_waiting')} · ${where}`;
     const who = t(a.caste === 'soldier' ? 'dc_major' : a.task === Task.Forage ? 'dc_forager' : a.task === Task.Dig ? 'dc_digger' : a.task === Task.Nurse ? 'dc_nurse' : a.task === Task.Clean ? 'dc_cleaner' : 'dc_worker');
