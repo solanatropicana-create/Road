@@ -345,6 +345,7 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
 #ui.doc #bar { opacity: .32; }
 #ui::before { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity 1.2s ease; background: radial-gradient(ellipse 75% 70% at 50% 48%, transparent 55%, rgba(8,5,3,0.42) 100%); }
 #ui.doc::before { opacity: 1; }
+#dip { position: absolute; inset: 0; background: #0a0705; opacity: 0; pointer-events: none; }
 #ui.paused::after { content: attr(data-paused); position: absolute; top: 70px; left: 50%; transform: translateX(-50%); padding: 4px 12px; border-radius: 999px; background: rgba(20,15,11,0.72); border: 1px solid var(--line); color: var(--ink-faint); font-size: 11px; letter-spacing: .12em; text-transform: uppercase; pointer-events: none; }
 @media (max-width: 700px) { #ui.paused::after { top: 102px; } }
 #ui.doc #scale { opacity: 0; transition: opacity .6s ease; }

@@ -8,6 +8,9 @@ import { TICK_HZ } from '../config';
 import { SOLID } from '../world/mat';
 import { dateText } from './ui';
 
+/** Length of a dip-to-dark cut, s. */
+const DIP = 0.9;
+
 type Shot = 'queen' | 'forager' | 'digger' | 'hauler' | 'nurse' | 'major' | 'granary' | 'wide' | 'rescue' | 'shoring' | 'lasius' | 'critter' | 'mouth' | 'tree' | 'lapse' | 'rival';
 
 /**
@@ -31,6 +34,10 @@ export class Director {
   private story: { x: number; y: number; caption: string; zoom: number } | null = null;
   /** Seconds the current shot has run. */
   private ran = 0;
+  /** A cut far across the slice dips to dark and back instead of whipping the camera there. */
+  private dipT = 0;
+  /** How dark the frame is in such a cut (0..1). */
+  dip = 0;
 
   constructor(game: Game) {
     this.game = game;
@@ -56,6 +63,8 @@ export class Director {
 
   stop(): void {
     this.active = false;
+    this.dipT = 0;
+    this.dip = 0;
     this.subject = null;
     this.point = null;
     this.caption = '';
@@ -86,8 +95,36 @@ export class Director {
     if (!this.active) return;
     this.left -= dt;
     this.ran += dt;
-    if (this.left <= 0 || (this.subject && !this.subject.alive)) this.cut();
     const cam = this.game.cam;
+    if (this.left <= 0 || (this.subject && !this.subject.alive)) {
+      const was = { x: cam.x, y: cam.y, z: cam.zoom };
+      this.cut();
+      // Where is the new shot? Far off, or at a very different scale: dip to dark.
+      const to = this.subject ?? this.rival ?? this.critter ?? this.point;
+      if (to && this.ran === 0) {
+        const span = cam.screenW / Math.min(was.z, cam.tzoom);
+        const far = Math.hypot(to.x - was.x, to.y - was.y) > span * 0.9 || Math.max(was.z / cam.tzoom, cam.tzoom / was.z) > 2.6;
+        if (far) {
+          this.dipT = DIP;
+          cam.ease = 0;
+        }
+      }
+    }
+    if (this.dipT > 0) {
+      this.dipT = Math.max(0, this.dipT - dt);
+      const h = DIP / 2;
+      if (this.dipT <= h && cam.ease === 0) {
+        // At the darkest: the camera is simply there.
+        const f = this.subject ?? this.rival ?? this.critter ?? this.point;
+        if (f) {
+          cam.x = cam.tx = f.x;
+          cam.y = cam.ty = f.y - (f === this.point ? 0 : 2);
+        }
+        cam.zoom = cam.tzoom;
+        cam.ease = 2.2;
+      }
+      this.dip = this.dipT > h ? (DIP - this.dipT) / h : this.dipT / h;
+    } else this.dip = 0;
     // A slow push in through each shot, as a camera operator would.
     if ((this.subject || this.critter || this.rival) && this.last !== 'wide') cam.tzoom = Math.min(cam.maxZoom, cam.tzoom * (1 + dt * 0.015));
     if (this.subject) {

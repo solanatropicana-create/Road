@@ -93,6 +93,7 @@ export class UI {
   cinema = false;
   /** The documentary's current shot, by its caption's head (for the fade between shots). */
   private lastShot = '';
+  private dipEl: HTMLElement | null = null;
   /** Seconds since the player last touched anything. */
   private idle = 0;
   /** Where the latest located event happened (J jumps there). */
@@ -587,6 +588,11 @@ export class UI {
     const caption = h('div', '', `<div class="eyebrow">${t('watching')}</div><div class="line"></div>`);
     caption.id = 'caption';
     r.appendChild(caption);
+    // The documentary's dip to dark between far-apart shots (under everything else).
+    const dip = h('div', '', '');
+    dip.id = 'dip';
+    r.insertBefore(dip, r.firstChild);
+    this.dipEl = dip;
     const exit = h('button', 'btn', t('showPanels'));
     exit.id = 'cinema-exit';
     exit.onclick = () => this.toggleCinema();
@@ -1372,6 +1378,8 @@ export class UI {
       }
     }
     const dir = game.director;
+    const dipA = dir.dip > 0.01 ? (dir.dip * 0.96).toFixed(3) : '0';
+    if (this.dipEl && this.dipEl.style.opacity !== dipA) this.dipEl.style.opacity = dipA;
     this.els.watch!.classList.toggle('on', dir.active);
     this.root.classList.toggle('doc', dir.active);
     const cap = this.els.caption!;
