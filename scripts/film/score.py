@@ -1,9 +1,6 @@
 """
 Trailer score, synthesised from scratch (no samples, no licences).
 
-Optional cues: "bpm" (default 84), "reveal" (a whoosh into a low hit, for the
-hook's camera move), "risers" (noise swells that end on these moments).
-
     python3 scripts/film/score.py cues.json out.wav
 
 cues.json gives the length and the moments the music follows (seconds):
@@ -172,10 +169,6 @@ class Mix:
         i = int(at * SR)
         if i >= self.n:
             return
-        if i < 0:
-            # Starts before the video: keep only the part that falls inside it.
-            sig = sig[:, -i:]
-            i = 0
         j = min(self.n, i + sig.shape[1])
         seg = sig[:, : j - i] * gain
         self.dry[:, i:j] += seg * (1 - send * 0.5)
@@ -194,7 +187,6 @@ def main():
     out = sys.argv[2]
     L = cues["length"]
     b, life, drama, title = cues["build"], cues["life"], cues["drama"], cues["title"]
-    beat = 60 / cues.get("bpm", 84)
     m = Mix(L)
 
     # --- harmony: D minor, a slow i - VI - III - VII walk; the title resolves to D major.
@@ -204,8 +196,7 @@ def main():
         [53, 57, 60, 65, 69],  # F
         [48, 55, 60, 64, 67],  # C
     ]
-    # Chords change every two bars at a quick tempo, every four seconds at the slow one.
-    chord_len = 8 * beat if beat < 0.62 else 4.0
+    chord_len = 4.0
     t = 0.0
     k = 0
     while t < drama:
@@ -217,14 +208,13 @@ def main():
         k += 1
 
     # Sparse bells over the intro (the queen in the air).
-    # (A video that starts cold, like a reel, opens on a note straight away.)
-    first = ((0.04, 74),) if cues.get("fade_in", 1.2) < 0.5 else ()
-    for at, n in first + ((1.5, 74), (5.2, 77), (8.6, 72), (12.0, 81), (14.6, 76)):
+    for at, n in ((1.5, 74), (5.2, 77), (8.6, 72), (12.0, 81), (14.6, 76)):
         if at < b:
             m.add(at, bell(midi(n)), pan=rng.uniform(0.3, 0.7), send=0.7)
 
     # --- the pulse: plucked arpeggio from the build, in eighths at 84 bpm, on a grid
     # that puts a downbeat exactly where the life montage starts (its cuts are on the beat).
+    beat = 60 / 84
     arp = {0: [62, 65, 69, 74], 1: [58, 62, 65, 70], 2: [60, 65, 69, 72], 3: [60, 64, 67, 72]}
     t = life - np.ceil((life - b) / (beat / 2)) * (beat / 2)
     step = 0
@@ -288,39 +278,17 @@ def main():
     for at, n in ((title + 0.4, 78), (title + 1.6, 81), (title + 3.0, 74)):
         m.add(at, bell(midi(n), 5.0, 0.06), pan=rng.uniform(0.35, 0.65), send=0.8)
 
-    # --- the hook's reveal: air rushing past into a low hit.
-    if "reveal" in cues:
-        at = cues["reveal"]
-        n = int(1.2 * SR)
-        tt = np.arange(n) / SR
-        sweep = bandpass(rng.standard_normal(n), 300, 6000) * (tt / 1.2) ** 2.2 * 0.22
-        m.add(at - 1.2, np.stack([sweep, np.roll(sweep, 300)]), send=0.3)
-        m.add(at, boom(4.0, 0.6), send=0.35)
-        m.add(at + 0.05, bell(midi(81), 4.0, 0.05), send=0.8)
-    # --- risers: filtered noise swelling up to a cut.
-    for at in cues.get("risers", []):
-        dur = 2.0
-        n = int(dur * SR)
-        tt = np.arange(n) / SR
-        x = rng.standard_normal(n)
-        lo = bandpass(x, 200, 1200)
-        hi = bandpass(x, 1500, 8000)
-        k = (tt / dur) ** 2.5
-        riser = (lo * (1 - k) + hi * k) * k * 0.14
-        m.add(at - dur, np.stack([riser, np.roll(riser, 200)]), send=0.4)
-
     # --- wind bed all through (quieter under the groove).
     wind = noise_bed(L, 120, 900, 0.05)
     lfo = 0.6 + 0.4 * np.sin(2 * np.pi * t_axis(L)[: wind.shape[1]] / 9.0)
     wind *= lfo
-    wind *= automation(wind.shape[1], [(0, 0), (min(2, cues.get("fade_in", 2)), 1), (life, 0.8), (drama, 1.3), (title, 0.4), (L, 0.2)])
+    wind *= automation(wind.shape[1], [(0, 0), (2, 1), (life, 0.8), (drama, 1.3), (title, 0.4), (L, 0.2)])
     m.add(0, wind, send=0.1)
 
     wet = convolve(m.wet, reverb_ir())
     mix = m.dry + wet * 0.9
     # Section gain: dip before the title so the swell lands.
-    fi = cues.get("fade_in", 1.2)
-    g = automation(mix.shape[1], [(0, 0), (fi, 1), (title - 0.6, 1), (title - 0.1, 0.25), (title + 0.35, 1), (L - 2.5, 1), (L, 0)])
+    g = automation(mix.shape[1], [(0, 0), (1.2, 1), (title - 0.6, 1), (title - 0.1, 0.25), (title + 0.35, 1), (L - 2.5, 1), (L, 0)])
     mix *= g
     mix = np.tanh(mix * 1.4) / 1.4
     mix /= np.abs(mix).max() / 0.89

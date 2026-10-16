@@ -151,6 +151,18 @@ async function life() {
       ],
     });
   }
+  // The scent trail they lay and follow (the game's T view).
+  if (want('trails')) {
+    await st.run((g) => { g.renderer.trails = true; });
+    await st.take('trails', {
+      seconds: 3,
+      cam: [
+        { x: L.x + 45, y: L.ground - 8, zoom: Z(7, 9) },
+        { x: L.x + 75, y: L.ground - 6, zoom: Z(8, 10.5) },
+      ],
+    });
+    await st.run((g) => { g.renderer.trails = false; });
+  }
   // The door: traffic in and out of the crater.
   if (want('entrance')) {
     await st.take('entrance', {
@@ -173,6 +185,23 @@ async function life() {
         { zoom: Z(10, 9), follow: 1, dy: 0, lag: 0.6 },
         { zoom: Z(11, 10), follow: 1, dy: 2, lag: 0.6 },
       ],
+    });
+  }
+  // A digger hauling a load of soil up the shaft, close.
+  if (want('digger')) {
+    const who = (await st.subject(pickAnt, { who: 'soil', range: 120, near: { x: L.x, y: L.ground + 40 } })) ?? (await st.subject(pickAnt, { who: 'any', range: 60, near: { x: L.x, y: L.ground + 60 } }));
+    console.log('digger', who);
+    await st.take('digger', {
+      seconds: 3,
+      cam: [{ zoom: Z(14, 22), follow: 1, dy: 0, lag: 0.35 }, { zoom: Z(16, 25), follow: 1, dy: 0, lag: 0.35 }],
+    });
+  }
+  // The queen among her eggs and larvae.
+  if (want('queen')) {
+    await st.subject(pickAnt, { who: 'queen' });
+    await st.take('queen', {
+      seconds: 3,
+      cam: [{ zoom: Z(14, 24), follow: 1, dx: 1, dy: -1.5, lag: 1.2 }, { zoom: Z(16, 27), follow: 1, dx: 1, dy: -1.5, lag: 1.2 }],
     });
   }
   // The brood: a nursery with nurses at work.
@@ -291,11 +320,38 @@ async function winter() {
   if (st.errors.length) console.log(st.errors);
 }
 
-const SHOTS = { opening, life, winter };
+/** Two weeks on, the 'meadow' colony's granary is at its fullest: close on the seed pile. */
+async function granary() {
+  const st = await stage({ fixture: 'meadow' });
+  await st.run((g) => { g.sim.weather.next = 1e12; g.advance(10800 * 2); });
+  await st.timeOfDay(0.6);
+  const gr = await st.run((g) => {
+    const s = g.sim;
+    const w = s.world;
+    const c = s.nest.chambers.filter((c) => c.kind === 'granary').sort((a, b) => b.seeds - a.seeds)[0];
+    // The middle of the seeds lying in it (SEED is material 14).
+    let n = 0, sx = 0, sy = 0;
+    for (let y = c.floorY - 14; y <= c.floorY + 2; y++) for (let x = Math.round(c.cx) - 30; x <= c.cx + 30; x++) if (w.mat[y * w.w + x] === 14) { n++; sx += x; sy += y; }
+    return n ? { x: sx / n, y: sy / n, seeds: c.seeds } : { x: c.cx, y: c.floorY - 3, seeds: c.seeds };
+  });
+  console.log('granary', gr);
+  await st.take('granary', {
+    seconds: 3,
+    cam: [
+      { x: gr.x - 2, y: gr.y - 2, zoom: Z(14, 22) },
+      { x: gr.x, y: gr.y - 1.5, zoom: Z(18, 28) },
+    ],
+  });
+  await st.close();
+  if (st.errors.length) console.log(st.errors);
+}
+
+const SHOTS = { opening, life, winter, granary };
 const GROUPS = {
   opening: ['flight', 'dig', 'founding', 'growth'],
-  life: ['column', 'forager', 'entrance', 'shaft', 'nursery', 'nest', 'carry', 'finale', 'storm', 'night'],
+  life: ['column', 'forager', 'trails', 'entrance', 'shaft', 'digger', 'queen', 'nursery', 'nest', 'carry', 'finale', 'storm', 'night'],
   winter: ['winter'],
+  granary: ['granary'],
 };
 for (const [name, fn] of Object.entries(SHOTS)) {
   if (only.length && !GROUPS[name].some((s) => only.includes(s))) continue;
