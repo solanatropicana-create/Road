@@ -10,13 +10,21 @@
  * together with the titles and the score. Mature-colony shots use the art
  * lab's fixtures (made on first use, a few minutes each).
  */
-import { openStage, ROOT, easeIn, pickAnt } from './stage.mjs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { openStage, ROOT, easeIn, easeInOut, pickAnt } from './stage.mjs';
 
 const DAY = 30 * 60 * 6;
 const args = process.argv.slice(2);
 const tall = args.includes('--tall');
-const only = args.filter((a) => !a.startsWith('--'));
+const fixArg = args.indexOf('--fixture');
+/**
+ * The mature colony the life shots are filmed on: 'pannonian' (seed 6) is Messor
+ * structor proper; the art lab's 'meadow' (seed 7) is on the Anatolian site, where
+ * the game has the sister species of the M. structor group.
+ */
+const FIXTURE = fixArg >= 0 ? args[fixArg + 1] : 'pannonian';
+const only = args.filter((a, i) => !a.startsWith('--') && i !== fixArg + 1);
 const FORMAT = tall ? { width: 1080, height: 1920, dir: 'tall' } : { width: 1920, height: 804, dir: 'wide' };
 const OUT = join(ROOT, 'shots/film/clips', FORMAT.dir);
 const want = (name) => !only.length || only.includes(name);
@@ -53,8 +61,8 @@ async function opening() {
       ticks: 1,
       cam: [
         // (A tall frame shows the whole sky only close in: the slice has 16 cm of air.)
-        { x: land.x0 + 200, y: Z(110, 60), zoom: Z(3, 8), follow: 0.75, flight: true, dy: 20, lag: 1.4 },
-        { x: land.x, y: land.ground - 10, zoom: Z(9, 10.5), follow: 0.95, flight: true, dy: 4, lag: 0.45, ease: easeIn },
+        { x: land.x0 + 200, y: Z(110, 60), zoom: Z(3, 13), follow: Z(0.75, 0.9), flight: true, dy: Z(20, 6), lag: Z(1.4, 0.8) },
+        { x: land.x, y: land.ground - 10, zoom: Z(9, 15), follow: 0.95, flight: true, dy: 4, lag: 0.45, ease: easeIn },
       ],
     });
   } else await st.run((g) => g.cine.skip());
@@ -68,8 +76,8 @@ async function opening() {
       ticks: (u) => Math.round(2 + u * 10),
       preroll: 0,
       cam: [
-        { zoom: Z(8.5, 7), follow: 1, dy: -2, lag: 0.5 },
-        { zoom: Z(11.5, 10), follow: 1, dy: 2, lag: 0.7 },
+        { zoom: Z(8.5, 16), follow: 1, dy: -2, lag: 0.5 },
+        { zoom: Z(11.5, 20), follow: 1, dy: 2, lag: 0.7 },
       ],
     });
   }
@@ -116,9 +124,9 @@ async function opening() {
 
 // ------------------------------------------------------------ the colony at work (a mature colony)
 
-/** Golden late afternoon over the 'meadow' fixture (seed 7, ~200 workers in July). */
+/** Golden late afternoon over the mature colony (~200 workers in July). */
 async function life() {
-  const st = await stage({ fixture: 'meadow' });
+  const st = await stage({ fixture: FIXTURE });
   await st.run((g) => { g.sim.weather.next = 1e12; });
   await st.timeOfDay(0.64);
   const L = await st.run((g) => {
@@ -182,8 +190,8 @@ async function life() {
       seconds: 5,
       ticks: 1,
       cam: [
-        { zoom: Z(10, 9), follow: 1, dy: 0, lag: 0.6 },
-        { zoom: Z(11, 10), follow: 1, dy: 2, lag: 0.6 },
+        { zoom: Z(10, 13), follow: 1, dy: 0, lag: 0.6 },
+        { zoom: Z(11, 15), follow: 1, dy: 2, lag: 0.6 },
       ],
     });
   }
@@ -232,6 +240,9 @@ async function life() {
     const c = await st.run((g) => {
       const s = g.sim;
       let c = null;
+      // No grasshopper hopping through the shot.
+      const cl = s.critters.list;
+      for (let k = cl.length - 1; k >= 0; k--) if (cl[k].kind === 'hopper') cl.splice(k, 1);
       for (const dx of [70, 90, 110, 130, 150, -70, -90, -110, 60, 170]) if (!c) c = s.carcasses.drop(s, 'beetle', s.nest.foundX + dx);
       if (!c) return null;
       // Wait for a team to take hold (up to three game hours), then a little more so they are under way.
@@ -246,8 +257,8 @@ async function life() {
         seconds: 5,
         ticks: 2,
         cam: [
-          { zoom: Z(10, 9), follow: 1, dy: -3, lag: 0.8 },
-          { zoom: Z(11.5, 10), follow: 1, dy: -3, lag: 0.8 },
+          { zoom: Z(10, 15), follow: 1, dy: -3, lag: 0.8 },
+          { zoom: Z(11.5, 17), follow: 1, dy: -3, lag: 0.8 },
         ],
       });
     }
@@ -295,9 +306,137 @@ async function life() {
   if (st.errors.length) console.log(st.errors);
 }
 
-/** Midwinter on the 'meadow' fixture: snow on the meadow, the colony asleep deep down. */
+/**
+ * More of the mature colony: the reveal (one ant, then the whole colony), one
+ * forager by name with the game's field note, the door, a lark dropping in,
+ * the winged queens and males lifting off, rain at the door, the night lamp.
+ */
+async function more() {
+  const st = await stage({ fixture: FIXTURE });
+  await st.run((g) => { g.sim.weather.next = 1e12; });
+  await st.timeOfDay(0.62);
+  const L = await st.run((g) => {
+    const s = g.sim;
+    const n = s.nest.chambers.filter((c) => c.kind === 'nursery').sort((a, b) => a.floorY - b.floorY)[0];
+    return { x: s.nest.foundX, ground: s.world.ground[s.nest.foundX], nursery: n && { x: n.cx, floor: n.floorY } };
+  });
+  // One ant and her seed filling the frame; the camera flies out to the whole colony
+  // and rests there (room for a title).
+  if (want('reveal')) {
+    console.log('reveal', await st.subject(pickAnt, { who: 'seed', range: 120, near: { x: L.x + 40, y: L.ground } }));
+    await st.take('reveal', {
+      seconds: 7.5,
+      cam: [
+        { zoom: Z(20, 27), follow: 1, dy: -1.5, lag: 0.25 },
+        { at: 0.13, zoom: Z(18, 24), follow: 1, dy: -1.5, lag: 0.25 },
+        { at: 0.56, x: L.x + 6, y: L.ground + Z(60, 95), zoom: Z(1.6, 2.85), follow: 0, ease: easeInOut },
+        { at: 1, x: L.x + 6, y: L.ground + Z(62, 98), zoom: Z(1.55, 2.75) },
+      ],
+    });
+  }
+  // One forager, by name, out on the meadow: the game's own field note about her.
+  if (want('named')) {
+    // A forager carrying a seed home, far out (or any ant out on the meadow, failing that).
+    const who = (await st.subject(pickAnt, { who: 'seed', range: 300, near: { x: L.x + 170, y: L.ground } })) ?? (await st.subject(pickAnt, { who: 'out', range: 300, near: { x: L.x + 170, y: L.ground } }));
+    console.log('named', who);
+    const r = await st.take('named', {
+      seconds: 3,
+      cam: [{ zoom: Z(14, 19), follow: 1, dy: -3, lag: 0.4 }, { zoom: Z(16, 21), follow: 1, dy: -3, lag: 0.4 }],
+    });
+    const note = await st.run((g) => (window.film.subject ? g.director.describe(window.film.subject) : ''));
+    writeFileSync(join(OUT, 'named.json'), JSON.stringify({ note, frames: r.frames }));
+    console.log('note:', note);
+  }
+  // The door: foragers waiting for news, carriers coming in.
+  if (want('gate')) {
+    await st.take('gate', {
+      seconds: 3,
+      cam: [
+        { x: L.x + 3, y: L.ground - 1, zoom: Z(10, 12) },
+        { x: L.x + 1, y: L.ground + 1, zoom: Z(12, 14) },
+      ],
+    });
+  }
+  // A crested lark drops in among the foragers: at a millimetre a cell she is a giant.
+  if (want('lark')) {
+    const lk = await st.run((g) => {
+      const s = g.sim;
+      const cr = s.critters;
+      for (let k = cr.list.length - 1; k >= 0; k--) if (cr.list[k].kind === 'lark') cr.list.splice(k, 1);
+      const tx = s.nest.foundX + 95;
+      const c = cr.add({ kind: 'lark', x: tx + 260, y: -60, dir: -1, state: 0, life: 30 * 40, timer: tx });
+      // Let her fly in until she is about to come into the frame.
+      for (let k = 0; k < 30 * 30 && Math.abs(c.x - tx) > 150 && c.state === 0; k++) s.step();
+      return { tx, ground: s.world.ground[tx] };
+    });
+    await st.take('lark', {
+      seconds: 3.6,
+      cam: [
+        { x: lk.tx - 10, y: lk.ground - 70, zoom: Z(3.6, 5.2) },
+        { x: lk.tx - 4, y: lk.ground - 62, zoom: Z(4, 5.8) },
+      ],
+    });
+  }
+  // The nuptial flight: winged queens and males climb out of the crater and lift off
+  // (the game's own fliers, set going here on a late spring morning's cue).
+  if (want('rise')) {
+    await st.timeOfDay(0.5);
+    // Some already in the air when the shot begins.
+    await st.run((g) => {
+      const s = g.sim;
+      for (let k = 0; k < 90; k++) {
+        if (k % 6 === 0) s.flyers.push({ x: s.nest.foundX + (Math.random() - 0.5) * 8, y: s.world.ground[s.nest.foundX] - 2, vx: -0.15 + Math.random() * 0.4, vy: -0.22 - Math.random() * 0.13, caste: Math.random() < 0.35 ? 'gyne' : 'male', t: 0 });
+        s.step();
+      }
+    });
+    await st.take('rise', {
+      seconds: 3,
+      ticks: 3,
+      every: (g, { f }) => {
+        if (f % 2) return;
+        const s = g.sim;
+        const gyne = Math.random() < 0.35;
+        s.flyers.push({ x: s.nest.foundX + (Math.random() - 0.5) * 8, y: s.world.ground[s.nest.foundX] - 2, vx: -0.15 + Math.random() * 0.4, vy: -0.22 - Math.random() * 0.13, caste: gyne ? 'gyne' : 'male', t: 0 });
+      },
+      cam: [
+        { x: L.x + 4, y: L.ground - 30, zoom: Z(7, 11) },
+        { x: L.x + 4, y: L.ground - 60, zoom: Z(6, 10) },
+      ],
+    });
+  }
+  // Rain coming: at dusk the first drops fall, the foragers hurry in and the door is plugged.
+  if (want('flood')) {
+    await st.timeOfDay(0.74);
+    await st.run((g) => { g.sim.startRain(true); for (let k = 0; k < 30 * 2; k++) g.sim.step(); });
+    await st.take('flood', {
+      seconds: 4,
+      ticks: 4,
+      every: (g, { f }) => { if (f === 18 || f === 24 || f === 84) g.sim.flash = 7; },
+      cam: [
+        { x: L.x + 2, y: L.ground - 22, zoom: Z(7, 9) },
+        { x: L.x, y: L.ground - 14, zoom: Z(8, 10.5) },
+      ],
+    });
+  }
+  // Night: the keeper's red lamp on the brood.
+  if (want('lamp') && L.nursery) {
+    await st.run((g) => { const w = g.sim.weather; w.target = 0; w.rain = 0; w.storm = false; });
+    await st.timeOfDay(0.96);
+    await st.take('lamp', {
+      seconds: 3.6,
+      cam: [
+        { x: L.nursery.x + 14, y: L.nursery.floor - 6, zoom: Z(8, 9) },
+        { x: L.nursery.x + 8, y: L.nursery.floor - 5, zoom: Z(9, 10.5) },
+      ],
+    });
+  }
+  await st.close();
+  if (st.errors.length) console.log(st.errors);
+}
+
+/** Midwinter: snow on the meadow, the colony asleep deep down. */
 async function winter() {
-  const st = await stage({ fixture: 'meadow' });
+  const st = await stage({ fixture: FIXTURE });
   const t0 = Date.now();
   await st.run((g) => {
     const s = g.sim;
@@ -308,22 +447,40 @@ async function winter() {
   await st.run((g) => { const s = g.sim; s.startRain(false); s.snow = Math.max(s.snow, 9); for (let k = 0; k < 30 * 20; k++) s.step(); });
   console.log('winter ready', (Date.now() - t0) / 1000, await st.run((g) => ({ doy: g.sim.doy, snow: g.sim.snow, snowing: g.sim.weather.snowing, dormant: g.sim.dormant })));
   const L = await st.run((g) => ({ x: g.sim.nest.foundX, ground: g.sim.world.ground[g.sim.nest.foundX] }));
-  await st.take('winter', {
-    seconds: 6,
-    ticks: 1,
-    cam: [
-      { x: L.x - 30, y: L.ground - Z(8, 0), zoom: Z(4.4, 4) },
-      { x: L.x - 10, y: L.ground + Z(40, 70), zoom: Z(3.6, 3) },
-    ],
-  });
+  if (want('winter')) {
+    await st.take('winter', {
+      seconds: 6,
+      ticks: 1,
+      cam: [
+        { x: L.x - 30, y: L.ground - Z(8, 0), zoom: Z(4.4, 4) },
+        { x: L.x - 10, y: L.ground + Z(40, 70), zoom: Z(3.6, 3) },
+      ],
+    });
+  }
+  // From the snow over the door down to the colony asleep in its deepest rooms.
+  if (want('sleep')) {
+    const deep = await st.run((g) => { const c = g.sim.nest.chambers.slice().sort((a, b) => b.floorY - a.floorY)[0]; return { x: c.cx, floor: c.floorY }; });
+    await st.take('sleep', {
+      seconds: 4,
+      cam: [
+        { x: L.x, y: L.ground - 6, zoom: Z(7, 9) },
+        { x: deep.x, y: deep.floor - 6, zoom: Z(6, 8), ease: easeInOut },
+      ],
+    });
+  }
   await st.close();
   if (st.errors.length) console.log(st.errors);
 }
 
-/** Two weeks on, the 'meadow' colony's granary is at its fullest: close on the seed pile. */
+/** The fullest granary: close on the seed pile. */
 async function granary() {
-  const st = await stage({ fixture: 'meadow' });
-  await st.run((g) => { g.sim.weather.next = 1e12; g.advance(10800 * 2); });
+  const st = await stage({ fixture: FIXTURE });
+  // (The 'meadow' colony's stores are low in July and fullest two weeks on; the 'pannonian' one's are full already.)
+  await st.run((g) => {
+    g.sim.weather.next = 1e12;
+    const most = () => Math.max(0, ...g.sim.nest.chambers.filter((c) => c.kind === 'granary').map((c) => c.seeds));
+    for (let k = 0; k < 3 && most() < 40; k++) g.advance(10800);
+  });
   await st.timeOfDay(0.6);
   const gr = await st.run((g) => {
     const s = g.sim;
@@ -346,11 +503,12 @@ async function granary() {
   if (st.errors.length) console.log(st.errors);
 }
 
-const SHOTS = { opening, life, winter, granary };
+const SHOTS = { opening, life, more, winter, granary };
 const GROUPS = {
   opening: ['flight', 'dig', 'founding', 'growth'],
   life: ['column', 'forager', 'trails', 'entrance', 'shaft', 'digger', 'queen', 'nursery', 'nest', 'carry', 'finale', 'storm', 'night'],
-  winter: ['winter'],
+  more: ['reveal', 'named', 'gate', 'lark', 'rise', 'flood', 'lamp'],
+  winter: ['winter', 'sleep'],
   granary: ['granary'],
 };
 for (const [name, fn] of Object.entries(SHOTS)) {

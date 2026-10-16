@@ -11,6 +11,20 @@ Sections: a quiet pad over wind (intro), a pulse of plucked notes as the
 colony grows (build), the full groove under the life montage (life), a low
 drone with thunder and rain (drama), and a warm swell under the title.
 Everything is additive synthesis, filtered noise and a convolution reverb.
+
+Optional cues (the variants after the sound review):
+  "phone": true    mix for phone speakers: harmonics on the bass and hits, a click
+                   on every cut ("cuts"), chords on the bar, the storm in the
+                   mid-range, sound from the first frame, a 40 Hz high-pass
+  "style": "seedclock"  wooden marimba, seed knocks and a soil shaker in place of
+                   the plucks and thumps
+  "accents": [s]   a bell (or marimba note) on each card
+  "flashes": [s]   a crack of thunder on each lightning flash
+  "shimmer": [s]   a cold, high shimmer (snow)
+  "risers": [s]    noise swells ending on these moments
+  "buzz": [a, b]   the hum of the flying alates
+  "fade_in": s     how long the sound takes to come up (default 1.2)
+  "loop": true     no fade at the end: the last chord rings into the restart
 """
 import json
 import sys
@@ -124,6 +138,78 @@ def tick(amp=0.05):
     return x * amp
 
 
+def highpass(x, fc):
+    n = len(x)
+    f = np.fft.rfftfreq(n, 1 / SR)
+    h = 1 / (1 + (fc / np.maximum(f, 1)) ** 4)
+    return np.fft.irfft(np.fft.rfft(x) * h, n)
+
+
+def boom_phone(dur=3.5, amp=0.5):
+    """The low hit, with a body and a click a phone speaker can play."""
+    x = boom(dur, amp)
+    t = t_axis(dur)
+    body = (np.sin(2 * np.pi * 150 * t) * 0.5 + bandpass(rng.standard_normal(len(t)), 120, 260) * 0.6) * np.exp(-t * 9)
+    click = bandpass(rng.standard_normal(len(t)), 2000, 4500) * np.exp(-t * 300)
+    return x + (body * 0.55 + click * 0.35) * amp
+
+
+def knock(amp=0.12, pitch=1000.0):
+    """A seed knock: a short wooden tone with a click (marks a cut on any speaker)."""
+    t = t_axis(0.12)
+    tone = np.sin(2 * np.pi * pitch * t) * np.exp(-t * 55) + 0.4 * np.sin(2 * np.pi * pitch * 2.7 * t) * np.exp(-t * 90)
+    click = bandpass(rng.standard_normal(len(t)), 2000, 5000) * np.exp(-t * 400) * 0.5
+    return (tone + click) * amp
+
+
+def marimba(freq, dur=1.6, amp=0.12):
+    """A wooden bar: partials 1 : 3.93 : 9.2, a 6 ms attack."""
+    t = t_axis(dur)
+    x = np.sin(2 * np.pi * freq * t) * np.exp(-t * 3.2)
+    x += 0.35 * np.sin(2 * np.pi * freq * 3.93 * t) * np.exp(-t * 9)
+    x += 0.12 * np.sin(2 * np.pi * freq * 9.2 * t) * np.exp(-t * 22)
+    return x * np.minimum(1, t / 0.006) * amp
+
+
+def shaker(amp=0.03):
+    t = t_axis(0.05)
+    return bandpass(rng.standard_normal(len(t)), 3000, 8000) * np.exp(-t * 90) * amp
+
+
+def bass_phone(freq, dur, amp=0.16):
+    """A bass with harmonics up to about 1 kHz, so it is heard on a phone too."""
+    x = saw(freq, dur, 900)
+    x = np.tanh(x * 2.2)
+    return x * env_adsr(len(x), 0.02, 0.5) * amp
+
+
+def crack(amp=0.35):
+    t = t_axis(0.5)
+    return bandpass(rng.standard_normal(len(t)), 1000, 4500) * np.exp(-t * 14) * amp
+
+
+def droplets(dur, rate=40, amp=0.05):
+    """Rain as grains: tiny ticks at random, 2-6 kHz."""
+    n = int(dur * SR)
+    out = np.zeros((2, n))
+    for _ in range(int(dur * rate)):
+        i = rng.integers(0, max(1, n - 800))
+        g = bandpass(rng.standard_normal(800), 2000, 6000) * np.exp(-np.arange(800) / SR * 500) * amp * rng.uniform(0.3, 1)
+        p = rng.uniform(0.15, 0.85)
+        out[0, i : i + 800] += g * (1 - p)
+        out[1, i : i + 800] += g * p
+    return out
+
+
+def riser(dur=2.0, amp=0.14):
+    n = int(dur * SR)
+    tt = np.arange(n) / SR
+    x = rng.standard_normal(n)
+    k = (tt / dur) ** 2.5
+    r = (bandpass(x, 200, 1200) * (1 - k) + bandpass(x, 1500, 8000) * k) * k * amp
+    return np.stack([r, np.roll(r, 200)])
+
+
 def thunder(dur=6.0, amp=0.55):
     t = t_axis(dur)
     x = rng.standard_normal(len(t))
@@ -169,6 +255,10 @@ class Mix:
         i = int(at * SR)
         if i >= self.n:
             return
+        if i < 0:
+            # Starts before the video: keep only the part that falls inside it.
+            sig = sig[:, -i:]
+            i = 0
         j = min(self.n, i + sig.shape[1])
         seg = sig[:, : j - i] * gain
         self.dry[:, i:j] += seg * (1 - send * 0.5)
@@ -187,6 +277,10 @@ def main():
     out = sys.argv[2]
     L = cues["length"]
     b, life, drama, title = cues["build"], cues["life"], cues["drama"], cues["title"]
+    phone = cues.get("phone", False)
+    clock = cues.get("style") == "seedclock"
+    fade_in = cues.get("fade_in", 1.2)
+    beat = 60 / 84
     m = Mix(L)
 
     # --- harmony: D minor, a slow i - VI - III - VII walk; the title resolves to D major.
@@ -196,71 +290,123 @@ def main():
         [53, 57, 60, 65, 69],  # F
         [48, 55, 60, 64, 67],  # C
     ]
-    chord_len = 4.0
-    t = 0.0
-    k = 0
+    # The phone mix changes chord on the bar, counted from the montage's first downbeat.
+    chord_len = 4 * beat if phone else 4.0
+    t0 = life - np.ceil(life / chord_len) * chord_len if phone else 0.0
+    chord = lambda t: int(np.floor((t - t0) / chord_len)) % 4  # noqa: E731
+    t = t0
     while t < drama:
         dur = min(chord_len + 1.6, drama + 1.5 - t)
         cutoff = 900 if t < b else 1500 if t < life else 2200
         amp = 0.05 if t < b else 0.06 if t < life else 0.07
-        m.add(t, pad_chord(prog[k % 4], dur, cutoff, amp), send=0.55)
+        if phone and t < b:
+            amp *= 1.5  # the intro sat 4 dB under the rest
+        if clock:
+            amp *= 0.6
+        m.add(max(t, -1.0), pad_chord(prog[chord(t + 0.01)], dur, cutoff, amp), send=0.55)
         t += chord_len
-        k += 1
 
-    # Sparse bells over the intro (the queen in the air).
-    for at, n in ((1.5, 74), (5.2, 77), (8.6, 72), (12.0, 81), (14.6, 76)):
-        if at < b:
+    # Bells over the intro (the queen in the air), or on each card.
+    accents = cues.get("accents")
+    if accents is None:
+        accents = [at for at in (1.5, 5.2, 8.6, 12.0, 14.6) if at < b]
+    first = [0.04] if fade_in < 0.5 else []
+    notes = [74, 77, 72, 81, 76, 79]
+    for k, at in enumerate(first + list(accents)):
+        n = notes[k % len(notes)]
+        if clock:
+            m.add(at, marimba(midi(n), 2.5, 0.11), pan=rng.uniform(0.35, 0.65), send=0.5)
+        else:
             m.add(at, bell(midi(n)), pan=rng.uniform(0.3, 0.7), send=0.7)
 
-    # --- the pulse: plucked arpeggio from the build, in eighths at 84 bpm, on a grid
-    # that puts a downbeat exactly where the life montage starts (its cuts are on the beat).
-    beat = 60 / 84
+    # The alates' hum over the flight.
+    if "buzz" in cues:
+        a0, a1 = cues["buzz"]
+        tb = t_axis(a1 - a0)
+        hum = saw(190, a1 - a0, 600) * (0.5 + 0.5 * np.sin(2 * np.pi * 23 * tb)) * 0.025
+        hum *= env_adsr(len(hum), 0.3, 0.8)
+        pan = 0.5 + 0.35 * np.sin(2 * np.pi * tb / 3.1)
+        m.add(a0, np.stack([hum * (1 - pan), hum * pan]) * 1.4, send=0.3)
+
+    # --- the pulse: eighths at 84 bpm on a grid that puts a downbeat exactly where the
+    # life montage starts (its cuts are on the beat).
     arp = {0: [62, 65, 69, 74], 1: [58, 62, 65, 70], 2: [60, 65, 69, 72], 3: [60, 64, 67, 72]}
     t = life - np.ceil((life - b) / (beat / 2)) * (beat / 2)
     step = 0
     while t < drama - 0.2:
-        k = int((t / chord_len)) % 4
-        notes = arp[k]
-        n = notes[step % 4] + (12 if (step // 8) % 2 and t > life else 0)
+        k = chord(t) if phone else int((t / chord_len)) % 4
+        # (The octave jump falls on every other bar of the montage.)
+        up = (int(round((t - life) / beat)) // 4) % 2 if phone else (step // 8) % 2
+        n = arp[k][step % 4] + (12 if up and t > life else 0)
         bright = 0.6 + 0.8 * min(1, (t - b) / max(1, life - b))
         gain = 0.55 + 0.45 * min(1, (t - b) / max(1, life - b))
-        m.add(t, pluck(midi(n), 1.4, bright, 0.09 * gain), pan=0.35 + 0.3 * (step % 2), send=0.35)
+        if clock:
+            m.add(t, marimba(midi(n + 12), 1.2, 0.09 * gain), pan=0.35 + 0.3 * (step % 2), send=0.3)
+        else:
+            m.add(t, pluck(midi(n), 1.4, bright, 0.09 * gain), pan=0.35 + 0.3 * (step % 2), send=0.35)
         t += beat / 2
         step += 1
 
-    # Bass and soft thumps under the life montage.
+    # Bass and soft thumps (or knocks and a shaker) under the life montage.
     roots = [38, 34, 41, 36]
-    t = life
-    while t < drama - 0.5:
-        k = int(t / chord_len) % 4
-        tb = t_axis(chord_len)
-        f = midi(roots[k])
-        bass = (np.sin(2 * np.pi * f * tb) + 0.3 * np.sin(4 * np.pi * f * tb)) * env_adsr(len(tb), 0.05, 0.6) * 0.16
-        m.add(t, bass, send=0.1)
-        t += chord_len
+    if phone:
+        t = life
+        while t < drama - 0.5:
+            f = midi(roots[chord(t)] + (12 if clock else 0))
+            m.add(t, bass_phone(f, chord_len if not clock else beat * 0.9, 0.13), send=0.1)
+            if clock:
+                m.add(t + 2 * beat, bass_phone(f, beat * 0.9, 0.1), send=0.1)
+            t += chord_len
+    else:
+        t = life
+        while t < drama - 0.5:
+            k = int(t / chord_len) % 4
+            tb = t_axis(chord_len)
+            f = midi(roots[k])
+            bass = (np.sin(2 * np.pi * f * tb) + 0.3 * np.sin(4 * np.pi * f * tb)) * env_adsr(len(tb), 0.05, 0.6) * 0.16
+            m.add(t, bass, send=0.1)
+            t += chord_len
     t = life
     beat_n = 0
+    hit = boom_phone if phone else boom
     while t < drama - 0.3:
-        if beat_n % 2 == 0:
-            m.add(t, boom(0.8, 0.22), send=0.08)
-        m.add(t + beat / 2, tick(0.06), pan=0.65, send=0.15)
-        m.add(t + beat * 0.75, tick(0.035), pan=0.35, send=0.15)
+        if clock:
+            if beat_n % 2 == 0:
+                m.add(t, knock(0.14, 820), send=0.1)
+            for s16 in range(4):
+                swing = 0.55 if s16 % 2 else 0.0
+                m.add(t + (s16 + swing * 0.5) * beat / 4, shaker(0.035 if s16 % 2 else 0.02), pan=0.6, send=0.1)
+        else:
+            if beat_n % 2 == 0:
+                m.add(t, hit(0.8, 0.22), send=0.08)
+            tk = 0.5 if phone else 1.0
+            m.add(t + beat / 2, tick(0.06 * tk), pan=0.65, send=0.15)
+            m.add(t + beat * 0.75, tick(0.035 * tk), pan=0.35, send=0.15)
         t += beat
         beat_n += 1
+    # A knock on every cut, so the cuts are heard on a phone.
+    for k, at in enumerate(cues.get("cuts", [])):
+        m.add(at, knock(0.12, 900 + 120 * (k % 3)), send=0.15)
 
-    # --- drama: a low drone with a rubbing minor second, rain, thunder.
+    # --- drama: a drone with a rubbing minor second, rain, thunder.
     dd = title - drama + 1.0
-    drone = pad_chord([38, 45, 50, 51], dd, 500, 0.09)
-    m.add(drama, drone, send=0.5)
+    if phone:
+        m.add(drama, pad_chord([50, 57, 62, 63], dd, 1800, 0.07), send=0.5)
+    else:
+        m.add(drama, pad_chord([38, 45, 50, 51], dd, 500, 0.09), send=0.5)
     for at in cues.get("hits", []):
-        m.add(at, boom(4.0, 0.55), send=0.35)
+        m.add(at, hit(4.0, 0.55), send=0.35)
     for at in cues.get("thunder", []):
         m.add(at, thunder(6.0, 0.5), send=0.25)
+    for at in cues.get("flashes", []):
+        m.add(at, crack(0.35), pan=rng.uniform(0.3, 0.7), send=0.3)
     r0, r1 = cues.get("rain", [drama, drama])
     if r1 > r0:
-        rain = noise_bed(r1 - r0 + 1.5, 1200, 7000, 0.03)
+        rain = noise_bed(r1 - r0 + 1.5, 1200, 7000, 0.095 if phone else 0.03)
         rain *= automation(rain.shape[1], [(0, 0), (0.6, 1), (r1 - r0, 1), (r1 - r0 + 1.5, 0)])
         m.add(r0, rain, send=0.2)
+        if phone or clock:
+            m.add(r0, droplets(r1 - r0 + 0.5, 40, 0.06), send=0.15)
     n0, n1 = cues.get("night", [drama, drama])
     if n1 > n0:
         # Crickets: bursts of a high chirp.
@@ -269,27 +415,42 @@ def main():
             tc = t_axis(0.18)
             chirp = np.sin(2 * np.pi * 4300 * tc) * (np.sin(2 * np.pi * 30 * tc) > 0) * np.exp(-tc * 8) * 0.025
             m.add(t, chirp, pan=rng.uniform(0.2, 0.8), send=0.4)
-            t += rng.uniform(0.35, 0.7)
+            t += (beat / 3) * 2 if clock else rng.uniform(0.35, 0.7)
+    for at in cues.get("shimmer", []):
+        for k, n in enumerate((86, 93, 98, 91)):
+            m.add(at + k * 0.09, bell(midi(n), 3.0, 0.035), pan=0.2 + 0.2 * k, send=0.9)
+    for at in cues.get("risers", []):
+        m.add(at - 2.0, riser(2.0, 0.12), send=0.4)
 
     # --- title: a beat of near-silence, then a warm D major swell and a low hit.
     swell_len = L - title + 0.5
     m.add(title + 0.35, pad_chord([38, 50, 57, 62, 66, 69, 76], swell_len, 1800, 0.11), send=0.7)
-    m.add(title + 0.35, boom(5.0, 0.6), send=0.4)
+    m.add(title + 0.35, hit(5.0, 0.6), send=0.4)
+    if clock:
+        for k, n in enumerate((62, 66, 69, 74)):
+            m.add(title + 0.35 + k * 0.03, marimba(midi(n), 4.0, 0.1), pan=0.3 + 0.13 * k, send=0.5)
     for at, n in ((title + 0.4, 78), (title + 1.6, 81), (title + 3.0, 74)):
         m.add(at, bell(midi(n), 5.0, 0.06), pan=rng.uniform(0.35, 0.65), send=0.8)
+    if cues.get("loop"):
+        # The last note rings over the cut back to the start.
+        m.add(L - 1.2, bell(midi(74), 3.0, 0.05), send=0.8)
 
     # --- wind bed all through (quieter under the groove).
     wind = noise_bed(L, 120, 900, 0.05)
     lfo = 0.6 + 0.4 * np.sin(2 * np.pi * t_axis(L)[: wind.shape[1]] / 9.0)
     wind *= lfo
-    wind *= automation(wind.shape[1], [(0, 0), (2, 1), (life, 0.8), (drama, 1.3), (title, 0.4), (L, 0.2)])
+    w_in = min(2, fade_in) if fade_in >= 0.5 else 0.02
+    wind *= automation(wind.shape[1], [(0, 0), (w_in, 1), (life, 0.8), (drama, 1.3), (title, 0.4), (L, 0.2)])
     m.add(0, wind, send=0.1)
 
     wet = convolve(m.wet, reverb_ir())
     mix = m.dry + wet * 0.9
     # Section gain: dip before the title so the swell lands.
-    g = automation(mix.shape[1], [(0, 0), (1.2, 1), (title - 0.6, 1), (title - 0.1, 0.25), (title + 0.35, 1), (L - 2.5, 1), (L, 0)])
+    end = [(L - 0.3, 1), (L, 0.85)] if cues.get("loop") else [(L - 2.5, 1), (L, 0)]
+    g = automation(mix.shape[1], [(0, 0), (max(0.02, fade_in), 1), (title - 0.6, 1), (title - 0.1, 0.25), (title + 0.35, 1)] + end)
     mix *= g
+    if phone:
+        mix = np.stack([highpass(mix[0], 40), highpass(mix[1], 40)])
     mix = np.tanh(mix * 1.4) / 1.4
     mix /= np.abs(mix).max() / 0.89
 
