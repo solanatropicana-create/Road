@@ -25,6 +25,8 @@ Optional cues (the variants after the sound review):
   "buzz": [a, b]   the hum of the flying alates
   "fade_in": s     how long the sound takes to come up (default 1.2)
   "loop": true     no fade at the end: the last chord rings into the restart
+  "soft": true     no harsh bursts: quieter rain, cracks, knocks and hits, no
+                   saturation on the mix (after "the music bursts in places")
 """
 import json
 import sys
@@ -151,14 +153,14 @@ def boom_phone(dur=3.5, amp=0.5):
     t = t_axis(dur)
     body = (np.sin(2 * np.pi * 150 * t) * 0.5 + bandpass(rng.standard_normal(len(t)), 120, 260) * 0.6) * np.exp(-t * 9)
     click = bandpass(rng.standard_normal(len(t)), 2000, 4500) * np.exp(-t * 300)
-    return x + (body * 0.55 + click * 0.35) * amp
+    return x + (body * 0.5 + click * 0.1) * amp
 
 
 def knock(amp=0.12, pitch=1000.0):
     """A seed knock: a short wooden tone with a click (marks a cut on any speaker)."""
     t = t_axis(0.12)
     tone = np.sin(2 * np.pi * pitch * t) * np.exp(-t * 55) + 0.4 * np.sin(2 * np.pi * pitch * 2.7 * t) * np.exp(-t * 90)
-    click = bandpass(rng.standard_normal(len(t)), 2000, 5000) * np.exp(-t * 400) * 0.5
+    click = bandpass(rng.standard_normal(len(t)), 2000, 5000) * np.exp(-t * 400) * 0.15
     return (tone + click) * amp
 
 
@@ -179,7 +181,7 @@ def shaker(amp=0.03):
 def bass_phone(freq, dur, amp=0.16):
     """A bass with harmonics up to about 1 kHz, so it is heard on a phone too."""
     x = saw(freq, dur, 900)
-    x = np.tanh(x * 2.2)
+    x = np.tanh(x * 1.2)
     return x * env_adsr(len(x), 0.02, 0.5) * amp
 
 
@@ -280,6 +282,7 @@ def main():
     phone = cues.get("phone", False)
     clock = cues.get("style") == "seedclock"
     fade_in = cues.get("fade_in", 1.2)
+    soft = cues.get("soft", False)
     beat = 60 / 84
     m = Mix(L)
 
@@ -386,7 +389,7 @@ def main():
         beat_n += 1
     # A knock on every cut, so the cuts are heard on a phone.
     for k, at in enumerate(cues.get("cuts", [])):
-        m.add(at, knock(0.12, 900 + 120 * (k % 3)), send=0.15)
+        m.add(at, knock(0.05 if soft else 0.12, 900 + 120 * (k % 3)), send=0.15)
 
     # --- drama: a drone with a rubbing minor second, rain, thunder.
     dd = title - drama + 1.0
@@ -395,18 +398,18 @@ def main():
     else:
         m.add(drama, pad_chord([38, 45, 50, 51], dd, 500, 0.09), send=0.5)
     for at in cues.get("hits", []):
-        m.add(at, hit(4.0, 0.55), send=0.35)
+        m.add(at, hit(4.0, 0.38 if soft else 0.55), send=0.35)
     for at in cues.get("thunder", []):
-        m.add(at, thunder(6.0, 0.5), send=0.25)
+        m.add(at, thunder(6.0, 0.35 if soft else 0.5), send=0.25)
     for at in cues.get("flashes", []):
-        m.add(at, crack(0.35), pan=rng.uniform(0.3, 0.7), send=0.3)
+        m.add(at, crack(0.12 if soft else 0.35), pan=rng.uniform(0.3, 0.7), send=0.3)
     r0, r1 = cues.get("rain", [drama, drama])
     if r1 > r0:
-        rain = noise_bed(r1 - r0 + 1.5, 1200, 7000, 0.095 if phone else 0.03)
+        rain = noise_bed(r1 - r0 + 1.5, 900, 4500, 0.04) if soft else noise_bed(r1 - r0 + 1.5, 1200, 7000, 0.095 if phone else 0.03)
         rain *= automation(rain.shape[1], [(0, 0), (0.6, 1), (r1 - r0, 1), (r1 - r0 + 1.5, 0)])
         m.add(r0, rain, send=0.2)
         if phone or clock:
-            m.add(r0, droplets(r1 - r0 + 0.5, 40, 0.06), send=0.15)
+            m.add(r0, droplets(r1 - r0 + 0.5, 30 if soft else 40, 0.025 if soft else 0.06), send=0.15)
     n0, n1 = cues.get("night", [drama, drama])
     if n1 > n0:
         # Crickets: bursts of a high chirp.
@@ -420,12 +423,12 @@ def main():
         for k, n in enumerate((86, 93, 98, 91)):
             m.add(at + k * 0.09, bell(midi(n), 3.0, 0.035), pan=0.2 + 0.2 * k, send=0.9)
     for at in cues.get("risers", []):
-        m.add(at - 2.0, riser(2.0, 0.12), send=0.4)
+        m.add(at - 2.0, riser(2.0, 0.07 if soft else 0.12), send=0.4)
 
     # --- title: a beat of near-silence, then a warm D major swell and a low hit.
     swell_len = L - title + 0.5
     m.add(title + 0.35, pad_chord([38, 50, 57, 62, 66, 69, 76], swell_len, 1800, 0.11), send=0.7)
-    m.add(title + 0.35, hit(5.0, 0.6), send=0.4)
+    m.add(title + 0.35, hit(5.0, 0.42 if soft else 0.6), send=0.4)
     if clock:
         for k, n in enumerate((62, 66, 69, 74)):
             m.add(title + 0.35 + k * 0.03, marimba(midi(n), 4.0, 0.1), pan=0.3 + 0.13 * k, send=0.5)
@@ -451,7 +454,8 @@ def main():
     mix *= g
     if phone:
         mix = np.stack([highpass(mix[0], 40), highpass(mix[1], 40)])
-    mix = np.tanh(mix * 1.4) / 1.4
+    if not soft:
+        mix = np.tanh(mix * 1.4) / 1.4
     mix /= np.abs(mix).max() / 0.89
 
     pcm = (mix.T * 32767).astype(np.int16)

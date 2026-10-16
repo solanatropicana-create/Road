@@ -96,7 +96,96 @@ function html2(card, tall, look) {
     <style>${css2(tall, look)}</style></head><body>${body}</body></html>`;
 }
 
-/** A card: kind (line | word | title) and its text; the title also takes name, tagline and an optional cta. */
+/**
+ * The 'indie' look: the developer's own scribbles over the game, not a designed
+ * title system. Marker handwriting (Gochi Hand), hand-drawn arrows and rings
+ * pointing at the ant in question, and a pixel wordmark that belongs with the
+ * pixel soil. Positions are % of the frame; the strokes wobble like a pen's.
+ */
+const INK = '#f7f0e3';
+/** A small seeded random, so a card looks the same every time it is rendered. */
+const rand = (seed) => () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+/** A pen stroke through points (px), with a wobble. */
+function wobbly(points, r, wob = 3) {
+  const p = points.map(([x, y], i) => [x + (i && i < points.length - 1 ? (r() - 0.5) * wob : 0), y + (i && i < points.length - 1 ? (r() - 0.5) * wob : 0)]);
+  let d = `M${p[0][0].toFixed(1)} ${p[0][1].toFixed(1)}`;
+  for (let i = 1; i < p.length - 1; i++) {
+    const mx = (p[i][0] + p[i + 1][0]) / 2;
+    const my = (p[i][1] + p[i + 1][1]) / 2;
+    d += ` Q${p[i][0].toFixed(1)} ${p[i][1].toFixed(1)} ${mx.toFixed(1)} ${my.toFixed(1)}`;
+  }
+  const e = p[p.length - 1];
+  return `${d} L${e[0].toFixed(1)} ${e[1].toFixed(1)}`;
+}
+
+/** A hand-drawn arrow from a to b (px), bowed sideways by `bend` (px). */
+function arrow(a, b, bend, r) {
+  const n = 14;
+  const dx = b[0] - a[0];
+  const dy = b[1] - a[1];
+  const len = Math.hypot(dx, dy);
+  const nx = -dy / len;
+  const ny = dx / len;
+  const pts = [];
+  for (let i = 0; i <= n; i++) {
+    const t = i / n;
+    const bow = Math.sin(t * Math.PI) * bend;
+    pts.push([a[0] + dx * t + nx * bow, a[1] + dy * t + ny * bow]);
+  }
+  // The head: two short strokes back from the tip, along the last stretch.
+  const [px, py] = pts[n - 2];
+  const ang = Math.atan2(b[1] - py, b[0] - px);
+  const h = 34;
+  const head = [-0.5, 0.5].map((s) => [b[0] - Math.cos(ang + s) * h, b[1] - Math.sin(ang + s) * h]);
+  return [wobbly(pts, r, 5), wobbly([head[0], [b[0] + 2, b[1] + 1]], r, 0), wobbly([[b[0] - 1, b[1] + 2], head[1]], r, 0)];
+}
+
+/** A hand-drawn ring round (cx, cy), a little more than once round, not quite closed. */
+function ring(cx, cy, rx, ry, r) {
+  const pts = [];
+  const a0 = -2.2 + r() * 0.4;
+  for (let i = 0; i <= 40; i++) {
+    const a = a0 + (i / 40) * Math.PI * 2.18;
+    const k = 1 + (r() - 0.5) * 0.05 + i * 0.0015;
+    pts.push([cx + Math.cos(a) * rx * k, cy + Math.sin(a) * ry * k]);
+  }
+  return [wobbly(pts, r, 2)];
+}
+
+function htmlIndie(card, W, H) {
+  const r = rand(Math.round((card.seed ?? card.y ?? 50) * 7919) + 13);
+  const px = ([x, y]) => [(x / 100) * W, (y / 100) * H];
+  const strokes = [];
+  if (card.arrow) strokes.push(...arrow(px(card.arrow.from), px(card.arrow.to), card.arrow.bend ?? 40, r));
+  if (card.ring) {
+    const [cx, cy] = px([card.ring.x, card.ring.y]);
+    strokes.push(...ring(cx, cy, (card.ring.rx / 100) * W, (card.ring.ry / 100) * H, r));
+  }
+  const svg = strokes.length
+    ? `<svg width="${W}" height="${H}" style="position:absolute; inset:0; filter: drop-shadow(0 3px 0 rgba(20,12,6,.45)) drop-shadow(0 0 10px rgba(0,0,0,.35))">
+        ${strokes.map((d) => `<path d="${d}" fill="none" stroke="${INK}" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>`).join('')}</svg>`
+    : '';
+  const shadow = 'text-shadow: 0 4px 0 rgba(20,12,6,.45), 0 0 22px rgba(0,0,0,.45), 0 0 3px rgba(0,0,0,.5);';
+  let body = '';
+  if (card.kind === 'scribble') {
+    body = `${svg}<div style="position:absolute; left:${card.x ?? 50}%; top:${card.y ?? 30}%; transform: translate(-50%, -50%) rotate(${card.rot ?? -2}deg); width: 88vw; text-align:center;
+        font-family:'Gochi Hand', cursive; font-size:${card.size ?? 84}px; line-height:1.06; color:${INK}; ${shadow}">${card.text}${card.small ? `<div style="font-size:0.62em; margin-top:10px; opacity:.92">${card.small}</div>` : ''}</div>`;
+  } else if (card.kind === 'title') {
+    body = `<div style="position:absolute; inset:0; background: rgba(12,8,5,0.32)"></div>
+      <div style="position:absolute; left:50%; top:${card.pos ?? 46}%; transform: translate(-50%, -50%); width: 94vw; text-align:center; color:${INK};">
+        <div style="font-family:'Pixelify Sans', monospace; font-weight:700; font-size:${W > H ? 150 : 168}px; letter-spacing:6px; line-height:1;
+          text-shadow: 0 8px 0 rgba(20,12,6,.55), 0 0 30px rgba(0,0,0,.5);">${card.name.toUpperCase()}</div>
+        <div style="margin-top:34px; font-family:'Gochi Hand', cursive; font-size:${W > H ? 50 : 60}px; line-height:1.1; ${shadow}">${card.tagline}</div>
+        ${card.note ? `<div style="margin-top:26px; font-family:'Gochi Hand', cursive; font-size:50px; opacity:.88; transform: rotate(-2deg); ${shadow}">${card.note}</div>` : ''}
+        ${card.cta ? `<div style="margin-top:22px; font-family:'Gochi Hand', cursive; font-size:48px; ${shadow}">${card.cta}</div>` : ''}
+      </div>`;
+  }
+  return `<!doctype html><html><head><meta charset="utf-8">
+    <link href="https://fonts.googleapis.com/css2?family=Gochi+Hand&family=Pixelify+Sans:wght@700&display=swap" rel="stylesheet">
+    <style>html,body{margin:0;background:transparent;} body{width:100vw;height:100vh;position:relative;overflow:hidden;}</style></head><body>${body}</body></html>`;
+}
+
 /** A card: kind (line | word | title) and its text; the title also takes name, tagline and an optional cta. */
 function html(card, tall) {
   let body = '';
@@ -112,7 +201,7 @@ function html(card, tall) {
 
 /**
  * Render each card to <dir>/<id>.png (transparent). Returns { id: path }.
- * `look`: 'classic' (the first teaser's cards), 'clear' or 'notes'.
+ * `look`: 'classic' (the first teaser's cards), 'clear', 'notes' or 'indie'.
  */
 export async function renderCards(cards, { width, height, dir, look = 'classic' }) {
   mkdirSync(dir, { recursive: true });
@@ -121,7 +210,8 @@ export async function renderCards(cards, { width, height, dir, look = 'classic' 
   const page = await browser.newPage({ viewport: { width, height } });
   const out = {};
   for (const card of cards) {
-    await page.setContent(look === 'classic' ? html(card, tall) : html2(card, tall, look), { waitUntil: 'networkidle' });
+    const page_html = look === 'indie' ? htmlIndie(card, width, height) : look === 'classic' ? html(card, tall) : html2(card, tall, look);
+    await page.setContent(page_html, { waitUntil: 'networkidle' });
     await page.evaluate(() => document.fonts.ready);
     const path = join(dir, `${card.id}.png`);
     await page.screenshot({ path, omitBackground: true });

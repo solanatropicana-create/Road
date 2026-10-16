@@ -16,6 +16,8 @@ Dikey tanıtım videosu (ve geniş fragman) oyunun kendisinden çekilir: ekran k
 npm run build                                          # oyunun yayın derlemesi
 scripts/film/serve.sh node scripts/film/trailer.mjs --tall        # dikey çekimler → shots/film/clips/tall/
 scripts/film/serve.sh node scripts/film/trailer.mjs --tall queen  # yalnızca bu çekim
+node scripts/film/edit.mjs final                      # son Instagram videosu (underroot-final.mp4)
+node scripts/film/edit.mjs final --preview            # yalnızca kartlar, kendi karelerinin üstünde, tek sayfada
 node scripts/film/edit.mjs circle notes seed           # uzman incelemesinden sonraki üç varyant
 node scripts/film/edit.mjs                             # ilk teaser (underroot-teaser.mp4)
 node scripts/film/edit.mjs circle --cta "Follow the colony"       # son karta çağrı satırı
@@ -27,6 +29,7 @@ node scripts/film/edit.mjs circle --cta "Follow the colony"       # son karta ç
 
 | Ad | Çıktı | Ne |
 |---|---|---|
+| **Final** | `underroot-final` | Instagram için: geliştiricinin kendi oyununu gösterdiği ton ("I'm making a game about one ant colony."), el yazısı notlar ve karıncaları gösteren elle çizilmiş oklar/halkalar (Gochi Hand), piksel "UNDERROOT" başlığı, yumuşak karışım (`soft`: sert yağmur, çatırtı ve vuruşlar kısık), kuş yalnızca bir an |
 | Full Circle | `underroot-v1-full-circle` | İlk teaser'ın hikâyesi, incelemeden sonra: aydınlık ve sesli açılış, büyüme hızlandırması, bir toplayıcının tohumunu eve kadar izleme, kendi planlarıyla yağmur/kuş/kış, başlık aydınlık kolonide, sonunda havalanan kanatlı kraliçeler (başa döner) |
 | Field Notes | `underroot-v2-field-notes` | Doğa defteri: altın etiketler altında sola dayalı, doğrulanmış satırlar; oyunun kendi alan notu; ahşap, tıkırtı ve toprak shaker'ıyla "seed clock" müziği |
 | One Seed | `underroot-v3-one-seed` | ~24 sn kısa döngü: ilk karede yazı, bir tohumun çayırdan ambara yolu, kuş, başlık |

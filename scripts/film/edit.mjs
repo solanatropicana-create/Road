@@ -4,6 +4,8 @@
  * (titles.mjs), and the score (score.py) timed to the same cuts.
  *
  *   node scripts/film/edit.mjs                 # the vertical teaser (1080 × 1920)
+ *   node scripts/film/edit.mjs final           # the final Instagram cut (the developer's scribbles)
+ *   node scripts/film/edit.mjs final --preview # just the cards over their frames, in one sheet
  *   node scripts/film/edit.mjs circle notes seed   # the three variants after the expert review
  *   node scripts/film/edit.mjs wide            # the 2.39:1 trailer
  *   node scripts/film/edit.mjs tall --cta "Follow the colony"
@@ -46,6 +48,40 @@ const fieldNote = () => {
  * moments the score follows.
  */
 const TIMELINES = {
+  /**
+   * The final cut for Instagram: a developer showing the game they are making.
+   * The developer's own scribbles (handwriting, hand-drawn arrows and rings at
+   * the ants), a pixel wordmark, the softer mix, and the lark only for a moment.
+   */
+  final: {
+    out: 'underroot-final',
+    width: 1080,
+    height: 1920,
+    picture: 1920,
+    look: 'indie',
+    fadeIn: 0,
+    loop: true,
+    phone: true,
+    soft: true,
+    titleNote: '(work in progress)',
+    segs: [
+      { clip: 'flight', from: 0.3, dur: 4.0, buzz: true, cards: [{ kind: 'scribble', text: "I'm making a game about<br>one ant colony.", x: 50, y: 24, rot: -2, at: 0.1, dur: 3.7 }] },
+      { clip: 'dig', from: 0.5, dur: 2.6, x: 0.4, cards: [{ kind: 'scribble', text: 'it starts with one queen', small: '<i>Messor structor</i>, a harvester ant', x: 50, y: 29, rot: 2, arrow: { from: [52, 36], to: [50.5, 47], bend: 50 }, at: 0.25, dur: 2.2 }] },
+      { clip: 'founding', from: 1.0, dur: 3.4, x: 0.5, filter: 'deflicker=mode=pm:size=15', cards: [{ kind: 'scribble', text: 'she seals herself in and<br>raises her first daughters alone', size: 76, x: 50, y: 27, rot: -1.5, ring: { x: 50, y: 55, rx: 20, ry: 5.5 }, at: 0.3, dur: 2.9 }] },
+      { clip: 'growth', from: 0, dur: 3.4, speed: 2, x: 0.5, mark: 'build', cards: [{ kind: 'scribble', text: 'seasons pass.<br>the colony grows.', x: 50, y: 16, rot: -2, at: 0.25, dur: 2.9 }] },
+      { clip: 'named', from: 0, dur: BAR, x: CUT, mark: 'life', cards: [{ kind: 'scribble', text: 'this is Lal-103.<br>she\'s carrying a seed home.', x: 50, y: 29, rot: -2, arrow: { from: [42, 36], to: [48, 49], bend: -45 }, at: 0.15, dur: BAR - 0.25 }] },
+      { clip: 'trails', from: 0, dur: BAR, x: CUT, cards: [{ kind: 'scribble', text: 'no one gives orders.<br>they follow each other\'s scent.', size: 76, x: 50, y: 26, rot: 1.5, arrow: { from: [64, 33], to: [70, 52], bend: 40 }, at: 0.1, dur: BAR - 0.2 }] },
+      { clip: 'shaft', from: 0.8, dur: HALF, x: CUT },
+      { clip: 'granary', from: 0, dur: BAR, x: CUT, cards: [{ kind: 'scribble', text: 'the granary', small: 'seeds in, husks out', x: 50, y: 30, rot: -2, ring: { x: 50, y: 52, rx: 21, ry: 4.5 }, at: 0.15, dur: BAR - 0.3 }] },
+      { clip: 'queen', from: 0.3, dur: HALF, x: CUT, cards: [{ kind: 'scribble', text: 'the queen', x: 30, y: 36, rot: -5, arrow: { from: [34, 40], to: [44.5, 49.5], bend: 30 }, at: 0.1, dur: HALF - 0.15 }] },
+      { clip: 'carry', from: 0.6, dur: BAR, x: CUT, cards: [{ kind: 'scribble', text: 'too heavy?<br>they call for help.', x: 50, y: 28, rot: -2, arrow: { from: [56, 35], to: [51, 49], bend: 35 }, at: 0.15, dur: BAR - 0.3 }] },
+      { clip: 'flood', from: 0.3, dur: BAR, x: CUT, mark: 'drama', hit: true, rain: true, flashes: [0.3, 0.5, 2.5], cards: [{ kind: 'scribble', text: 'rain coming?<br>they plug the door.', x: 50, y: 24, rot: 2, arrow: { from: [57, 31], to: [50.5, 55], bend: -40 }, at: 0.2, dur: BAR - 0.35 }] },
+      { clip: 'lark', from: 0.95, dur: 1.3, x: CUT },
+      { clip: 'sleep', from: 0.2, dur: 3.0, x: 0.4, shimmer: 0.3, cards: [{ kind: 'scribble', text: 'winter.<br>they sleep below the frost.', x: 50, y: 42, rot: -2, at: 0.3, dur: 2.5 }] },
+      { clip: 'reveal', from: 0, dur: 6.2, x: 0.5, title: 3.8 },
+      { clip: 'rise', from: 0.2, dur: 1.8, x: 0.45 },
+    ],
+  },
   /**
    * Variant 1, "Full Circle": the first teaser's story, after the review. It opens
    * lit and sounding, shows the colony grow instead of saying so, follows one
@@ -210,7 +246,7 @@ function loudnorm(src, dst, eq = 'anull') {
 const PHONE_EQ = 'highpass=f=90:poles=2,lowshelf=f=180:g=-5,equalizer=f=2200:t=q:w=0.8:g=4';
 const probeDur = (f) => +execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f]).toString().trim();
 
-async function cut(format, { cta } = {}) {
+async function cut(format, { cta, preview = false } = {}) {
   const T = TIMELINES[format];
   const clips = join(ROOT, 'shots/film/clips', T.width > T.height ? 'wide' : 'tall');
   const work = join(ROOT, 'shots/film/work', format);
@@ -244,10 +280,31 @@ async function cut(format, { cta } = {}) {
       // The title holds to the end, or (in a loop) until the shot after it has faded in.
       const next = segs[segs.indexOf(s) + 1];
       const until = next ? next.start + (next.x ?? 0) : total;
-      cards.push({ id: 'title', kind: 'title', name: NAME, tagline: TAGLINE, cta, pos: T.height > T.width ? 46 : 50, at: s.start + s.title, dur: until - (s.start + s.title) });
+      cards.push({ id: 'title', kind: 'title', name: NAME, tagline: TAGLINE, note: T.titleNote, cta, pos: T.height > T.width ? 46 : 50, at: s.start + s.title, dur: until - (s.start + s.title) });
     }
   }
   const pngs = await renderCards(cards, { width: T.width, height: T.height, dir: join(work, 'cards'), look: T.look ?? 'classic' });
+  if (preview) {
+    // Each card over the frame it sits on (at the middle of its time), in one sheet: to check
+    // that the arrows land on their ants before rendering the whole film.
+    const shots = cards.map((c) => {
+      const s = segs.filter((g) => g.start <= c.at + c.dur / 2).pop();
+      const t = (s.from + (c.at + c.dur / 2 - s.start)) * (s.speed ?? 1) / (s.fps === FPS ? 1 : FPS / s.fps);
+      const png = join(work, 'cards', `${c.id}-over.png`);
+      sh('ffmpeg', ['-y', '-loglevel', 'error', '-ss', Math.max(0, t).toFixed(3), '-i', s.file, '-i', pngs[c.id], '-filter_complex', '[0:v][1:v]overlay=0:0,scale=360:-1', '-frames:v', '1', png]);
+      return png;
+    });
+    const sheet = join(work, 'preview.jpg');
+    sh('python3', ['-c', `import sys
+from PIL import Image
+ims=[Image.open(p) for p in sys.argv[2:]]
+w,h=ims[0].size; cols=6; rows=(len(ims)+cols-1)//cols
+s=Image.new('RGB',(w*cols,h*rows))
+for k,im in enumerate(ims): s.paste(im.convert('RGB'),((k%cols)*w,(k//cols)*h))
+s.save(sys.argv[1])`, sheet, ...shots]);
+    console.log(sheet);
+    return sheet;
+  }
 
   // The score, cued to the same cuts.
   const at = (m) => segs.find((s) => s.mark === m)?.start;
@@ -270,7 +327,8 @@ async function cut(format, { cta } = {}) {
       fade_in: Math.max(0.02, T.fadeIn ?? 1.2),
       loop: !!T.loop,
       // A note on each line, a knock on each cut of the montage.
-      accents: cards.filter((c) => c.kind === 'line' || c.kind === 'word').map((c) => c.at),
+      accents: cards.filter((c) => c.kind === 'line' || c.kind === 'word' || c.kind === 'scribble').map((c) => c.at),
+      soft: !!T.soft,
       cuts: segs.filter((s) => s.x === CUT && s.start > at('life') + 0.1).map((s) => s.start),
       flashes: segs.flatMap((s) => (s.flashes ?? []).map((d) => s.start + d)),
       shimmer: segs.filter((s) => s.shimmer !== undefined).map((s) => s.start + s.shimmer),
@@ -311,8 +369,8 @@ async function cut(format, { cta } = {}) {
   cards.forEach((c, k) => {
     const i = n0 + k;
     inputs.push('-loop', '1', '-framerate', String(FPS), '-t', c.dur.toFixed(3), '-i', pngs[c.id]);
-    const fin = c.kind === 'title' ? (T.loop ? 0.5 : 1.4) : T.phone ? 0.35 : 0.6;
-    const fout = c.kind === 'title' ? (T.loop ? 0.45 : 0.01) : T.phone ? 0.4 : 0.7;
+    const fin = c.kind === 'title' ? (T.loop ? 0.5 : 1.4) : c.kind === 'scribble' ? 0.18 : T.phone ? 0.35 : 0.6;
+    const fout = c.kind === 'title' ? (T.loop ? 0.45 : 0.01) : c.kind === 'scribble' ? 0.25 : T.phone ? 0.4 : 0.7;
     f.push(`[${i}:v]format=rgba,fade=t=in:st=0:d=${fin}:alpha=1,fade=t=out:st=${(c.dur - fout).toFixed(3)}:d=${fout}:alpha=1,setpts=PTS+${c.at.toFixed(3)}/TB[c${k}]`);
     f.push(`[${last}][c${k}]overlay=0:0:eof_action=pass[o${k}]`);
     last = `o${k}`;
@@ -356,4 +414,4 @@ const args = process.argv.slice(2);
 const ctaAt = args.indexOf('--cta');
 const cta = ctaAt >= 0 ? args[ctaAt + 1] : undefined;
 const formats = args.filter((a, i) => a in TIMELINES && i !== (ctaAt >= 0 ? ctaAt + 1 : -1));
-for (const format of formats.length ? formats : ['tall']) await cut(format, { cta });
+for (const format of formats.length ? formats : ['tall']) await cut(format, { cta, preview: args.includes('--preview') });
