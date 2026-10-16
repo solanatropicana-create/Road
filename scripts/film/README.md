@@ -17,7 +17,7 @@ Instagram reel'i (ve geniş fragman) oyunun kendisinden çekilir: ekran kaydı d
 npm run dev                                         # oyun sunucusu (5173)
 node scripts/film/trailer.mjs --tall flight founding growth storm winter finale nest
 node scripts/film/reel.mjs                          # reel'e özel çekimler → shots/film/clips/tall/
-node scripts/film/edit.mjs                          # → shots/film/out/underroot-reel.mp4
+node scripts/film/edit.mjs                          # → shots/film/out/underroot-reel.mp4 (+ -instagram.mp4, ~6 Mbps)
 node scripts/film/edit.mjs reel --cta "Follow the colony"   # son karta çağrı satırı
 node scripts/film/edit.mjs wide                     # 2.39:1 fragman (önce trailer.mjs geniş çekimleri)
 ```

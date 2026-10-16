@@ -226,6 +226,15 @@ async function cut(format, { cta } = {}) {
   // A poster frame (the title over the slice) for the thumbnail.
   const poster = out.replace(/\.mp4$/, '.jpg');
   sh('ffmpeg', ['-y', '-loglevel', 'error', '-ss', (total - 2.2).toFixed(2), '-i', out, '-frames:v', '1', '-q:v', '2', poster]);
+  // The reel also comes at Instagram's own rate (it re-encodes uploads anyway): about 6 Mbps, a third the size.
+  if (T.height > T.width) {
+    const ig = out.replace(/\.mp4$/, '-instagram.mp4');
+    const log = join(work, 'x264pass');
+    sh('ffmpeg', ['-y', '-loglevel', 'error', '-i', out, '-c:v', 'libx264', '-preset', 'slow', '-b:v', '6M', '-pass', '1', '-passlogfile', log, '-an', '-f', 'null', '/dev/null']);
+    sh('ffmpeg', ['-y', '-loglevel', 'error', '-i', out, '-c:v', 'libx264', '-preset', 'slow', '-b:v', '6M', '-maxrate', '9M', '-bufsize', '12M', '-pass', '2', '-passlogfile', log,
+      '-profile:v', 'high', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-movflags', '+faststart', ig]);
+    console.log(ig);
+  }
   console.log(`${out}  (${total.toFixed(1)} s)`);
   return out;
 }
