@@ -59,6 +59,31 @@ export function camAt(keys, u) {
   return out;
 }
 
+/**
+ * Pick an ant for the camera to follow (runs in the page: pass it to subject()).
+ * kind.who: queen | seed (carrying one outside) | seedIn | soil | out | major | nurse | any;
+ * kind.range: within so many mm of the door; kind.near: the one nearest this point.
+ */
+export const pickAnt = (g, kind) => {
+  const c = g.sim.colony;
+  const w = g.sim.world;
+  const under = (a) => w.bg[a.y * w.w + a.x] === 1;
+  const near = (a) => Math.abs(a.x - g.sim.nest.foundX) < (kind.range ?? 9999);
+  const ok = (a) => a.alive && !a.away && near(a);
+  let xs = [];
+  if (kind.who === 'queen') return c.queen;
+  if (kind.who === 'seed') xs = c.ants.filter((a) => ok(a) && a.carry === 2 && !under(a));
+  if (kind.who === 'seedIn') xs = c.ants.filter((a) => ok(a) && a.carry === 2 && under(a));
+  if (kind.who === 'soil') xs = c.ants.filter((a) => ok(a) && a.carry === 1 && under(a));
+  if (kind.who === 'out') xs = c.ants.filter((a) => ok(a) && !under(a));
+  if (kind.who === 'major') xs = c.ants.filter((a) => ok(a) && a.caste === 'soldier');
+  if (kind.who === 'nurse') xs = c.ants.filter((a) => ok(a) && a.task === 3 && under(a));
+  if (kind.who === 'any') xs = c.ants.filter(ok);
+  // The one nearest a point, or the first.
+  if (kind.near) xs.sort((a, b) => Math.hypot(a.x - kind.near.x, a.y - kind.near.y) - Math.hypot(b.x - kind.near.x, b.y - kind.near.y));
+  return xs[0] ?? null;
+};
+
 /** The in-page half: runs one frame at a time in place of the game's loop. */
 function install() {
   const g = window.game;

@@ -10,7 +10,7 @@
  * together with the titles and the score. Mature-colony shots use the art
  * lab's fixtures (made on first use, a few minutes each).
  */
-import { openStage, ROOT, easeIn } from './stage.mjs';
+import { openStage, ROOT, easeIn, pickAnt } from './stage.mjs';
 import { join } from 'node:path';
 
 const DAY = 30 * 60 * 6;
@@ -23,28 +23,6 @@ const want = (name) => !only.length || only.includes(name);
 const stage = (opts) => openStage({ width: FORMAT.width, height: FORMAT.height, out: OUT, ...opts });
 /** A zoom that suits both formats: tall frames are narrow, so wide views pull out less. */
 const Z = (wide, t = wide) => (tall ? t : wide);
-
-// ------------------------------------------------------------ helpers (in page)
-
-const pickAnt = (g, kind) => {
-  const c = g.sim.colony;
-  const w = g.sim.world;
-  const under = (a) => w.bg[a.y * w.w + a.x] === 1;
-  const near = (a) => Math.abs(a.x - g.sim.nest.foundX) < (kind.range ?? 9999);
-  const ok = (a) => a.alive && !a.away && near(a);
-  let xs = [];
-  if (kind.who === 'queen') return c.queen;
-  if (kind.who === 'seed') xs = c.ants.filter((a) => ok(a) && a.carry === 2 && !under(a));
-  if (kind.who === 'seedIn') xs = c.ants.filter((a) => ok(a) && a.carry === 2 && under(a));
-  if (kind.who === 'soil') xs = c.ants.filter((a) => ok(a) && a.carry === 1 && under(a));
-  if (kind.who === 'out') xs = c.ants.filter((a) => ok(a) && !under(a));
-  if (kind.who === 'major') xs = c.ants.filter((a) => ok(a) && a.caste === 'soldier');
-  if (kind.who === 'nurse') xs = c.ants.filter((a) => ok(a) && a.task === 3 && under(a));
-  if (kind.who === 'any') xs = c.ants.filter(ok);
-  // The one nearest a point, or the first.
-  if (kind.near) xs.sort((a, b) => Math.hypot(a.x - kind.near.x, a.y - kind.near.y) - Math.hypot(b.x - kind.near.x, b.y - kind.near.y));
-  return xs[0] ?? null;
-};
 
 // ------------------------------------------------------------ the story: a queen comes down
 
@@ -127,8 +105,8 @@ async function opening() {
       ticks: DAY,
       preroll: 2,
       cam: [
-        { x: nest.x, y: nest.y + Z(12, 90), zoom: Z(3.6, 2.6) },
-        { x: nest.x, y: nest.y + Z(28, 140), zoom: Z(2.7, 1.7) },
+        { x: nest.x, y: nest.y + Z(12, 26), zoom: Z(3.6, 5.6) },
+        { x: nest.x, y: nest.y + Z(28, 55), zoom: Z(2.7, 3.9) },
       ],
     });
   }

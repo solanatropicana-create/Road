@@ -73,7 +73,7 @@ P, T, H, C ve ? alt çubukta düğme olarak da var (dokunmatik ekranlar için). 
 | `node scripts/play.mjs ad 3 40` | Oyuncu gibi oynar: kraliçeyi indirir, 16× hızda bekler, ekran görüntüsü alır |
 | `scripts/playtest.mjs` | Oyun testi aracı: tarayıcıda oyunu sürer (`openGame()`), bkz. `docs/playtest/` |
 | `node scripts/artlab.mjs` | Aynı iki olgun koloniden görsel referans görüntüleri (`shots/art/`), bkz. `docs/art-review/` |
-| `node scripts/film/trailer.mjs` + `node scripts/film/edit.mjs` | Tanıtım fragmanı ve dikey tanıtım videosu, oyunun kendisinden kare kare (`shots/film/out/`), bkz. [scripts/film/](scripts/film/README.md) |
+| `node scripts/film/reel.mjs` + `node scripts/film/edit.mjs` | Instagram reel'i (ve geniş fragman), oyunun kendisinden kare kare (`shots/film/out/`), bkz. [scripts/film/](scripts/film/README.md) |
 
 ## Kod yapısı
 

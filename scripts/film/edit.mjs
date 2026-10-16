@@ -1,99 +1,109 @@
 /**
- * Cuts the recorded clips (trailer.mjs) into finished videos: the timeline,
- * dissolves and beat-cut montage, letterbox, a light grade, the title cards
+ * Cuts the recorded clips (reel.mjs, trailer.mjs) into finished videos: the
+ * timeline, dissolves and beat-cut montage, a light grade, the title cards
  * (titles.mjs), and the score (score.py) timed to the same cuts.
  *
- *   node scripts/film/edit.mjs                  # trailer + vertical teaser, English and Turkish
- *   node scripts/film/edit.mjs wide en          # just one
- *   node scripts/film/edit.mjs wide en --cta "Wishlist on Steam"
+ *   node scripts/film/edit.mjs                 # the Instagram reel (1080 × 1920)
+ *   node scripts/film/edit.mjs wide            # the 2.39:1 trailer
+ *   node scripts/film/edit.mjs reel --cta "Follow the colony"
  *
- * Output: shots/film/out/underfoot-<trailer|teaser>-<en|tr>.mp4
+ * Output: shots/film/out/underroot-<reel|trailer>.mp4 (and a .jpg poster frame)
  */
 import { execFileSync, spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { ROOT } from './stage.mjs';
 import { renderCards } from './titles.mjs';
 
 const FPS = 30;
-const BEAT = 60 / 84;
-/** A life-montage shot: four beats (plus the one frame the cut eats). */
-const BAR = 4 * BEAT + 1 / FPS;
 const CUT = 1 / FPS;
+const NAME = 'Underroot';
+const TAGLINE = 'A realistic harvester-ant colony,<br>at true scale';
+/** A shot one bar long at this tempo (plus the one frame the cut eats). */
+const bar = (bpm) => (4 * 60) / bpm + CUT;
 
-const TEXT = {
-  en: {
-    c1: 'One spring morning,<br>a queen comes down from the sky.',
-    c2: 'She digs. She seals herself in.<br>She waits.',
-    c3: 'Seasons pass. The colony grows.',
-    c4: 'No one gives orders.',
-    c5: 'Every seed still finds its way home.',
-    w1: 'Storms.',
-    w2: 'Long nights.',
-    w3: 'Winter.',
-    tagline: 'A harvester-ant colony, at true scale',
-    scale: '1 pixel = 1 mm',
-  },
-  tr: {
-    c1: 'Bir bahar sabahı,<br>gökten bir kraliçe iner.',
-    c2: 'Kazar. Kendini içeri kapatır.<br>Bekler.',
-    c3: 'Mevsimler geçer. Koloni büyür.',
-    c4: 'Kimse emir vermez.',
-    c5: 'Yine de her tohum yuvasını bulur.',
-    w1: 'Fırtınalar.',
-    w2: 'Uzun geceler.',
-    w3: 'Kış.',
-    tagline: 'Gerçek ölçekte bir hasatçı karınca kolonisi',
-    scale: '1 piksel = 1 mm',
-  },
+const REEL_BPM = 108;
+const RB = bar(REEL_BPM);
+const WIDE_BPM = 84;
+const WB = bar(WIDE_BPM);
+
+/** The field note the game wrote about the ant in the 'named' shot (reel.mjs saves it). */
+const fieldNote = () => {
+  try {
+    return JSON.parse(readFileSync(join(ROOT, 'shots/film/clips/tall/named.json'), 'utf8')).note;
+  } catch {
+    return '';
+  }
 };
 
 /**
  * Segments in order: clip, where in it to start, how long, the dissolve into
- * it (x), and a card over it (card: [id, at, dur, kind]). `mark` names the
- * moments the score follows.
+ * it (x), and the cards over it (cards: [{ kind, text, at, dur, pos }]).
+ * `mark` names the moments the score follows; `hit` puts a low hit on the cut.
  */
 const TIMELINES = {
-  wide: {
-    width: 1920,
-    height: 1080,
-    picture: 804,
-    segs: [
-      { clip: 'flight', from: 0, dur: 5.45, card: ['c1', 1.0, 4.0] },
-      { clip: 'dig', from: 0.5, dur: 4.3, x: 0.7 },
-      { clip: 'founding', from: 0.3, dur: 7.4, x: 0.8, card: ['c2', 1.1, 4.6] },
-      { clip: 'growth', from: 0, dur: 7.8, x: 0.8, mark: 'build', card: ['c3', 1.2, 4.6] },
-      { clip: 'nest', from: 0, dur: 5.2, x: 0.8 },
-      { clip: 'column', from: 1.0, dur: BAR, x: CUT, mark: 'life', card: ['c4', 0.35, 4.9] },
-      { clip: 'forager', from: 1.2, dur: BAR, x: CUT },
-      { clip: 'entrance', from: 0.8, dur: BAR, x: CUT },
-      { clip: 'shaft', from: 0.8, dur: BAR, x: CUT, card: ['c5', 0.3, 4.9] },
-      { clip: 'nursery', from: 1.0, dur: BAR, x: CUT },
-      { clip: 'carry', from: 0.5, dur: BAR, x: CUT },
-      { clip: 'storm', from: 0.4, dur: 4.3, x: CUT, mark: 'drama', card: ['w1', 0.7, 2.6, 'word'], thunder: [0.45, 3.3], rain: true },
-      { clip: 'night', from: 0.5, dur: 3.6, x: 0.5, card: ['w2', 0.5, 2.4, 'word'], night: true },
-      { clip: 'winter', from: 0.5, dur: 3.6, x: 0.5, card: ['w3', 0.5, 2.4, 'word'] },
-      { clip: 'finale', from: 0, dur: 9.0, x: 0.9, title: 4.2 },
-    ],
-  },
-  tall: {
+  reel: {
+    out: 'underroot-reel',
     width: 1080,
     height: 1920,
     picture: 1920,
+    bpm: REEL_BPM,
+    fadeIn: 0.12,
     segs: [
-      { clip: 'flight', from: 0.4, dur: 5.0, card: ['c1', 0.8, 3.8] },
-      { clip: 'founding', from: 1.0, dur: 4.4, x: 0.6, mark: 'build', card: ['c2', 0.6, 3.4] },
-      { clip: 'nest', from: 0.5, dur: 4.0, x: 0.6, card: ['c3', 0.5, 3.0] },
-      { clip: 'forager', from: 1.0, dur: BAR, x: CUT, mark: 'life', card: ['c4', 0.3, 2.6] },
-      { clip: 'entrance', from: 0.8, dur: BAR, x: CUT },
-      { clip: 'carry', from: 0.5, dur: BAR, x: CUT },
-      { clip: 'storm', from: 0.4, dur: BAR, x: CUT, mark: 'drama', card: ['w1', 0.4, 2.2, 'word'], thunder: [0.45], rain: true },
-      { clip: 'night', from: 0.5, dur: 2.6, x: 0.4, card: ['w2', 0.3, 2.0, 'word'], night: true },
-      { clip: 'winter', from: 0.5, dur: 2.6, x: 0.4, card: ['w3', 0.3, 2.0, 'word'] },
-      { clip: 'finale', from: 0, dur: 7.5, x: 0.7, title: 2.6 },
+      { clip: 'hook', from: 0, dur: 3.45, reveal: 1.15, cards: [{ kind: 'hook', text: 'What if a game simulated<br>every single ant?', at: 0.1, dur: 3.2, pos: 24 }] },
+      { clip: 'flight', from: 0.5, dur: 3.0, x: 0.3, mark: 'build', cards: [{ kind: 'line', text: 'Spring. A young <i>Messor structor</i> queen comes down from the sky.', at: 0.3, dur: 2.6, pos: 24 }] },
+      { clip: 'founding', from: 1.0, dur: 2.8, x: 0.35, cards: [{ kind: 'line', text: 'Alone underground,<br>she raises her first daughters.', at: 0.3, dur: 2.4, pos: 24 }] },
+      { clip: 'growth', from: 0, dur: 3.4, speed: 2, x: 0.35, cards: [{ kind: 'line', text: 'Season by season,<br>the colony grows.', at: 0.3, dur: 2.9, pos: 24 }] },
+      { clip: 'nest', from: 0.6, dur: RB, x: CUT, mark: 'life', cards: [{ kind: 'word', text: 'No one gives orders.', at: 0.15, dur: RB - 0.2, pos: 24 }] },
+      { clip: 'forager', from: 0.3, dur: RB, x: CUT, cards: [{ kind: 'feature', num: '01', text: 'Foragers find every seed', at: 0.05, dur: RB - 0.15, pos: 20 }] },
+      { clip: 'trails', from: 0.3, dur: RB, x: CUT, cards: [{ kind: 'feature', num: '02', text: 'Scent trails lead them home', at: 0.05, dur: RB - 0.15, pos: 20 }] },
+      { clip: 'gate', from: 0.3, dur: RB, x: CUT, cards: [{ kind: 'feature', num: '03', text: 'Good news at the door<br>calls more out', at: 0.05, dur: RB - 0.15, pos: 20 }] },
+      { clip: 'carry', from: 0.3, dur: RB, x: CUT, cards: [{ kind: 'feature', num: '04', text: 'Too heavy?<br>They call for help', at: 0.05, dur: RB - 0.15, pos: 20 }] },
+      { clip: 'digger', from: 0.3, dur: RB, x: CUT, cards: [{ kind: 'feature', num: '05', text: 'Diggers build the nest,<br>grain by grain', at: 0.05, dur: RB - 0.15, pos: 20 }] },
+      { clip: 'granary', from: 0.3, dur: RB, x: CUT, cards: [{ kind: 'feature', num: '06', text: 'Seeds are stored<br>for the winter', at: 0.05, dur: RB - 0.15, pos: 20 }] },
+      { clip: 'queen', from: 0.3, dur: RB, x: CUT, cards: [{ kind: 'feature', num: '07', text: 'The queen lays,<br>nurses raise the brood', at: 0.05, dur: RB - 0.15, pos: 20 }] },
+      {
+        clip: 'named', from: 0.3, dur: RB, x: CUT,
+        cards: [
+          { kind: 'feature', num: '08', text: 'Every ant has a name,<br>a job and a life', at: 0.05, dur: RB - 0.15, pos: 20 },
+          { kind: 'note', eyebrow: 'Field notes', text: fieldNote(), at: 0.35, dur: RB - 0.45, pos: 66 },
+        ],
+      },
+      { clip: 'lark', from: 0.9, dur: RB, x: CUT, mark: 'drama', hit: true, cards: [{ kind: 'word', text: 'Predators.', at: 0.1, dur: RB - 0.2, pos: 62 }] },
+      { clip: 'storm', from: 0.5, dur: RB, x: CUT, hit: true, thunder: [0.3], rain: true, cards: [{ kind: 'word', text: 'Storms.', at: 0.1, dur: RB - 0.2, pos: 30 }] },
+      { clip: 'winter', from: 0.5, dur: RB, x: CUT, hit: true, cards: [{ kind: 'word', text: 'Winter.', at: 0.1, dur: RB - 0.2, pos: 30 }] },
+      { clip: 'finale', from: 0.4, dur: 6.6, x: 0.6, title: 1.4 },
+    ],
+  },
+  wide: {
+    out: 'underroot-trailer',
+    width: 1920,
+    height: 1080,
+    picture: 804,
+    bpm: WIDE_BPM,
+    fadeIn: 1.2,
+    segs: [
+      { clip: 'flight', from: 0, dur: 5.45, cards: [{ kind: 'line', text: 'One spring morning, a young<br><i>Messor structor</i> queen comes down from the sky.', at: 1.0, dur: 4.0 }] },
+      { clip: 'dig', from: 0.5, dur: 4.3, x: 0.7 },
+      { clip: 'founding', from: 0.3, dur: 7.4, x: 0.8, cards: [{ kind: 'line', text: 'She digs. She seals herself in.<br>She waits.', at: 1.1, dur: 4.6 }] },
+      { clip: 'growth', from: 0, dur: 7.8, x: 0.8, mark: 'build', cards: [{ kind: 'line', text: 'Seasons pass. The colony grows.', at: 1.2, dur: 4.6 }] },
+      { clip: 'nest', from: 0, dur: 5.2, x: 0.8 },
+      { clip: 'column', from: 1.0, dur: WB, x: CUT, mark: 'life', cards: [{ kind: 'line', text: 'No one gives orders.', at: 0.35, dur: 4.9 }] },
+      { clip: 'forager', from: 1.2, dur: WB, x: CUT },
+      { clip: 'entrance', from: 0.8, dur: WB, x: CUT },
+      { clip: 'shaft', from: 0.8, dur: WB, x: CUT, cards: [{ kind: 'line', text: 'Every seed still finds its way home.', at: 0.3, dur: 4.9 }] },
+      { clip: 'nursery', from: 1.0, dur: WB, x: CUT },
+      { clip: 'carry', from: 0.5, dur: WB, x: CUT },
+      { clip: 'storm', from: 0.4, dur: 4.3, x: CUT, mark: 'drama', hit: true, thunder: [0.45, 3.3], rain: true, cards: [{ kind: 'word', text: 'Storms.', at: 0.7, dur: 2.6 }] },
+      { clip: 'night', from: 0.5, dur: 3.6, x: 0.5, night: true, cards: [{ kind: 'word', text: 'Long nights.', at: 0.5, dur: 2.4 }] },
+      { clip: 'winter', from: 0.5, dur: 3.6, x: 0.5, cards: [{ kind: 'word', text: 'Winter.', at: 0.5, dur: 2.4 }] },
+      { clip: 'finale', from: 0, dur: 9.0, x: 0.9, title: 4.2 },
     ],
   },
 };
+
+/** Card fades (in, out), seconds: quick in the montage, slower in the story. */
+const FADES = { hook: [0.2, 0.3], line: [0.35, 0.45], word: [0.12, 0.25], feature: [0.14, 0.2], note: [0.2, 0.2], title: [1.0, 0.01] };
 
 const sh = (cmd, args) => execFileSync(cmd, args, { stdio: ['ignore', 'inherit', 'inherit'] });
 /**
@@ -109,10 +119,10 @@ function loudnorm(src, dst) {
 }
 const probeDur = (f) => +execFileSync('ffprobe', ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', f]).toString().trim();
 
-async function cut(format, lang, { cta } = {}) {
+async function cut(format, { cta } = {}) {
   const T = TIMELINES[format];
-  const clips = join(ROOT, 'shots/film/clips', format);
-  const work = join(ROOT, 'shots/film/work', `${format}-${lang}`);
+  const clips = join(ROOT, 'shots/film/clips', T.width > T.height ? 'wide' : 'tall');
+  const work = join(ROOT, 'shots/film/work', format);
   const outDir = join(ROOT, 'shots/film/out');
   mkdirSync(work, { recursive: true });
   mkdirSync(outDir, { recursive: true });
@@ -124,26 +134,22 @@ async function cut(format, lang, { cta } = {}) {
     t = start + s.dur;
     const file = join(clips, `${s.clip}.mp4`);
     if (!existsSync(file)) throw new Error(`missing clip ${file}`);
+    // The growth time-lapse is one frame a week at 8 fps; `speed` plays a clip faster.
     const fps = s.clip === 'growth' ? 8 : FPS;
-    const len = probeDur(file);
+    const speed = s.speed ?? 1;
+    const len = probeDur(file) / speed;
     // Each shot runs a few frames past its cut, so the dissolve into the next never runs dry.
     const tail = i < T.segs.length - 1 ? 3 / FPS : 0;
-    if (s.from + s.dur + tail > len + 0.02) throw new Error(`${s.clip}: needs ${(s.from + s.dur).toFixed(2)} s, has ${len.toFixed(2)} s`);
-    return { ...s, start, file, fps, tail };
+    if (s.from + s.dur + tail > len + 0.02) throw new Error(`${s.clip}: needs ${(s.from + s.dur + tail).toFixed(2)} s, has ${len.toFixed(2)} s`);
+    return { ...s, start, file, fps, speed, tail };
   });
   const total = t;
 
   // Cards.
-  const tx = TEXT[lang];
   const cards = [];
   for (const s of segs) {
-    if (s.card) {
-      const [id, at, dur, kind = 'line'] = s.card;
-      cards.push({ id, kind, text: tx[id], at: s.start + at, dur });
-    }
-    if (s.title !== undefined) {
-      cards.push({ id: 'title', kind: 'title', tagline: tx.tagline, scale: tx.scale, cta, at: s.start + s.title, dur: total - (s.start + s.title) });
-    }
+    for (const c of s.cards ?? []) cards.push({ ...c, id: `c${cards.length}`, at: s.start + c.at });
+    if (s.title !== undefined) cards.push({ id: 'title', kind: 'title', name: NAME, tagline: TAGLINE, cta, pos: T.height > T.width ? 44 : 50, at: s.start + s.title, dur: total - (s.start + s.title) });
   }
   const pngs = await renderCards(cards, { width: T.width, height: T.height, dir: join(work, 'cards') });
 
@@ -152,15 +158,20 @@ async function cut(format, lang, { cta } = {}) {
   const titleSeg = segs.find((s) => s.title !== undefined);
   const cues = {
     length: total,
+    bpm: T.bpm,
+    fade_in: Math.max(0.1, T.fadeIn),
     build: at('build'),
     life: at('life'),
     drama: at('drama'),
     title: titleSeg.start + titleSeg.title,
-    hits: [at('drama')],
+    hits: segs.filter((s) => s.hit).map((s) => s.start),
+    risers: [at('life'), titleSeg.start + titleSeg.title],
     thunder: segs.flatMap((s) => (s.thunder ?? []).map((d) => s.start + d)),
     rain: (() => { const s = segs.find((s) => s.rain); return s ? [s.start, s.start + s.dur] : [0, 0]; })(),
     night: (() => { const s = segs.find((s) => s.night); return s ? [s.start, s.start + s.dur] : [0, 0]; })(),
   };
+  const hook = segs.find((s) => s.reveal !== undefined);
+  if (hook) cues.reveal = hook.start + hook.reveal;
   writeFileSync(join(work, 'cues.json'), JSON.stringify(cues, null, 1));
   const raw = join(work, 'score-raw.wav');
   const wav = join(work, 'score.wav');
@@ -172,8 +183,9 @@ async function cut(format, lang, { cta } = {}) {
   const f = [];
   segs.forEach((s, i) => {
     inputs.push('-i', s.file);
-    const slow = s.fps !== FPS ? `framerate=fps=${FPS}:interp_start=0:interp_end=255:scene=100,` : '';
-    f.push(`[${i}:v]${slow}fps=${FPS},trim=start=${s.from.toFixed(4)}:duration=${(s.dur + s.tail).toFixed(4)},setpts=PTS-STARTPTS,format=yuv420p,settb=AVTB[s${i}]`);
+    const fast = s.speed !== 1 ? `setpts=PTS/${s.speed},` : '';
+    const slow = s.fps * s.speed < FPS ? `framerate=fps=${FPS}:interp_start=0:interp_end=255:scene=100,` : '';
+    f.push(`[${i}:v]${fast}${slow}fps=${FPS},trim=start=${s.from.toFixed(4)}:duration=${(s.dur + s.tail).toFixed(4)},setpts=PTS-STARTPTS,format=yuv420p,settb=AVTB[s${i}]`);
   });
   let last = 's0';
   segs.slice(1).forEach((s, k) => {
@@ -189,18 +201,17 @@ async function cut(format, lang, { cta } = {}) {
   cards.forEach((c, k) => {
     const i = n0 + k;
     inputs.push('-loop', '1', '-framerate', String(FPS), '-t', c.dur.toFixed(3), '-i', pngs[c.id]);
-    const fin = c.kind === 'title' ? 1.4 : 0.6;
-    const fout = c.kind === 'title' ? 0.01 : 0.7;
+    const [fin, fout] = FADES[c.kind];
     f.push(`[${i}:v]format=rgba,fade=t=in:st=0:d=${fin}:alpha=1,fade=t=out:st=${(c.dur - fout).toFixed(3)}:d=${fout}:alpha=1,setpts=PTS+${c.at.toFixed(3)}/TB[c${k}]`);
     f.push(`[${last}][c${k}]overlay=0:0:eof_action=pass[o${k}]`);
     last = `o${k}`;
   });
-  f.push(`[${last}]fade=t=in:st=0:d=1.2,fade=t=out:st=${(total - 1.6).toFixed(3)}:d=1.6,format=yuv420p[v]`);
+  f.push(`[${last}]fade=t=in:st=0:d=${T.fadeIn},fade=t=out:st=${(total - 1.4).toFixed(3)}:d=1.4,format=yuv420p[v]`);
   const ai = inputs.filter((a) => a === '-i').length;
   inputs.push('-i', wav);
   f.push(`[${ai}:a]anull[a]`);
 
-  const out = join(outDir, `underfoot-${format === 'wide' ? 'trailer' : 'teaser'}-${lang}.mp4`);
+  const out = join(outDir, `${T.out}.mp4`);
   writeFileSync(join(work, 'filter.txt'), f.join(';\n'));
   sh('ffmpeg', [
     '-y', '-loglevel', 'error',
@@ -222,9 +233,5 @@ async function cut(format, lang, { cta } = {}) {
 const args = process.argv.slice(2);
 const ctaAt = args.indexOf('--cta');
 const cta = ctaAt >= 0 ? args[ctaAt + 1] : undefined;
-const pos = args.filter((a, i) => !a.startsWith('--') && i !== (ctaAt >= 0 ? ctaAt + 1 : -1));
-const formats = pos.filter((a) => a in TIMELINES);
-const langs = pos.filter((a) => a in TEXT);
-for (const format of formats.length ? formats : Object.keys(TIMELINES)) {
-  for (const lang of langs.length ? langs : Object.keys(TEXT)) await cut(format, lang, { cta });
-}
+const formats = args.filter((a, i) => a in TIMELINES && i !== ctaAt + 1);
+for (const format of formats.length ? formats : ['reel']) await cut(format, { cta });
