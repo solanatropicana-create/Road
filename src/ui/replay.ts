@@ -53,6 +53,8 @@ export class Replay {
   private last = 0;
   private wasPaused = false;
   private recorder: MediaRecorder | null = null;
+  /** Shown on its own (the year's film, to someone watching hands-off): it closes itself at the end. */
+  private auto = false;
   private keys = (e: KeyboardEvent): void => this.onKey(e);
 
   constructor(game: Game, save: (name: string, data: Blob) => Promise<boolean>) {
@@ -70,8 +72,9 @@ export class Replay {
     return !!s && s.steps > 1;
   }
 
-  show(root: HTMLElement): void {
+  show(root: HTMLElement, auto = false): void {
     if (this.el || !this.ready()) return;
+    this.auto = auto;
     this.prepare();
     const el = document.createElement('div');
     el.id = 'replay';
@@ -111,6 +114,8 @@ export class Replay {
     });
     el.classList.toggle('tall', this.tall);
     addEventListener('keydown', this.keys, true);
+    // Touched: no longer closing by itself.
+    el.addEventListener('pointerdown', () => (this.auto = false));
     // The colony waits while its film plays.
     this.wasPaused = this.game.paused;
     this.game.paused = true;
@@ -139,6 +144,7 @@ export class Replay {
 
   private onKey(e: KeyboardEvent): void {
     if (!this.el) return;
+    this.auto = false;
     if (e.key === 'Escape') this.close();
     else if (e.key === ' ') this.toggle();
     else return;
@@ -362,10 +368,11 @@ export class Replay {
     this.at = this.steps + Math.min(this.glow, this.hold * this.rate);
     this.paint();
     this.at = this.steps;
-    if (this.hold > 2.5) {
+    if (this.hold > (this.auto ? 4 : 2.5)) {
       this.playing = false;
       this.sync();
       if (this.recorder) this.recorder.stop();
+      else if (this.auto) this.close();
     }
   }
 

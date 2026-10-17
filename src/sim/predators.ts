@@ -79,7 +79,11 @@ export function spawnPredators(sim: Sim, cr: Critters): void {
       const gate = nest.gateNear(nest.foundX + side * 50);
       const x = side < 0 ? 6 : w.w - 7;
       const spot = flatSpot(sim, cr, gate + side * 18, gate + side * 70);
-      cr.add({ kind: 'toad', x, y: ground(sim, cr, x), dir: -side, state: 0, px: spot, life: rng.int(6, 16), timer: TICK_HZ, tone: rng.int(0, 255) });
+      // How many it takes in a night follows the evening traffic: a few from a colony of
+      // a hundred, a full meal only from a big one (or it would hold a middling colony
+      // down for years, coming back every evening).
+      const meal = Math.max(2, Math.round(rng.int(6, 16) * clamp((col.adults - 30) / 270, 0.3, 1)));
+      cr.add({ kind: 'toad', x, y: ground(sim, cr, x), dir: -side, state: 0, px: spot, life: meal, timer: TICK_HZ, tone: rng.int(0, 255) });
       if (known) {
         cr.toadNights++;
         sim.noteYearly('toadBack', { x: spot, y: ground(sim, cr, spot) });
@@ -181,7 +185,8 @@ export function toad(sim: Sim, c: Critter, cr: Critters): boolean {
     const along = (a.x - c.x) * c.dir;
     if (a.alive && !a.away && a.alarm > 0 && along > -28 && along < 30 && a.y > c.y - 27 && a.y <= c.y + 2) close++;
   }
-  if (close >= 25) {
+  // (A smaller colony drives it off with a smaller crowd: what counts is being swarmed.)
+  if (close >= Math.min(25, 10 + sim.colony.adults * 0.05)) {
     c.state = 2;
     c.dir = c.x < w.w / 2 ? -1 : 1;
     sim.noteYearly('toadDriven', c);

@@ -176,6 +176,8 @@ export interface SaveMeta {
   day: number;
   adults: number;
   savedAt: number;
+  /** The colony's tempo (absent: true to life). */
+  tempo?: string;
 }
 
 /** Everything needed to bring a colony back, compressed and base64'd for storage. */
@@ -187,7 +189,7 @@ export async function saveSim(sim: Sim, extra: unknown = null): Promise<{ meta: 
   const parts: BlobPart[] = [new Uint32Array([json.length]), json];
   for (const b of bins) parts.push(new Uint32Array([b.length]), b as BlobPart);
   const blob = bytesToB64(await gzip(parts));
-  return { meta: { seed: sim.seed, day: sim.day, adults: sim.colony.adults, savedAt: Date.now() }, blob };
+  return { meta: { seed: sim.seed, day: sim.day, adults: sim.colony.adults, savedAt: Date.now(), tempo: sim.tempo }, blob };
 }
 
 /** Saves from before the fog and the list of neighbours: fill them in from what they had. */

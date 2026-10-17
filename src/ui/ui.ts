@@ -829,7 +829,7 @@ export class UI {
     el.innerHTML = `${slots.length > 1 ? `<button class="linkbtn" id="slots-toggle">${t('slotsShow', { n: slots.length })}</button>` : ''}
       <div class="slot-list"${slots.length > 1 ? ' hidden' : ''}>${slots
         .map(
-          (m) => `<div class="slot" data-id="${m.id}"><div class="slot-txt"><b>${name(m)}</b><span>${t('slotLine', { d: m.day, n: m.adults, w: when(m.savedAt) })}</span></div>
+          (m) => `<div class="slot" data-id="${m.id}"><div class="slot-txt"><b>${name(m)}</b><span>${t('slotLine', { d: m.day, n: m.adults, w: when(m.savedAt) })}${m.tempo && m.tempo !== 'true' ? ` · ${t(`tempo_${m.tempo}`)}` : ''}</span></div>
           <button class="btn" data-act="open">${t('slotOpen')}</button><button class="btn" data-act="export" title="${t('slotExportT')}">${t('slotExport')}</button><button class="btn" data-act="delete">${t('slotDelete')}</button></div>`,
         )
         .join('')}</div>
@@ -2089,9 +2089,15 @@ export class UI {
       close();
       this.showFilm();
     };
-    // Watching on its own, the card steps aside by itself.
+    // Watching on its own, the card steps aside by itself, and the year's film plays once.
     if (this.mode === 'watch') setTimeout(() => {
-      if (el.style.display !== 'none') close();
+      if (el.style.display === 'none') return;
+      close();
+      // (Only to someone watching hands-off: the film then closes by itself and the colony goes on.)
+      if (this.idle > 30) {
+        if (this.game.director.active) this.game.director.stop();
+        this.replay.show(this.root, true);
+      }
     }, 16000);
     this.note('j_yearReview', { y: y.year, n: col.adults, b: y.born, l: lostN });
   }
