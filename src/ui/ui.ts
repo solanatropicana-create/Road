@@ -1802,7 +1802,8 @@ export class UI {
     this.els.sky!.textContent = t('tempNow', { t: Math.round(sim.surfaceT) }) + (windy ? ` · ${windy} ${gust > 0 ? '→' : '←'}` : '');
     this.els.sky!.title = `${t(sky)} · ${t('tempTitle', { s: Math.round(sim.surfaceT), n: Math.round(col.nestTemp) })}`;
     this.els.skyico!.title = t(sky);
-    this.els.year!.textContent = `${t(`season_${sim.season}`)} · ${t('yearN', { n: sim.cal.year(sim.simDays) })}`;
+    // (At a faster tempo the header says so: it is why the colony grows as it does.)
+    this.els.year!.textContent = `${t(`season_${sim.season}`)} · ${t('yearN', { n: sim.cal.year(sim.simDays) })}${sim.tempo && sim.tempo !== 'true' ? ` · ${t(`tempo_${sim.tempo}`)}` : ''}`;
     if (sky !== this.skySig) {
       this.skySig = sky;
       this.els.skyico!.innerHTML = sky === 'skyStorm' ? ICON.storm : sky === 'skyRain' || sky === 'skySnow' ? ICON.rain : sky === 'skyNight' ? ICON.moon : ICON.sun;
