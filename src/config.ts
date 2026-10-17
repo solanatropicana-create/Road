@@ -63,6 +63,12 @@ export const TUNING = {
   alateMinWorkers: 100,
   /** Brood the colony will raise per worker (caps queen output; growing colonies carry more brood than workers). */
   broodPerWorker: 3.0,
+  /**
+   * Workers the slice holds at most: past this the queen raises only winged young.
+   * (At Messor's own pace the harvest stops a colony well short of it; at the
+   * faster tempos it keeps a big colony quick to run.)
+   */
+  maxWorkers: 1000,
 
   // --- lifespans, in weeks of active life (ageing slows in the cold): workers live one to two years
   workerLife: [DAY_TICKS * 50, DAY_TICKS * 95] as const,

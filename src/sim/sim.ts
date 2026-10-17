@@ -804,6 +804,8 @@ export class Sim {
     if (this.tick % 15 === 0) {
       const was = this.nest.rescuing;
       this.nest.scan(this.ground.buried);
+      // A nest of thousands of cells refreshes its maps a little less often.
+      this.fields.slow = Math.min(1.8, Math.max(1, this.nest.openCells / 8000));
       // A rescue starting or over: the diggers' map changes at once.
       if (this.nest.rescuing !== was) this.fields.hurry(F.Dig, this.tick);
     }

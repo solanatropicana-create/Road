@@ -22,6 +22,8 @@ import { PACKED, PLUG } from '../world/physics';
 export type Mode = 'watch' | 'guide';
 /** Seconds without input before the documentary starts on its own (in Watch mode). */
 const IDLE_DOC = 90;
+/** Set once the nest's film has been pointed out (in this browser). */
+const FILM_TIP_KEY = 'underfoot.tipFilm';
 type Tab = 'guide' | 'colony' | 'notes';
 const MODE_KEY = 'underfoot.mode';
 /** Scale-bar lengths to choose from, in mm. */
@@ -100,6 +102,8 @@ export class UI {
   private dipEl: HTMLElement | null = null;
   /** Seconds since the player last touched anything. */
   private idle = 0;
+  /** The film's tip has been considered this session. */
+  private filmTip = false;
   /** Where the latest located event happened (J jumps there). */
   private lastLoc: { x: number; y: number } | null = null;
   /** Watch: the colony runs itself. Guide: the player is the colony brain. */
@@ -1660,6 +1664,18 @@ export class UI {
     if (this.mode === 'watch' && phase === 'growing' && !game.director.active && !game.paused && !game.cine.busy && !game.cine.montage && !game.selected && this.idle > IDLE_DOC && !this.root.classList.contains('modal')) {
       game.director.start();
       this.toast(t('autoDoc'));
+    }
+    // Once (ever), when there is a little nest to show: the film.
+    if (phase === 'growing' && !this.filmTip && sim.story.steps >= 16 && sim.nest.chambers.filter((c) => c.ready).length >= 4 && !this.root.classList.contains('modal')) {
+      this.filmTip = true;
+      let seen = false;
+      try {
+        seen = localStorage.getItem(FILM_TIP_KEY) === '1';
+        localStorage.setItem(FILM_TIP_KEY, '1');
+      } catch {
+        // no storage: show it this time
+      }
+      if (!seen) this.toast(t('tipFilm'), 9000);
     }
     if (phase !== this.lastPhase) {
       const was = this.lastPhase;

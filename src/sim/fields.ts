@@ -40,6 +40,11 @@ export class Fields {
   private touched: Int32Array[] = [];
   private touchedCount = new Int32Array(FIELD_COUNT);
   private due = new Int32Array(FIELD_COUNT);
+  /**
+   * Rebuilds come this much less often in a big nest (each one floods all of it):
+   * set from the nest's size. The brood's fields keep their pace.
+   */
+  slow = 1;
 
   constructor(world: World) {
     this.world = world;
@@ -120,7 +125,7 @@ export class Fields {
         best = f;
       }
     }
-    if (best >= 0) this.due[best] = tick + INTERVAL[best]!;
+    if (best >= 0) this.due[best] = tick + Math.round(INTERVAL[best]! * (best === F.Larva || best === F.Egg ? 1 : this.slow));
     return best;
   }
 

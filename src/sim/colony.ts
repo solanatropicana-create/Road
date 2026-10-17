@@ -493,6 +493,8 @@ export class Colony {
     // laid now would only eat into the winter store); a young one keeps going.
     if (doy > 244 && adults >= 30) return;
     if (adults === 0 && this.born === 0 && this.brood.length >= 8) return;
+    // The slice is full: only winged young from now on.
+    if (!sexual && adults + this.brood.length * 0.6 >= TUNING.maxWorkers) return;
     const spot = this.freeFloorNear(sim, q.x, q.y, 6);
     if (spot < 0) return;
     const egg = new Brood(spot % this.w, (spot / this.w) | 0);
