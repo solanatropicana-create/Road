@@ -56,11 +56,13 @@ const T_PELLET = 7;
 const T_WALL = 8;
 const T_FLAT = 9;
 const T_FIBER = 10;
-const NTEX = 11;
+/** The tree's bark, above the ground: corky ridges between deep furrows. */
+const T_BARK = 11;
+const NTEX = 12;
 /** How strongly each texture modulates its cell's colour (1 + v/127 · amp). */
-const AMP = new Float32Array([0.38, 0.3, 0.2, 0.42, 0.22, 0.16, 0.2, 0.5, 0.14, 0.05, 0.3]);
+const AMP = new Float32Array([0.38, 0.3, 0.2, 0.42, 0.22, 0.16, 0.2, 0.5, 0.14, 0.05, 0.3, 0.62]);
 /** How many mineral grains show in each texture (0..1). */
-const SPECK = new Float32Array([0.55, 1, 0.45, 1, 0.5, 0.35, 0, 0.8, 0.3, 0, 0]);
+const SPECK = new Float32Array([0.55, 1, 0.45, 1, 0.5, 0.35, 0, 0.8, 0.3, 0, 0, 0]);
 /** Colour multipliers of the mineral grains, by kind (none, quartz, rusty, dark, glint). */
 const SPK_MUL = new Float32Array([1, 1, 1, 1.5, 1.46, 1.4, 1.2, 0.86, 0.68, 0.5, 0.48, 0.48, 2.1, 2.05, 1.9]);
 
@@ -380,6 +382,8 @@ export class MacroLens {
         } else {
           c = CLASS_OF[m]!;
           t = TEX_OF[m]!;
+          // The trunk above the ground: bark, not the fibres of a root or a fallen twig.
+          if (m === WOOD && r.y0 + y < w.ground[r.x0 + x]!) t = T_BARK;
         }
         const col = buf[i]!;
         cls[l] = c;
@@ -393,7 +397,7 @@ export class MacroLens {
           R *= 1 + 0.08 * f;
           G *= 1 + 0.07 * f;
           B *= 1 + 0.06 * f;
-        } else if (c === LITTERC) {
+        } else if (c === LITTERC && t !== T_BARK) {
           // Dead leaves and twigs close up: brown and dry rather than orange.
           R *= 1 - 0.26 * f;
           G *= 1 - 0.3 * f;
@@ -1711,6 +1715,36 @@ function makeTexture(kind: number, rng: Rng): Int8Array {
       threads(t, rng, 1500, 1, 16, 50, 0.06);
       threads(t, rng, 1200, 1, 16, -60, 0.06);
       break;
+    case T_BARK: {
+      // Elm or maple bark: corky ridges between deep furrows that run up the trunk,
+      // wander, and part and meet; each ridge catches a little light on its lip.
+      fill(t, rng, 8, 10);
+      addNoise(t, periodicNoise(rng), 18);
+      // (Furrows a millimetre or two wide, a few millimetres apart: a trunk a hand across.)
+      for (let k = 0; k < 18; k++) {
+        let x = rng.next() * TS;
+        const w0 = 4 + rng.next() * 8;
+        const drift = (rng.next() - 0.5) * 0.35;
+        const start = rng.int(0, TS - 1);
+        const len = rng.int(TS / 4, TS);
+        for (let s = 0; s < len; s++) {
+          const y = (start + s) & TM;
+          x += drift + (rng.next() - 0.5) * 0.7;
+          // Furrows open and close along their length, and taper at the ends.
+          const ends = Math.min(1, s / 20, (len - s) / 20);
+          const wv = w0 * (0.65 + 0.45 * Math.sin(s * 0.045 + k * 1.7)) * ends + 0.4;
+          const reach = Math.ceil(wv * 1.7) + 1;
+          for (let dx = -reach; dx <= reach; dx++) {
+            const xx = (((Math.round(x) + dx) % TS) + TS) % TS;
+            const q = y * TS + xx;
+            const d = Math.abs(dx) / wv;
+            if (d < 1) t[q] = Math.min(t[q]!, Math.round(-105 * (1 - d * d * d * d)));
+            else if (d < 1.7 && dx < 0) t[q] = t[q]! + 22;
+          }
+        }
+      }
+      break;
+    }
   }
   // Centre on zero so the texture keeps the cell's own colour on average.
   let mean = 0;
