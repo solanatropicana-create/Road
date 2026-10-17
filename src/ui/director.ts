@@ -78,7 +78,7 @@ export class Director {
    */
   notice(x: number, y: number, caption: string, key: string): void {
     if (!this.active) return;
-    const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds', 'neighbourMetL', 'neighbourMetR', 'youngColony', 'teamCarry', 'cutUp', 'recruitHeavy', 'tugOfWar', 'lasiusFight', 'lasiusKill', 'lasiusCaught', 'buriedOut', 'queenMoving', 'queenMoved', 'guestWoodlouse', 'guestCricket', 'guestBeetle', 'parasitoidKills', 'foundBone', 'foundSeeds'];
+    const close = ['spider', 'phorid', 'cPosture', 'antlion', 'dyingAlone', 'ritualFight', 'spreadEagle', 'foundressKilled', 'grooming', 'preyIn', 'foundNymph', 'dryingSeeds', 'neighbourMetL', 'neighbourMetR', 'youngColony', 'teamCarry', 'cutUp', 'recruitHeavy', 'tugOfWar', 'lasiusFight', 'lasiusKill', 'lasiusCaught', 'buriedOut', 'queenMoving', 'queenMoved', 'guestWoodlouse', 'guestCricket', 'guestBeetle', 'parasitoidKills', 'foundBone', 'foundSeeds'];
     const wide = ['war', 'raid', 'flight', 'moleBreach', 'moleNest', 'queenKilledMole', 'toad', 'toadBack', 'lizard', 'leafFall', 'otherQueens', 'wormsUp', 'youngColonyGone', 'secondGate', 'raidYoung', 'warYoung'];
     // A room's roof: close enough to see the cracks and the fall, wide enough for the room.
     const room = ['caveIn', 'caveInDead', 'roofCracks', 'seepage', 'shoring', 'royal_floor', 'royal_roof', 'royal_crossroads', 'royal_shallow'];
@@ -382,7 +382,11 @@ export class Director {
     if (a.underFall && SOLID[w.mat[a.y * w.w + a.x]!]) return `${who} ${a.name} · ${t('dc_buried')}`;
     if (a.shoring) return `${who} ${a.name} · ${t('dc_shoring')}`;
     if (a.cpose > 0) return `${who} ${a.name} · ${t('dc_cpose')}`;
-    if (a.fight > 0) return `${who} ${a.name} · ${t('dc_boxing')}`;
+    if (a.fight > 0) {
+      const held = a.holders.filter((h) => h.alive && h.foe === a).length + 1;
+      const what = a.foe && a.foe.foe !== a ? t('dc_holding') : held >= 2 ? t('dc_pinned', { n: held }) : t('dc_boxing');
+      return `${who} ${a.name} · ${what}`;
+    }
     if (a.sick > 0.6) return `${who} ${a.name} · ${t('dc_sick')}`;
     if (a.haul) return `${who} ${a.name} · ${a.haul.carriers.length > 1 ? t('dc_hauling', { n: a.haul.carriers.length - 1 }) : t('dc_haulingAlone')}`;
     if (a.recruiting) return `${who} ${a.name} · ${t('dc_recruiting')}`;
