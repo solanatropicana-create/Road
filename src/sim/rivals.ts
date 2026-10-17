@@ -375,7 +375,9 @@ export class Neighbour {
         // An old colony is near its meadow's limit. A young one grows on what
         // it brings in: well fed (or fat on our seed) it grows fast, hungry it barely does.
         const fed = clamp(this.weekHarvest / Math.max(1, this.workers * 0.8), 0, 1.5);
-        this.workers = this.young ? Math.min(3000, this.workers * (1.02 + 0.05 * fed) + 0.3) : Math.min(3000, this.workers * 1.012);
+        // (At the faster tempos a young colony grows up faster too, as ours does.)
+        const quick = Math.min(3, sim.pace.lay);
+        this.workers = this.young ? Math.min(3000, this.workers * (1 + (0.02 + 0.05 * fed) * quick) + 0.3 * quick) : Math.min(3000, this.workers * 1.012);
       }
       this.weekHarvest = 0;
       this.budget = this.young ? Math.min(90, this.workers * 1.2) : clamp(this.workers * 0.015, 5, 25);

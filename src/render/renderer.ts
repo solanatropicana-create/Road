@@ -50,6 +50,9 @@ function soilRamp(m: number): RGB[] {
   }
 }
 
+/** Where in each fog cell the unknown soil's colour is sampled (mm from its corner). */
+const FOG_SAMPLES = [[1, 1], [5, 2], [2, 6], [6, 5]] as const;
+
 export class Renderer {
   readonly canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
@@ -340,6 +343,44 @@ export class Renderer {
     for (const d of [-w.w - 1, -w.w + 1, w.w - 1, w.w + 1, -2, 2, -2 * w.w, 2 * w.w]) if (SOLID[w.mat[i + d]!]) near++;
     const f = 1 - solids * 0.07 - up * 0.07 - near * 0.025 + (SOLID[w.mat[i + w.w]!] ? 0.05 : 0);
     return [c[0] * f, c[1] * f, c[2] * f];
+  }
+
+  /**
+   * For the nest's time-lapse: the colours (packed, unlit) of a stretch of the
+   * slice, each cell as untouched soil (a hollow shows the soil it was dug
+   * from) and as a dug hollow (its back wall). The open air above the ground
+   * is 0 in both.
+   */
+  storyColors(x0: number, y0: number, x1: number, y1: number): { soil: Uint32Array; hollow: Uint32Array } {
+    const w = this.world;
+    // Lit as at noon, as the slice is (its deep layers a little darker); the next frame rebuilds the light.
+    this.buildLight(0.5, 0);
+    const lit = (c: RGB, x: number, y: number): number => {
+      const k = clamp(y - w.ground[x]! + 128, 0, 511);
+      return pack(Math.min(255, (c[0] * this.lutR[k]!) / 256), Math.min(255, (c[1] * this.lutG[k]!) / 256), Math.min(255, (c[2] * this.lutB[k]!) / 256));
+    };
+    const bw = x1 - x0;
+    const n = bw * (y1 - y0);
+    const soil = new Uint32Array(n);
+    const hollow = new Uint32Array(n);
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        const i = y * w.w + x;
+        const k = (y - y0) * bw + (x - x0);
+        const m = w.mat[i]!;
+        const under = w.bg[i] === 1;
+        if (!under && !SOLID[m]) continue;
+        if (SOLID[m] && m !== SEED && m !== REFUSE && m !== FRUIT && m !== PREY) {
+          const c = this.base[i]!;
+          soil[k] = lit([c & 255, (c >>> 8) & 255, (c >>> 16) & 255], x, y);
+        } else {
+          // Open (or stores lying in it): the soil it was dug out of.
+          soil[k] = lit(sampleRamp(soilRamp(w.tint[i]! & 0x3f || this.guessSoil(x, y)), 0.25 + (w.tone[i]! / 255) * 0.5), x, y);
+        }
+        hollow[k] = lit(this.backwall(i, x, y), x, y);
+      }
+    }
+    return { soil, hollow };
   }
 
   private guessSoil(x: number, y: number): number {
@@ -851,10 +892,11 @@ export class Renderer {
   private skyTop: RGB = [120, 140, 160];
 
   /**
-   * What the colony doesn't know yet lies in the dark: underground, plain
-   * darkness; above ground, a mist the colour of the sky. While the queen is
-   * still in the air the meadow is open below her; once she lands the mist
-   * closes in to the few centimetres around her.
+   * What the colony doesn't know yet lies in the dark: underground, the soil
+   * in deep shadow and out of focus (its layers and stones show, dimly, but
+   * not what has been dug in it); above ground, a mist the colour of the sky.
+   * While the queen is still in the air the meadow is open below her; once
+   * she lands the mist closes in to the few centimetres around her.
    */
   private unknown(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }): void {
     void view;
@@ -872,6 +914,7 @@ export class Renderer {
     const img = this.fogImg!;
     const d = img.data;
     const mist = mixRGB(this.skyTop, [70, 74, 78], 0.45);
+    const base = this.base;
     for (let gy = 0; gy < fog.gh; gy++) {
       for (let gx = 0; gx < fog.gw; gx++) {
         const x = Math.min(w.w - 1, gx * FOG + FOG / 2);
@@ -879,18 +922,38 @@ export class Renderer {
         const above = y < w.ground[x]! - 3;
         const k = gy * fog.gw + gx;
         const v = (above ? Math.max(fog.seen[k]!, fog.sky[gx]!) : fog.seen[k]!) / 255;
-        const a = (1 - v) * (above ? 0.88 * this.fogIn : 0.97);
+        const a = (1 - v) * (above ? 0.88 * this.fogIn : 0.95);
         const o = k * 4;
         if (above) {
           d[o] = mist[0];
           d[o + 1] = mist[1];
           d[o + 2] = mist[2];
+          d[o + 3] = Math.round(a * 255);
         } else {
-          d[o] = 9;
-          d[o + 1] = 6;
-          d[o + 2] = 4;
+          // The soil's own colour from a few of its solid cells (never the hollows
+          // in it: another colony's galleries stay hidden), deep in shadow.
+          let r = 0;
+          let gg = 0;
+          let b = 0;
+          let n = 0;
+          for (const [sx, sy] of FOG_SAMPLES) {
+            const xx = Math.min(w.w - 1, gx * FOG + sx);
+            const yy = Math.min(w.h - 1, gy * FOG + sy);
+            const i = yy * w.w + xx;
+            if (!SOLID[w.mat[i]!]) continue;
+            const c = base[i]!;
+            r += c & 255;
+            gg += (c >>> 8) & 255;
+            b += (c >>> 16) & 255;
+            n++;
+          }
+          const depth = y - w.ground[x]!;
+          const dim = (0.34 - Math.min(0.12, depth / 3000)) / Math.max(1, n);
+          d[o] = n ? r * dim : 12;
+          d[o + 1] = n ? gg * dim : 9;
+          d[o + 2] = n ? b * dim : 7;
+          d[o + 3] = Math.round(a * 255);
         }
-        d[o + 3] = Math.round(a * 255);
       }
     }
     this.fogCanvas.getContext('2d')!.putImageData(img, 0, 0);

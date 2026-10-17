@@ -326,8 +326,8 @@ export class Ant {
     }
     if (this.caste !== 'queen' && sim.tick >= this.meetAgain && this.sick < 0.6 && this.greet(sim)) return;
     const slow = this.carry !== Carry.None ? TUNING.carryingSlowdown : 1;
-    // Alarmed ants run.
-    this.mv += this.speed * slow * (this.alarm > 0 ? 1.35 : 1);
+    // Alarmed ants run. (The faster tempos quicken every step.)
+    this.mv += this.speed * slow * (this.alarm > 0 ? 1.35 : 1) * sim.pace.walk;
     while (this.mv >= 1 && this.alive) {
       this.mv -= 1;
       this.think(sim);
@@ -820,7 +820,7 @@ export class Ant {
       return true;
     }
     if (best < 0) return false;
-    this.startAct(Act.Escape, best, TUNING.digTicks[HARDNESS[w.mat[best]!]! || 1]!);
+    this.startAct(Act.Escape, best, TUNING.digTicks[HARDNESS[w.mat[best]!]! || 1]! / sim.pace.dig);
     sim.noteOnce('dugOut', this);
     return true;
   }
@@ -1130,7 +1130,7 @@ export class Ant {
         const h = HARDNESS[sim.world.mat[cell]!]! || 1;
         // (Burrowing into a fall to reach the buried is slow: the loose fill keeps running back.)
         const mult = (this.caste === 'soldier' ? 0.75 : 1) * (sim.nest.rescuing ? 1.8 : 1);
-        this.startAct(Act.Dig, cell, TUNING.digTicks[h]! * mult * sim.rng.range(0.8, 1.25));
+        this.startAct(Act.Dig, cell, (TUNING.digTicks[h]! * mult * sim.rng.range(0.8, 1.25)) / sim.pace.dig);
       } else if (!this.shore(sim)) {
         this.wander(sim, true);
       }
@@ -1717,7 +1717,7 @@ export class Ant {
     const w0 = sim.world;
     // The trail runs on past the edge of the slice: the forager goes on into the meadow beyond.
     if ((this.x <= 2 || this.x >= w0.w - 3) && w0.bg[i] === 0 && this.carry === Carry.None && sim.forageWeather > 0.3) {
-      this.away = sim.rng.int(TICK_HZ * 30, TICK_HZ * 100);
+      this.away = Math.max(1, Math.round(sim.rng.int(TICK_HZ * 30, TICK_HZ * 100) / sim.pace.walk));
       return;
     }
     // A scent that leads nowhere (seed on a stem cut off or buried under spoil)
@@ -2081,7 +2081,7 @@ export class Ant {
       const r = this.descend(sim, F.Dig);
       if (r === Step.Arrived) {
         const cell = this.findAdjacent(sim, (n) => Nest.diggable(w, n), true);
-        if (cell >= 0) this.startAct(Act.Dig, cell, TUNING.digTicks[HARDNESS[w.mat[cell]!]! || 1]! * 0.3);
+        if (cell >= 0) this.startAct(Act.Dig, cell, (TUNING.digTicks[HARDNESS[w.mat[cell]!]! || 1]! * 0.3) / sim.pace.dig);
         else this.wander(sim, true);
       } else if (r === Step.Failed && sim.fields.sourceCount[F.Dig] === 0) {
         this.descend(sim, F.Royal);

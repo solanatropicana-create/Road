@@ -296,7 +296,8 @@ export class Colony {
   private advanceBrood(sim: Sim): void {
     const sp = this.speedup();
     // Development-ticks gained this tick: full speed only in the warmth, at
-    // the temperature of the room each one lies in.
+    // the temperature of the room each one lies in (and faster at the quicker tempos).
+    const pace = sim.pace.brood;
     const best = devRate(this.broodTemp);
     const adults = this.adults;
     let hungry = 0;
@@ -304,10 +305,10 @@ export class Colony {
     const dead: Brood[] = [];
     const world = sim.world;
     for (const b of this.brood) {
-      if (b.carried) b.age += best;
+      if (b.carried) b.age += best * pace;
       else {
         const room = sim.nest.chamberAt(b.y * this.w + b.x);
-        b.age += room ? (this.roomRate[room.id] ?? best) : this.looseRate;
+        b.age += (room ? (this.roomRate[room.id] ?? best) : this.looseRate) * pace;
       }
       if (!b.carried) {
         // Set down on top of another (its carrier died, a lost load): it would
@@ -439,7 +440,7 @@ export class Colony {
     if (sim.dormant) return;
     const warm = devRate(this.broodTemp);
     if (warm <= 0) return;
-    this.eggTimer -= warm;
+    this.eggTimer -= warm * sim.pace.lay;
     if (this.eggTimer > 0) return;
     const adults = this.adults;
     const breedMult = [0.55, 1, 1.6][this.breeding]!;

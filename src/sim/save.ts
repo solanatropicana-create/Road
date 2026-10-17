@@ -19,6 +19,7 @@ import { Fog, FOG } from './fog';
 import { Carcass, Carcasses } from './carcass';
 import { SoilLife } from './soil';
 import { Ground } from './ground';
+import { Story } from './story';
 
 /**
  * Saving a colony: the whole simulation object graph, written generically.
@@ -29,7 +30,7 @@ import { Ground } from './ground';
  */
 
 const CLASSES: Record<string, { prototype: object }> = {
-  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar, Ecology, Critters, Neighbour, Fog, Carcass, Carcasses, SoilLife, Ground,
+  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar, Ecology, Critters, Neighbour, Fog, Carcass, Carcasses, SoilLife, Ground, Story,
 };
 
 const TYPED: Record<string, new (b: ArrayBuffer) => ArrayBufferView> = {
@@ -192,6 +193,14 @@ export async function saveSim(sim: Sim, extra: unknown = null): Promise<{ meta: 
 /** Saves from before the fog and the list of neighbours: fill them in from what they had. */
 function upgrade(sim: Sim): void {
   const o = sim as unknown as { fog?: Fog; neighbours?: Neighbour[]; neighbour?: Neighbour | null };
+  // Saves from before the tempos: Messor's own pace.
+  (sim as unknown as { tempo?: string }).tempo ??= 'true';
+  // Saves from before the nest's time-lapse: its story starts with the nest as it is.
+  if (!(sim as unknown as { story?: Story }).story) {
+    const story = new Story(sim.world.size);
+    if (sim.nest.founded) story.record(sim);
+    sim.story = story;
+  }
   const w = sim.world;
   if (!o.fog) {
     // What the old growing view showed counts as known.

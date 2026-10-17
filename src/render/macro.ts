@@ -124,6 +124,8 @@ export class MacroLens {
   private sol = new Float32Array(0);
   private tmp = new Float32Array(0);
   private uni = new Uint8Array(0);
+  /** Cells of a thread one cell wide that the blur would swallow (see compose). */
+  private thin = new Uint8Array(0);
   private mixA = new Float32Array(0);
   private mixStamp = new Uint32Array(0);
   private stamp = 0;
@@ -344,8 +346,9 @@ export class MacroLens {
       this.sol = new Float32Array(n);
       this.tmp = new Float32Array(n);
       this.uni = new Uint8Array(n);
+      this.thin = new Uint8Array(n);
     }
-    const { cls, tx, cr, cg, cb, ca, sol, tmp, uni } = this;
+    const { cls, tx, cr, cg, cb, ca, sol, tmp, uni, thin } = this;
     const mat = w.mat;
     const bg = w.bg;
     for (let y = 0; y < RH; y++) {
@@ -466,6 +469,20 @@ export class MacroLens {
       }
     }
     const S = tmp;
+    // A cell the blur would swallow keeps its place only if it is a thread one cell
+    // wide (a crack, a worm's burrow, a thin spur) or a lone grain: at most two of its
+    // eight neighbours are of its kind. A step in a diagonal wall has more, and is
+    // smoothed into the curve like the rest of the wall.
+    thin.fill(0, 0, n);
+    for (let y = 1; y < RH - 1; y++) {
+      for (let x = 1, l = y * RW + 1; x < RW - 1; x++, l++) {
+        const mine = SOLIDC[cls[l]!]!;
+        if (mine ? S[l]! >= 0.5 : S[l]! <= 0.5) continue;
+        let same = 0;
+        for (const d of [-RW - 1, -RW, -RW + 1, -1, 1, RW - 1, RW, RW + 1]) if (SOLIDC[cls[l + d]!] === mine) same++;
+        if (same <= 2) thin[l] = 1;
+      }
+    }
     // Quads (between four cell centres) inside one material and away from any edge take
     // the fast path: 1 inside, 2 inside the sky.
     for (let y = 0; y < RH - 1; y++) {
@@ -719,12 +736,49 @@ export class MacroLens {
           // cells wide, a lone grain, a thin spur) still shows what it is around its centre.
           const mine = SOLIDC[cls[ln]!]!;
           const s = mine + (s0 * w00 + s1 * w10 + s2 * w01 + s3 * w11 + jit[ti]! * 0.09 - mine) * f;
-          const nx = fx < 0.5 ? fx : 1 - fx;
-          const ny = fy < 0.5 ? fy : 1 - fy;
-          const lost = mine ? S[ln]! < 0.5 : S[ln]! > 0.5;
-          const own = lost && nx * nx + ny * ny < 0.1;
-          const solid = own ? mine : s > 0.5 ? 1 : 0;
+          // A thread the blur would swallow is drawn as a stroke through its cells'
+          // centres, joined to the next cell of the thread (so a crack is a line, not dots).
+          let own = false;
+          let ownCls = 0;
+          if (thin[l00]! | thin[l10]! | thin[l01]! | thin[l11]!) {
+            const R2 = 0.05;
+            const join = (a: number, b: number, d2: number): void => {
+              // (Either end may be the body the thread runs into: it joins up with it.)
+              if (!own && (thin[a] || thin[b]) && SOLIDC[cls[a]!] === SOLIDC[cls[b]!] && d2 < R2) {
+                own = true;
+                ownCls = cls[thin[a] ? a : b]!;
+              }
+            };
+            join(l00, l00, fx * fx + fy * fy);
+            join(l10, l10, (1 - fx) * (1 - fx) + fy * fy);
+            join(l01, l01, fx * fx + (1 - fy) * (1 - fy));
+            join(l11, l11, (1 - fx) * (1 - fx) + (1 - fy) * (1 - fy));
+            join(l00, l10, fy * fy);
+            join(l01, l11, (1 - fy) * (1 - fy));
+            join(l00, l01, fx * fx);
+            join(l10, l11, (1 - fx) * (1 - fx));
+            join(l00, l11, ((fx - fy) * (fx - fy)) / 2);
+            join(l10, l01, ((fx + fy - 1) * (fx + fy - 1)) / 2);
+          }
+          const solid = own ? SOLIDC[ownCls]! : s > 0.5 ? 1 : 0;
           side(solid, l00, fx, fy, jit[(ti + 0x1555) & 0x3ffff]! * 0.25 * f);
+          if (own && f > 0) {
+            // A thread is a fine channel (or spur), half lost in the soil round it, not an inked line.
+            const r0 = pr;
+            const g0 = pg;
+            const b0 = pb;
+            const a0 = pa;
+            const T0 = pT;
+            const C0 = pC;
+            side(solid ? 0 : 1, l00, fx, fy);
+            const q = 0.4 * f;
+            pr = r0 + (pr - r0) * q;
+            pg = g0 + (pg - g0) * q;
+            pb = b0 + (pb - b0) * q;
+            pa = a0;
+            pT = T0;
+            pC = C0;
+          }
           let cl = pC;
           if (solid === mine) {
             // Out of focus, a cell keeps its own colour.
@@ -737,8 +791,8 @@ export class MacroLens {
               cl = pC = cls[ln]!;
             }
           }
-          // Within air, sky versus the nest's open space (and water) is just the nearest cell.
-          if (!solid && own) cl = cls[ln]!;
+          // Within air, sky versus the nest's open space (and water) is the thread's own.
+          if (!solid && own) cl = ownCls;
           if (cl === SKY) {
             // Fade the edge of the ground into the sky.
             const m = 0.5 - s;

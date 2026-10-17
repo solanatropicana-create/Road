@@ -3,11 +3,12 @@ import { CSS } from './style';
 import { WORK, Work, Task, ChamberKind, holdsStores } from '../sim/types';
 import type { Ant } from '../sim/ant';
 import type { Chamber } from '../sim/nest';
-import { SPEEDS, TICK_HZ, DAY_TICKS, TUNING } from '../config';
+import { SPEEDS, TICK_HZ, DAY_TICKS, TUNING, TEMPOS, Tempo } from '../config';
 import { ZONE_TINT, SAMARA_TONE } from '../render/palette';
 import { bodyLength } from '../render/antdraw';
 import { getPrefs, setPref } from './prefs';
 import { Pad } from './gamepad';
+import { Replay } from './replay';
 import { installErrorLog, errorLog, VERSION } from '../util/errors';
 import { latestSlot, listSlots, removeSlot, exportSlot, importSlot, type SlotMeta } from '../sim/slots';
 import { t, num, getLang, setLang, Lang, Vars } from './i18n';
@@ -111,6 +112,8 @@ export class UI {
   private root: HTMLElement;
   private els: Record<string, HTMLElement> = {};
   private spark!: HTMLCanvasElement;
+  /** The nest's time-lapse film. */
+  private replay: Replay;
   private markerMode = false;
   private lastPhase = '';
   private refresh = 0;
@@ -140,6 +143,11 @@ export class UI {
   constructor(game: Game, root: HTMLElement) {
     this.game = game;
     this.root = root;
+    this.replay = new Replay(game, async (name, data) => {
+      const ok = await this.offerFile(name, data);
+      if (ok) this.toast(t('replaySaved'));
+      return ok;
+    });
     try {
       if (localStorage.getItem(MODE_KEY) === 'guide') this.mode = 'guide';
     } catch {
@@ -295,6 +303,7 @@ export class UI {
       <h3 class="eyebrow">${t('growthTitle')}</h3>
       <div id="sparkbox"></div>
       <div class="sparkkey"><span><i class="k-pop"></i>${t('sparkWorkers')}</span><span><i class="k-food"></i>${t('sparkSeeds')}</span></div>
+      <div class="btns one"><button class="btn" id="film">${ICON.play}${t('replayOpen')}</button></div>
       <h3 class="eyebrow">${t('rooms')}</h3>
       <div id="crooms"></div>
       </div>`;
@@ -303,6 +312,7 @@ export class UI {
     this.spark.width = 520;
     this.spark.height = 96;
     (colony.querySelector('#sparkbox') as HTMLElement).appendChild(this.spark);
+    (colony.querySelector('#film') as HTMLElement).onclick = () => this.showFilm();
     (colony.querySelector('#crooms') as HTMLElement).onclick = (e) => {
       const b = (e.target as HTMLElement).closest('[data-loc]') as HTMLElement | null;
       if (!b) return;
@@ -434,6 +444,10 @@ export class UI {
       <h1 class="wordmark">Underfoot</h1>
       <div class="tagline">${t('tagline')}</div>
       <div class="latin"><i>Messor structor</i><span>·</span>${t('scaleNote')}</div>
+      <div class="tempo">
+        <div class="tempo-row"><span class="tempo-label">${t('tempoLabel')}</span>${this.tempoSeg('ttempo')}</div>
+        <div class="tempo-desc" id="ttempo-desc">${t(`tempo_${this.game.sim.tempo}D`)}</div>
+      </div>
       <div class="modes">
         <button class="mode${this.mode === 'watch' ? ' last' : ''}" data-mode="watch">${ICON.eye}<h3>${t('modeWatch')}</h3><p>${t('modeWatchD')}</p></button>
         <button class="mode${this.mode === 'guide' ? ' last' : ''}" data-mode="guide">${ICON.brain}<h3>${t('modeGuide')}</h3><p>${t('modeGuideD')}</p></button>
@@ -454,6 +468,7 @@ export class UI {
         this.beginLanding();
       };
     });
+    this.wireTempo(title, 'ttempo');
     title.querySelectorAll<HTMLElement>('#tlang [data-lang]').forEach((b) => {
       b.onclick = () => {
         setLang(b.dataset.lang as Lang);
@@ -524,11 +539,13 @@ export class UI {
       <dt>J</dt><dd>${t('keyJ')}</dd>
       <dt>M</dt><dd>${t('keyM')}</dd>
       <dt>X</dt><dd>${t('keyX')}</dd>
+      <dt>G</dt><dd>${t('keyG')}</dd>
       <dt>Q</dt><dd>${t('keyQ')}</dd>
       <dt>${t('keyArrows')}</dt><dd>${t('keyArrowsD')}</dd>
       <dt>${t('keyPad')}</dt><dd>${t('keyPadD')}</dd></dl>
       <div class="row langrow"><label>${t('modeLabel')}</label><div class="seg" id="modeseg">
         <button data-mode="watch" class="${this.mode === 'watch' ? 'on' : ''}">${t('modeWatch')}</button><button data-mode="guide" class="${this.mode === 'guide' ? 'on' : ''}">${t('modeGuide')}</button></div></div>
+      <div class="row langrow"><label>${t('tempoLabel')}</label>${this.tempoSeg('ktempo')}</div>
       <div class="row langrow"><label>${t('language')}</label><div class="seg" id="lang">
         <button data-lang="en" class="${lang === 'en' ? 'on' : ''}">English</button><button data-lang="tr" class="${lang === 'tr' ? 'on' : ''}">Türkçe</button></div></div>
       <div class="row langrow"><label>${t('music')}</label><div class="seg" id="musicseg">
@@ -577,6 +594,7 @@ export class UI {
       const day = new Date().toISOString().slice(0, 10);
       if (await this.offerFile(`underfoot-report-${day}.txt`, new Blob([this.problemReport()], { type: 'text/plain' }))) this.toast(t('reportSaved'), 7000);
     };
+    this.wireTempo(keys, 'ktempo');
     keys.querySelectorAll<HTMLElement>('#modeseg [data-mode]').forEach((b) => {
       b.onclick = () => {
         this.setMode(b.dataset.mode as Mode, true);
@@ -648,6 +666,29 @@ export class UI {
   }
 
   /** The title's site card: where this is, which ant, and what is special about this map. */
+  /** The three tempos as a segmented choice (the colony's own one lit). */
+  private tempoSeg(id: string): string {
+    const now = this.game.sim.tempo;
+    return `<div class="seg" id="${id}">${TEMPOS.map((k) => `<button data-tempo="${k}" class="${k === now ? 'on' : ''}" title="${t(`tempo_${k}D`)}">${t(`tempo_${k}`)}</button>`).join('')}</div>`;
+  }
+
+  /**
+   * A tempo choice sets the colony's pace at once (on the title screen, the
+   * colony about to land) and is remembered for the next new colony.
+   */
+  private wireTempo(root: HTMLElement, id: string): void {
+    root.querySelectorAll<HTMLElement>(`#${id} [data-tempo]`).forEach((b) => {
+      b.onclick = () => {
+        const k = b.dataset.tempo as Tempo;
+        this.game.sim.tempo = k;
+        setPref('tempo', k);
+        this.root.querySelectorAll<HTMLElement>('[data-tempo]').forEach((o) => o.classList.toggle('on', o.dataset.tempo === k));
+        const desc = this.root.querySelector('#ttempo-desc');
+        if (desc) desc.textContent = t(`tempo_${k}D`);
+      };
+    });
+  }
+
   private siteCard(): string {
     const sim = this.game.sim;
     const id = sim.site;
@@ -859,7 +900,10 @@ export class UI {
     const a = document.createElement('a');
     a.href = url;
     a.download = filename;
+    // (In the page, or some browsers lose the file's name.)
+    document.body.appendChild(a);
     a.click();
+    a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 4000);
     return true;
   }
@@ -957,6 +1001,9 @@ export class UI {
    * come while one is showing wait their turn (the oldest are dropped when
    * many arrive at once); everything is in the journal anyway.
    */
+  /** Until then (performance.now ms) news waits: a title card is on screen. */
+  private toastHold = 0;
+
   toast(html: string, ms = 5200, loc?: { x: number; y: number }): void {
     this.toastQueue.push({ html, ms, loc });
     while (this.toastQueue.length > 3) this.toastQueue.shift();
@@ -967,6 +1014,12 @@ export class UI {
     const box = this.els.toasts;
     if (!box) return;
     box.innerHTML = '';
+    const hold = this.toastHold - performance.now();
+    if (hold > 0 && this.toastQueue.length) {
+      this.toastShowing = true;
+      setTimeout(() => this.nextToast(), hold);
+      return;
+    }
     const item = this.toastQueue.shift();
     if (!item) {
       this.toastShowing = false;
@@ -1192,6 +1245,13 @@ export class UI {
     const montage = this.root.classList.contains('montage');
     this.root.classList.remove('cine');
     this.root.classList.remove('montage');
+    // A title card still up ("She comes down"): the panels and the news wait until it fades.
+    if (this.els.season!.classList.contains('on')) {
+      const settle = 3400;
+      this.toastHold = performance.now() + settle;
+      this.root.classList.add('settling');
+      setTimeout(() => this.root.classList.remove('settling'), settle);
+    }
     this.markerMode = false;
     // Founding is slow at 1×: carry on at 4× (the player can slow down).
     game.setSpeed(2);
@@ -1274,6 +1334,13 @@ export class UI {
   }
 
   /** Save the scene as a picture (X): the slice as drawn, with the colony's name and date in a corner. */
+  /** The nest's time-lapse (once there is a little of a nest to show). */
+  private showFilm(): void {
+    if (this.replay.open) return;
+    if (this.game.director.active) this.game.director.stop();
+    this.replay.show(this.root);
+  }
+
   private snapshot(): void {
     const game = this.game;
     const src = game.canvas;
@@ -1486,6 +1553,8 @@ export class UI {
         this.els.keys!.hidden = !this.els.keys!.hidden;
       } else if (e.key === 'x' || e.key === 'X') {
         this.snapshot();
+      } else if (e.key === 'g' || e.key === 'G') {
+        this.showFilm();
       } else if (e.key === 'm' || e.key === 'M') {
         this.toggleSound();
       } else if (e.key === 'j' || e.key === 'J') {
@@ -2008,7 +2077,7 @@ export class UI {
     const el = this.els.review!;
     el.innerHTML = `<div class="eyebrow">${t('yearN', { n: y.year })}${sim.names.colony ? ` · ${t(sim.names.colony)}` : ''}</div><h2>${t('rvTitle')}</h2>
       <dl>${rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl>
-      <p>${t('rvRest', { queen: sim.names.queen || '' })}</p><button class="btn" id="rvok">${t('rvOk')}</button>`;
+      <p>${t('rvRest', { queen: sim.names.queen || '' })}</p><div class="btns"><button class="btn" id="rvfilm">${ICON.play}${t('replayOpen')}</button><button class="btn" id="rvok">${t('rvOk')}</button></div>`;
     el.style.display = 'block';
     this.root.classList.add('modal');
     const close = (): void => {
@@ -2016,8 +2085,14 @@ export class UI {
       this.root.classList.remove('modal');
     };
     (el.querySelector('#rvok') as HTMLElement).onclick = close;
+    (el.querySelector('#rvfilm') as HTMLElement).onclick = () => {
+      close();
+      this.showFilm();
+    };
     // Watching on its own, the card steps aside by itself.
-    if (this.mode === 'watch') setTimeout(close, 16000);
+    if (this.mode === 'watch') setTimeout(() => {
+      if (el.style.display !== 'none') close();
+    }, 16000);
     this.note('j_yearReview', { y: y.year, n: col.adults, b: y.born, l: lostN });
   }
 
@@ -2182,7 +2257,9 @@ export class UI {
     el.style.display = 'block';
     el.innerHTML = `<div class="eyebrow">${t('dateYear', { date: dateText(sim), y: sim.cal.year(sim.simDays) })}</div><h2>${t('overTitle')}</h2>
       <p>${t(cause)}${rivals}${col.hadWorkers ? ` ${t('overPeak', { n: peak })}` : ''}</p>
-      <button class="btn" id="again" style="padding:8px 16px">${t('foundNew')}</button>`;
+      <div class="btns">${this.replay.ready() ? `<button class="btn" id="overfilm">${ICON.play}${t('replayOpen')}</button>` : ''}<button class="btn" id="again" style="padding:8px 16px">${t('foundNew')}</button></div>`;
     (el.querySelector('#again') as HTMLElement).onclick = () => location.reload();
+    const film = el.querySelector('#overfilm') as HTMLElement | null;
+    if (film) film.onclick = () => this.showFilm();
   }
 }

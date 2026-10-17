@@ -11,13 +11,14 @@ import { Colony } from './colony';
 import { Ant } from './ant';
 import { Particles } from './particles';
 import { Task, Carry, holdsStores } from './types';
-import { TUNING, TICK_HZ, DAY_TICKS, GROUND_Y } from '../config';
+import { TUNING, TICK_HZ, DAY_TICKS, GROUND_Y, PACE, Pace, Tempo } from '../config';
 import { pack, sampleRamp, PAL, mixRGB, SEED_TONE, SAMARA_TONE } from '../render/palette';
 import { HUMUS, LOAM, CLAY, SUBSOIL } from '../world/mat';
 import { Calendar, Season, forageWindow } from './calendar';
 import { SITES, SiteId, Variant, siteForSeed } from '../world/sites';
 import { Ecology } from './ecology';
 import { Critters } from './critters';
+import { Story } from './story';
 import { SoilLife } from './soil';
 import { Neighbour } from './rivals';
 import { Fog } from './fog';
@@ -96,6 +97,12 @@ export class Sim {
   readonly cal: Calendar;
   /** Which real place this slice is, and what makes this map of it different. */
   readonly site: SiteId;
+  /** How fast the colony lives against the calendar (chosen with a new colony; see PACE). */
+  tempo: Tempo = 'true';
+  /** The multipliers of the chosen tempo. (Saves from before tempos have none: Messor's own pace.) */
+  get pace(): Pace {
+    return PACE[this.tempo] ?? PACE.true;
+  }
   readonly variant: Variant;
   /** The soil's own life: roots, the water table, grubs, hidden hollows. */
   readonly soil: SoilLife;
@@ -120,6 +127,8 @@ export class Sim {
   readonly neighbours: Neighbour[] = [];
   /** Dead insects and worms lying whole on the ground (too heavy for one worker). */
   readonly carcasses = new Carcasses();
+  /** When each part of the nest was dug, for its time-lapse film. */
+  story: Story;
   /** Other young queens that came down after the same flight, and how many landed. */
   readonly foreigners: Ant[] = [];
   foreignLanded = 0;
@@ -206,6 +215,7 @@ export class Sim {
     this.nest.waterTop = gen.waterTop;
     this.fields = new Fields(this.world);
     this.colony = new Colony(this.world.size, this.world.w);
+    this.story = new Story(this.world.size);
     this.pher = new Float32Array(this.world.size);
     this.src = new Int32Array(this.world.size);
   }
@@ -766,7 +776,7 @@ export class Sim {
     // Plants grow and ripen in their season; the year turns for the meadow, shrub and tree.
     const air = this.cal.airMean(this.doy);
     // (Seedlings come up in the week or so after rain, while the topsoil is damp.)
-    this.plants.tick(this.doy, air, this.tick - this.lastRain < DAY_TICKS * 1.2);
+    this.plants.tick(this.doy, air, this.tick - this.lastRain < DAY_TICKS * 1.2, this.pace.plenty);
     this.eco.step(this);
     this.critters.step(this);
     this.soil.step(this);
@@ -808,6 +818,7 @@ export class Sim {
       this.carcasses.step(this);
       this.ground.step(this);
       if (this.foreigners.length) this.foundresses();
+      if (this.tick % Math.round(DAY_TICKS / 4) === 0 && this.phase !== 'failed') this.story.record(this);
     }
     if ((this.tick & 3) === 0) this.decayPheromone();
     this.particles.step();
