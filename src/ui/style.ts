@@ -430,8 +430,8 @@ input[type=range] { width: 100%; accent-color: var(--accent); }
   #bar { left: 8px; right: 8px; bottom: 8px; transform: none; width: auto; max-width: none; display: grid; grid-template-columns: auto 1fr; gap: 6px; padding: 6px; }
   #bar #speeds { grid-column: 1 / -1; }
   #bar .seg button { padding: 8px 4px; }
-  #drawer { top: auto; bottom: 112px; left: 8px; right: 8px; width: auto; max-height: 50vh; }
-  #keys { bottom: 112px; left: 8px; right: 8px; width: auto; transform: none; max-height: calc(100vh - 170px); overflow: auto; }
+  #drawer { top: auto; bottom: 126px; left: 8px; right: 8px; width: auto; max-height: 50vh; }
+  #keys { bottom: 126px; left: 8px; right: 8px; width: auto; transform: none; max-height: calc(100vh - 184px); overflow: auto; }
   #toasts { top: 50px; width: calc(100vw - 24px); min-width: 0; }
   .toast { font-size: 12px; }
   #inspect { top: 50px; bottom: auto; left: 8px; right: 8px; width: auto; padding: 8px 12px; }

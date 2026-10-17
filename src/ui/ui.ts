@@ -1257,8 +1257,9 @@ export class UI {
       setTimeout(() => this.root.classList.remove('settling'), settle);
     }
     this.markerMode = false;
-    // Founding is slow at 1×: carry on at 4× (the player can slow down).
-    game.setSpeed(2);
+    // Founding is slow at 1×: carry on at 4× (the player can slow down); at the
+    // faster tempos the colony already lives quicker, and 2× keeps the ants readable.
+    game.setSpeed(game.sim.tempo === 'true' ? 2 : 1);
     this.syncBar();
     this.syncBrain();
     if (montage) setTimeout(() => this.cineCaption('', '', ''), 5000);
