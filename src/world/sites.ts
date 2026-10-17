@@ -256,6 +256,19 @@ export interface Variant {
   /** Workers of the neighbouring Messor colony beyond one edge (0: none in reach), and which edge. */
   neighbour: number;
   neighbourSide: number;
+  /** How much the horizon boundaries wave (1 = the site's usual), and which way the beds dip. */
+  waviness: number;
+  tilt: number;
+  /** Beds of sand or gravel lying in the soil. */
+  lenses: number;
+  /** Channels left by roots long dead and rotted: open, hair-thin to a few mm, winding down. */
+  rootChannels: number;
+  /** Hidden hollows (under a stone, an old collapsed den) waiting to be broken into. */
+  hollows: number;
+  /** Chafer grubs curled in the topsoil by the roots. */
+  grubs: number;
+  /** Depth of the water table below the ground (mm; 0: below the slice). */
+  waterTable: number;
   traits: Trait[];
 }
 
@@ -279,8 +292,24 @@ export function makeVariant(site: SiteId, seed: number): Variant {
     antlions: site === 'sand' ? rng.int(1, 3) : site === 'anatolia' && rng.chance(0.35) ? 1 : 0,
     neighbour: rng.chance(0.8) ? Math.round(rng.range(250, 1400)) : 0,
     neighbourSide: rng.chance(0.5) ? -1 : 1,
+    waviness: 0,
+    tilt: 0,
+    lenses: 0,
+    rootChannels: 0,
+    hollows: 0,
+    grubs: 0,
+    waterTable: 0,
     traits: [],
   };
+  // (Drawn from a second stream, so the maps made before these existed keep their other features.)
+  const r2 = new Rng(seed * 53 + 11);
+  v.waviness = r2.range(0.6, 2.4);
+  v.tilt = r2.range(-1, 1);
+  v.lenses = r2.chance(0.55) ? r2.int(1, 2) : 0;
+  v.rootChannels = r2.int(3, 12) + (v.tree ? 4 : 0) + (v.shrub ? 2 : 0);
+  v.hollows = r2.int(2, 6);
+  v.grubs = r2.chance(0.7) ? r2.int(2, 7) : 0;
+  v.waterTable = v.wetBottom ? r2.range(260, 400) : r2.chance(0.2) ? r2.range(380, 480) : 0;
   const t = v.traits;
   if (v.depthScale > 1.15) t.push({ key: site === 'limestone' ? 'tr_deeperSoil' : 'tr_deepTopsoil', sign: 1 });
   if (v.depthScale < 0.85) t.push({ key: site === 'limestone' ? 'tr_shallowRock' : 'tr_thinTopsoil', sign: -1 });
@@ -293,7 +322,11 @@ export function makeVariant(site: SiteId, seed: number): Variant {
   if (v.burrows) t.push({ key: `tr_burrows_${def.burrower}`, sign: 0 });
   if (v.tree) t.push({ key: 'tr_tree', sign: 0 });
   if (v.shrub) t.push({ key: 'tr_shrub', sign: 1 });
-  if (v.wetBottom) t.push({ key: 'tr_wetBottom', sign: -1 });
+  if (v.waterTable && v.waterTable < 400) t.push({ key: 'tr_wetBottom', sign: -1 });
+  if (v.waviness > 1.9) t.push({ key: 'tr_wavyBeds', sign: 0 });
+  if (v.rootChannels >= 12) t.push({ key: 'tr_rootChannels', sign: 1 });
+  if (v.hollows >= 5) t.push({ key: 'tr_hollows', sign: 1 });
+  if (v.grubs >= 5) t.push({ key: 'tr_grubs', sign: 1 });
   if (v.shards) t.push({ key: 'tr_shards', sign: 0 });
   if (v.nymphs) t.push({ key: 'tr_nymphs', sign: 1 });
   if (v.antlions) t.push({ key: 'tr_antlions', sign: -1 });

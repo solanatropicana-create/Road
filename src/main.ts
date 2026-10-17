@@ -5,9 +5,11 @@ import { UI } from './ui/ui';
 import { TICK_HZ, SPEEDS, DAY_TICKS } from './config';
 import type { Ant } from './sim/ant';
 import { Director } from './ui/director';
-import { saveSim, loadSim, SAVE_KEY, META_KEY } from './sim/save';
+import { saveSim, loadSim } from './sim/save';
+import { initSlots, latestSlot, newSlotId, readSlot, removeSlot, writeSlot } from './sim/slots';
 import { SITE_IDS, SiteId, siteForSeed } from './world/sites';
 import { Cinematics, MONTAGE_SPEED } from './ui/cinematics';
+import { Soundscape } from './ui/sound';
 
 /**
  * Owns the loop: a fixed-rate simulation, rendered every animation frame.
@@ -19,6 +21,8 @@ export class Game {
   cam: Camera;
   ui: UI;
   director: Director;
+  /** The slice's sound (wakes on the first click or key). */
+  readonly sound = new Soundscape();
   /** The landing sequence and the founding montage. */
   cine: Cinematics;
   speed = 1;
@@ -33,8 +37,10 @@ export class Game {
   private tpsCount = 0;
   private tpsTime = 0;
 
-  private canvas: HTMLCanvasElement;
+  readonly canvas: HTMLCanvasElement;
   private saving = false;
+  /** The slot this colony is kept in (null until its first save). */
+  slotId: string | null = null;
   /** Bumped when the save is cleared, so a save already under way doesn't write it back. */
   private saveGen = 0;
   private lastSave = performance.now();
@@ -49,10 +55,16 @@ export class Game {
     this.director = new Director(this);
     this.cine = new Cinematics(this);
     this.ui = new UI(this, uiRoot);
+    // The kept colonies are read in the background; the title screen lists them when they're in.
+    void initSlots().then(() => this.ui.slotsReady());
     this.resize();
     this.cam.fit();
     this.cam.zoom = this.cam.tzoom;
     addEventListener('resize', () => this.resize());
+    // Browsers let sound start only from a gesture.
+    const wake = (): void => this.sound.wake();
+    addEventListener('pointerdown', wake);
+    addEventListener('keydown', wake);
     // Keep the colony when the tab goes away or closes.
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') void this.save();
@@ -81,8 +93,8 @@ export class Game {
     try {
       const { meta, blob } = await saveSim(this.sim, { journal: this.ui.journalData() });
       if (gen !== this.saveGen) return;
-      localStorage.setItem(SAVE_KEY, blob);
-      localStorage.setItem(META_KEY, JSON.stringify(meta));
+      this.slotId ??= newSlotId();
+      await writeSlot({ ...meta, id: this.slotId, colony: this.sim.names.colony, queen: this.sim.names.queen }, blob);
     } catch {
       // Private window, full storage: the colony just won't persist.
     } finally {
@@ -95,19 +107,16 @@ export class Game {
   /** Forget the saved colony (it died, or the player started over). */
   clearSave(): void {
     this.saveGen++;
-    try {
-      localStorage.removeItem(SAVE_KEY);
-      localStorage.removeItem(META_KEY);
-    } catch {
-      // nothing stored
-    }
+    if (this.slotId) void removeSlot(this.slotId);
+    this.slotId = null;
   }
 
   /** Bring back the saved colony in place of the current one. */
-  async resume(): Promise<boolean> {
+  async resume(id = latestSlot()?.id): Promise<boolean> {
+    if (!id) return false;
     let blob: string | null = null;
     try {
-      blob = localStorage.getItem(SAVE_KEY);
+      blob = await readSlot(id);
     } catch {
       return false;
     }
@@ -115,6 +124,8 @@ export class Game {
     try {
       const { sim, extra } = await loadSim(blob);
       this.sim = sim;
+      this.slotId = id;
+      this.saveGen++;
       this.lastSaveTick = sim.tick;
       this.renderer = new Renderer(this.canvas, sim.world, sim.seed, sim.site);
       this.selected = null;
@@ -132,6 +143,8 @@ export class Game {
   /** A fresh, unlanded world from another seed (the title screen's "another site"). */
   newWorld(seed: number, site: SiteId = siteForSeed(seed)): void {
     this.sim = new Sim(seed, site);
+    this.slotId = null;
+    this.saveGen++;
     this.renderer = new Renderer(this.canvas, this.sim.world, seed, site);
     this.selected = null;
     this.director.stop();
@@ -143,7 +156,7 @@ export class Game {
 
   /**
    * Frame what the colony knows of its world (before the landing, the whole
-   * meadow). The camera is free to roam the slice; the fog shows what is unknown.
+   * meadow). The camera cannot leave what is known (see bound()).
    */
   fitKnown(): void {
     const s = this.sim;
@@ -151,12 +164,51 @@ export class Game {
       this.cam.fit();
       return;
     }
+    this.cam.follow = null;
+    this.cam.fit();
+  }
+
+  /**
+   * The camera sees only the colony's world: before the landing the whole
+   * meadow, after it the known part, which starts as a hand's breadth around
+   * the queen and grows as the colony explores and digs, the nest in the middle.
+   */
+  private bound(): void {
+    const s = this.sim;
+    const w = s.world;
+    if (!s.nest.founded || this.cine.busy) {
+      this.cam.setBounds(0, 0, w.w, w.h);
+      return;
+    }
     const v = s.view;
-    const top = Math.max(0, s.world.ground[Math.round((v.x0 + v.x1) / 2)]! - 70);
-    this.cam.fitRect(v.x0, top, v.x1, Math.max(v.y1, top + 140));
+    // Some air above the ground: little while the colony is a hole in the
+    // ground, enough for the stems over it once it is a big nest.
+    let g = w.ground[s.nest.foundX]!;
+    for (let x = Math.max(0, Math.round(v.x0)); x < Math.min(w.w, v.x1); x += 4) g = Math.min(g, w.ground[x]!);
+    const air = Math.max(60, Math.min(110, (v.y1 - g) * 0.4));
+    this.cam.setBounds(v.x0, Math.max(0, g - air), v.x1, v.y1);
+  }
+
+  /** Until when a moment worth watching holds the documentary at normal speed (performance.now ms). */
+  private slowUntil = 0;
+  /** Something big is happening on camera: let it play out at 1x for a little while. */
+  slowMo(seconds = 12): void {
+    if (this.speed > 1) this.slowUntil = performance.now() + seconds * 1000;
+  }
+  /** A documentary time-lapse running until then (performance.now ms): the film runs faster. */
+  private lapseUntil = 0;
+  timeLapse(seconds: number): void {
+    this.lapseUntil = performance.now() + seconds * 1000;
+  }
+  get lapsing(): boolean {
+    return this.director.active && performance.now() < this.lapseUntil;
+  }
+  get slowed(): boolean {
+    return this.director.active && performance.now() < this.slowUntil;
   }
 
   setSpeed(i: number): void {
+    this.slowUntil = 0;
     this.speed = SPEEDS[Math.max(0, Math.min(SPEEDS.length - 1, i))]!;
     this.paused = false;
   }
@@ -167,13 +219,15 @@ export class Game {
   }
 
   private frame(now: number): void {
+    // The next frame is asked for first: a slip in one frame's drawing must never stop the colony.
+    requestAnimationFrame((t) => this.frame(t));
     const dt = Math.min(0.1, (now - this.last) / 1000);
     this.last = now;
     // Time stands still until the queen lands, so a seed always starts from the same meadow.
     if (!this.paused && this.sim.phase !== 'choose') {
       // Winter rest goes by fast unless the player wants to watch it.
       const winter = this.winterSkip && this.sim.dormant && this.sim.phase !== 'failed';
-      this.acc += dt * TICK_HZ * (this.cine.montage ? MONTAGE_SPEED : winter ? WINTER_SPEED : this.speed);
+      this.acc += dt * TICK_HZ * (this.cine.montage ? MONTAGE_SPEED : winter ? WINTER_SPEED : this.slowed ? 1 : this.lapsing ? Math.max(this.speed * 6, 12) : this.speed);
       // Never spend more than ~12 ms of a frame simulating; drop the rest.
       const start = performance.now();
       let n = 0;
@@ -196,18 +250,19 @@ export class Game {
     }
     if (this.selected && !this.selected.alive) this.selected = null;
     this.cine.update(dt);
+    this.bound();
     this.renderer.setFlight(this.cine.queenInFlight(), this.cine.swarm);
     if (this.cine.busy || this.cine.montage) {
       // The sequence drives the camera.
     } else if (this.director.active) this.director.update(dt);
     else this.cam.follow = this.selected ? { x: this.selected.x, y: this.selected.y - 2 } : this.cam.follow;
     this.cam.update(dt);
-    this.renderer.render(this.sim, this.cam, dt, this.paused ? 0 : this.speed, this.ui.cinema ? null : this.selected);
+    this.sound.update(this, dt);
+    this.renderer.render(this.sim, this.cam, dt, this.paused ? 0 : this.speed, this.ui.cinema ? null : this.selected ?? this.director.focus);
     this.ui.update(dt);
     // Autosave every few in-game hours (not more than every few seconds), and at least once a minute.
     const due = this.sim.tick - this.lastSaveTick >= DAY_TICKS / 6 && now - this.lastSave > 4000;
     if (due || now - this.lastSave > 60000) void this.save();
-    requestAnimationFrame((t) => this.frame(t));
   }
 }
 

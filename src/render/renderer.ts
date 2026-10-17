@@ -1,4 +1,5 @@
 import { World } from '../world/world';
+import { PACKED } from '../world/physics';
 import {
   EMPTY, HUMUS, LOAM, CLAY, SUBSOIL, GRAVEL, STONE, ROOT, SAND, WATER, STEM, LEAF, FLOWER,
   SEED, REFUSE, LITTER, FRUIT, BEDROCK, SOLID, SANDY, LIME, ROCK, WOOD, TWIG, BERRY, PREY,
@@ -11,7 +12,8 @@ import { Backdrop, skyAt } from './backdrop';
 import { Camera } from './camera';
 import { AntPainter } from './antdraw';
 import { MacroLens, fibreAlpha, isPiece, heapy } from './macro';
-import { drawCritters, drawCarcasses } from './critterdraw';
+import { drawCritters, drawCarcasses, drawMorsels } from './critterdraw';
+import { TreeLife } from './treelife';
 import type { Sim } from '../sim/sim';
 import type { Ant } from '../sim/ant';
 import { TUNING, GROUND_Y } from '../config';
@@ -58,6 +60,9 @@ export class Renderer {
   private base: Uint32Array;
   private backdrop: Backdrop;
   private world: World;
+  /** The tree at the slice's edge (its trunk is shaded round), if any, and the life on its bark. */
+  private tree: { x: number; r: number } | null = null;
+  readonly treeLife = new TreeLife();
   private lutR = new Uint16Array(512);
   private lutG = new Uint16Array(512);
   private lutB = new Uint16Array(512);
@@ -176,23 +181,75 @@ export class Renderer {
       case CLAY: c = sampleRamp(PAL.clay, tone); break;
       case SUBSOIL: c = sampleRamp(PAL.subsoil, tone); break;
       case GRAVEL: c = sampleRamp(PAL.gravel, tone); break;
-      case STONE: c = sampleRamp(PAL.stone[w.tint[i]! & 7] ?? PAL.stone[0]!, tone); break;
+      case STONE: {
+        c = sampleRamp(PAL.stone[w.tint[i]! & 7] ?? PAL.stone[0]!, tone);
+        // A stone is a rounded lump, lit from above: a pale upper rim, its belly in shadow.
+        const W = w.w;
+        let l = 0, r = 0, u = 0, d = 0;
+        while (l < 12 && x - l - 1 >= 0 && w.mat[i - l - 1] === STONE) l++;
+        while (r < 12 && x + r + 1 < W && w.mat[i + r + 1] === STONE) r++;
+        while (u < 12 && y - u - 1 >= 0 && w.mat[i - (u + 1) * W] === STONE) u++;
+        while (d < 12 && y + d + 1 < w.h && w.mat[i + (d + 1) * W] === STONE) d++;
+        const sx = (l - r) / (l + r + 1);
+        const sy = (u - d) / (u + d + 1);
+        const nz = Math.sqrt(Math.max(0, 1 - Math.min(1, sx * sx * 0.5 + sy * sy)));
+        const lit = 0.74 + 0.4 * Math.max(0, -0.25 * sx - 0.75 * sy + 0.6 * nz) - (sy > 0.6 ? (sy - 0.6) * 0.35 : 0);
+        c = [Math.min(255, c[0] * lit), Math.min(255, c[1] * lit), Math.min(255, c[2] * lit)];
+        break;
+      }
       case ROOT: {
         // Fine roots: pale threads in whatever soil they run through.
         const soil = sampleRamp(soilRamp(this.guessSoil(x, y)), 0.35 + tone * 0.3);
-        c = mixRGB(soil, [214, 190, 146], 0.22 + tone * 0.12);
+        // (Kept faint: the grass's root mat runs the whole width of the slice, and drawn
+        // bold it reads as a busy, repeating pattern from afar. Close up they are fibres.)
+        c = mixRGB(soil, [214, 190, 146], 0.11 + tone * 0.08);
         break;
       }
       case BEDROCK: c = sampleRamp(PAL.bedrock, tone); break;
       case SANDY: c = sampleRamp(PAL.sandy, tone); break;
       case LIME: c = sampleRamp(PAL.lime, tone); break;
       case ROCK: c = sampleRamp(PAL.rock, tone); break;
-      case WOOD: c = sampleRamp(PAL.wood, tone); break;
+      case WOOD: {
+        c = sampleRamp(PAL.wood, tone);
+        const t = this.tree;
+        const g = w.ground[x]!;
+        if (t && y < g) {
+          // The trunk above the ground is a column, not a slab: lit on the side
+          // toward the light, falling off round to the shadowed side, with moss
+          // on the cool side near its foot.
+          const above = g - y;
+          const r = t.r + (above < 40 ? (40 - above) * 0.7 : 0);
+          const u = clamp((x - t.x) / r, -1, 1);
+          const nz = Math.sqrt(1 - u * u);
+          const lit = 0.42 + 0.78 * Math.max(0, -0.45 * u + 0.89 * nz);
+          c = [c[0] * lit, c[1] * lit, c[2] * lit];
+          const moss = clamp((u - 0.25) * 1.6, 0, 1) * clamp(1 - above / 120, 0, 1) * (0.5 + 0.5 * Math.sin(y * 0.21 + x * 0.05));
+          if (moss > 0.05) c = mixRGB(c, [86, 104, 52], moss * 0.55);
+        } else {
+          // A woody root in the soil is a rounded limb, not a hole: lit along its
+          // upper side, shadowed beneath, with a grain running along it.
+          const W = w.w;
+          let up = 0;
+          let dn = 0;
+          while (up < 10 && y - up - 1 >= 0 && w.mat[i - (up + 1) * W] === WOOD) up++;
+          while (dn < 10 && y + dn + 1 < w.h && w.mat[i + (dn + 1) * W] === WOOD) dn++;
+          const s = (up + 0.5) / (up + dn + 1) * 2 - 1;
+          const nz = Math.sqrt(Math.max(0, 1 - s * s));
+          const lit = 0.62 + 0.62 * Math.max(0, -0.55 * s + 0.83 * nz);
+          const grain = 0.9 + 0.1 * Math.sin(x * 0.23 + y * 1.7 + Math.sin(x * 0.05) * 3);
+          c = sampleRamp(PAL.wood, 0.25 + tone * 0.5);
+          c = [c[0] * lit * grain, c[1] * lit * grain, c[2] * lit * grain];
+          if (up === 0) c = mixRGB(c, [150, 118, 84], 0.35);
+        }
+        break;
+      }
       case SAND: {
         // Excavated soil dries paler than the face it came from, and looks grainier.
         const src = soilRamp(w.tint[i]! & 0x3f);
         const grain = ((i * 2654435761) >>> 28) / 16;
-        c = mixRGB(sampleRamp(src, tone * 0.7 + grain * 0.3), [230, 215, 190], 0.14);
+        // Loose fill inside the nest (a fall, spoil not yet carried out) stands out paler
+        // still against the packed face of the walls.
+        c = mixRGB(sampleRamp(src, tone * 0.7 + grain * 0.3), [230, 215, 190], w.bg[i] === 1 && !(w.tint[i]! & PACKED) ? 0.3 : 0.14);
         break;
       }
       case SEED:
@@ -232,10 +289,13 @@ export class Renderer {
       const upOpen = !SOLID[w.mat[up]!];
       const dnOpen = !SOLID[w.mat[dn]!];
       if (upOpen) {
-        const f = w.bg[up] === 0 ? 1.16 : 1.1;
+        const f = w.bg[up] === 0 ? 1.16 : 1.14;
         c = [c[0] * f, c[1] * f, c[2] * f];
       } else if (dnOpen && w.bg[dn] === 1) {
-        c = [c[0] * 0.72, c[1] * 0.72, c[2] * 0.74];
+        c = [c[0] * 0.66, c[1] * 0.66, c[2] * 0.68];
+      } else if (x > 0 && x < w.w - 1 && ((!SOLID[w.mat[i - 1]!] && w.bg[i - 1] === 1) || (!SOLID[w.mat[i + 1]!] && w.bg[i + 1] === 1))) {
+        // The cut face of a tunnel's side wall: a thin edge, so the nest reads as hollows in the soil.
+        c = [c[0] * 0.8, c[1] * 0.8, c[2] * 0.82];
       }
     }
     const det = this.detail[i]!;
@@ -262,7 +322,7 @@ export class Renderer {
     const w = this.world;
     const src = w.tint[i]! & 0x3f || this.guessSoil(x, y);
     const tone = w.tone[i]! / 255;
-    let c = mixRGB(sampleRamp(soilRamp(src), 0.25 + tone * 0.5), BACKWALL_DARK, 0.42);
+    let c = mixRGB(sampleRamp(soilRamp(src), 0.25 + tone * 0.5), BACKWALL_DARK, 0.5);
     const z = w.zone[i]!;
     if (z) {
       const kind = this.zoneKinds[z - 1];
@@ -275,7 +335,10 @@ export class Renderer {
     let solids = 0;
     if (SOLID[w.mat[i - 1]!]) solids++;
     if (SOLID[w.mat[i + 1]!]) solids++;
-    const f = 1 - solids * 0.06 - up * 0.07 + (SOLID[w.mat[i + w.w]!] ? 0.05 : 0);
+    // Hollows have depth: the back wall is in shadow where the walls close in, open in the middle.
+    let near = 0;
+    for (const d of [-w.w - 1, -w.w + 1, w.w - 1, w.w + 1, -2, 2, -2 * w.w, 2 * w.w]) if (SOLID[w.mat[i + d]!]) near++;
+    const f = 1 - solids * 0.07 - up * 0.07 - near * 0.025 + (SOLID[w.mat[i + w.w]!] ? 0.05 : 0);
     return [c[0] * f, c[1] * f, c[2] * f];
   }
 
@@ -458,6 +521,85 @@ export class Renderer {
    * The dig plan as a survey overlay: amber dots on soil the colony means to
    * remove, and a pin where the player asked it to grow.
    */
+  /** A soft pulse over each nestmate or piece of brood buried alive, so the eye finds them under the fall. */
+  private drawBuried(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }, z: number): void {
+    const list = sim.ground.buried;
+    if (!list.length) return;
+    const ctx = this.ctx;
+    const ph = (performance.now() / 1000) * 2.4;
+    ctx.save();
+    ctx.lineWidth = Math.max(0.2, 1.3 / z);
+    for (const b of list) {
+      if (b.x < view.x0 - 4 || b.x > view.x1 + 4 || b.y < view.y0 - 4 || b.y > view.y1 + 4) continue;
+      if (!this.known(sim, b.x, b.y)) continue;
+      // (Brood are listed under negative ids: keep the phase in 0..1.)
+      const k = (((ph + b.id * 0.37) % 1) + 1) % 1;
+      ctx.strokeStyle = `rgba(244,206,128,${0.75 * (1 - k)})`;
+      ctx.beginPath();
+      ctx.arc(b.x + 0.5, b.y + 0.5, 1.2 + k * 3.2, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  /**
+   * Hairline cracks in the roof of a room under strain (see Ground): more,
+   * longer and darker as the strain builds toward a cave-in.
+   */
+  private drawCracks(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }, z: number): void {
+    const g = sim.ground;
+    if (!g.strained) return;
+    const ctx = this.ctx;
+    const w = this.world;
+    const path = new Path2D();
+    let worst = 0;
+    for (const c of sim.nest.chambers) {
+      const st = g.strain[c.id] ?? 0;
+      if (!c.ready || st < 0.15) continue;
+      if (c.cx + c.w < view.x0 || c.cx - c.w > view.x1 || c.floorY < view.y0 || c.floorY - c.h * 2 > view.y1) continue;
+      if (!this.known(sim, c.cx, c.floorY - c.h)) continue;
+      const r = g.roof(sim, c);
+      if (!r) continue;
+      worst = Math.max(worst, st);
+      const n = 1 + Math.floor(Math.min(1, st) * 8);
+      for (let k = 0; k < n; k++) {
+        // Fixed per room and crack, so the cracks stay put and only grow.
+        const h = (c.id * 7919 + k * 104729) >>> 0;
+        const u = ((h % 1000) / 1000) * 0.7 + 0.15;
+        let x = Math.round(r.x0 + r.span * u);
+        const top = r.top.get(x);
+        if (top === undefined) continue;
+        let y = top;
+        path.moveTo(x + 0.5, y);
+        const len = 2 + Math.min(1, st) * (4 + ((h >> 10) % 5));
+        for (let s = 0; s < len; s++) {
+          const j = ((h >> (s % 13)) & 3) - 1.5;
+          const nx = x + j * 0.45;
+          // Only through soil: a crack stops at the next hollow.
+          if (w.mat[(y - 1) * w.w + Math.round(nx)] === EMPTY) break;
+          x = nx;
+          y -= 1;
+          path.lineTo(x + 0.5, y);
+        }
+      }
+    }
+    if (!worst) return;
+    // A fissure: its lit lip a hair below and to the side, then the dark split itself.
+    const a = 0.35 + 0.6 * Math.min(1, worst);
+    ctx.save();
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.translate(0.22, 0.22);
+    ctx.strokeStyle = `rgba(214,184,140,${a * 0.55})`;
+    ctx.lineWidth = Math.max(0.3, 1.4 / z);
+    ctx.stroke(path);
+    ctx.translate(-0.22, -0.22);
+    ctx.strokeStyle = `rgba(10,6,4,${a})`;
+    ctx.lineWidth = Math.max(0.35, 1.8 / z);
+    ctx.stroke(path);
+    ctx.restore();
+  }
+
   private drawPlan(sim: Sim, view: { x0: number; y0: number; x1: number; y1: number }, z: number, dt: number): void {
     this.planFlash = Math.max(0, this.planFlash - dt);
     const a = this.planAlways ? 1 : Math.min(1, this.planFlash / 1.5);
@@ -658,8 +800,36 @@ export class Renderer {
     const l = this.lightAt(mx, w.ground[mx]! - 3);
     // Snow throws back what light there is: never as dark as the soil at night.
     const lit = (c: number, k: number): number => Math.min(255, c * Math.max(l[k]!, 0.5));
-    ctx.fillStyle = `rgb(${lit(232, 0) | 0},${lit(238, 1) | 0},${lit(246, 2) | 0})`;
+    // A snowpack in section: bright at the top, settling bluish-grey and denser toward the ground.
+    let yTop = Infinity;
+    let yBase = -Infinity;
+    for (let k = 0; k < top.length; k++) {
+      yTop = Math.min(yTop, top[k]!);
+      yBase = Math.max(yBase, base[k]!);
+    }
+    const grad = ctx.createLinearGradient(0, yTop, 0, yTop + d + 2);
+    grad.addColorStop(0, `rgb(${lit(240, 0) | 0},${lit(244, 1) | 0},${lit(250, 2) | 0})`);
+    grad.addColorStop(0.55, `rgb(${lit(214, 0) | 0},${lit(222, 1) | 0},${lit(236, 2) | 0})`);
+    grad.addColorStop(1, `rgb(${lit(170, 0) | 0},${lit(182, 1) | 0},${lit(204, 2) | 0})`);
+    ctx.fillStyle = grad;
     ctx.fill(p);
+    // The layers of separate snowfalls, faint lines following the top.
+    if (d > 4) {
+      ctx.save();
+      ctx.clip(p);
+      ctx.lineWidth = 0.35;
+      for (const f of [0.3, 0.55, 0.78]) {
+        const layer = new Path2D();
+        for (let k = 0; k < top.length; k++) {
+          const y = top[k]! + (base[k]! - top[k]!) * f + Math.sin((x0 + k) * 0.05 + f * 9) * 0.6;
+          if (k === 0) layer.moveTo(x0 + 0.5, y);
+          else layer.lineTo(x0 + k + 0.5, y);
+        }
+        ctx.strokeStyle = `rgba(${lit(150, 0) | 0},${lit(164, 1) | 0},${lit(190, 2) | 0},0.35)`;
+        ctx.stroke(layer);
+      }
+      ctx.restore();
+    }
     // A brighter crust along the top edge.
     const edge = new Path2D();
     edge.moveTo(x0 + 0.5, top[0]!);
@@ -856,7 +1026,6 @@ export class Renderer {
     const eco = sim.eco;
     const doy = sim.doy;
     const cover = eco.leafCover(doy);
-    if (cover <= 0) return;
     const sun = Math.max(0, Math.sin((solar - 0.25) * Math.PI * 2)) * (1 - 0.7 * Math.min(1, sim.cloud));
     if (sun < 0.05) return;
     const w = this.world;
@@ -870,11 +1039,13 @@ export class Renderer {
       p.closePath();
       this.airPath = p;
     }
+    if (cover <= 0) return;
     const x0 = Math.max(0, view.x0);
     const x1 = Math.min(w.w, view.x1);
     if (x1 <= x0) return;
     ctx.save();
     ctx.clip(this.airPath);
+    ctx.globalCompositeOperation = 'source-over';
     const g = ctx.createLinearGradient(x0, 0, x1, 0);
     for (let k = 0; k <= 4; k++) {
       const x = x0 + ((x1 - x0) * k) / 4;
@@ -908,6 +1079,26 @@ export class Renderer {
     for (const f of sim.eco.fallers) {
       if (f.x < view.x0 - 4 || f.x > view.x1 + 4 || f.y < view.y0 - 4 || f.y > view.y1 + 4) continue;
       const l = this.lightAt(f.x, Math.max(f.y, 0));
+      if (f.samara) {
+        // A samara: the seed and its papery wing, turning as it comes down.
+        const look = seedLook(f.tone);
+        const c = look.col;
+        const spin = f.samara === 'maple' ? f.t * 0.45 : Math.sin(f.t * 0.07 + f.tone) * 1.2;
+        ctx.save();
+        ctx.translate(f.x, f.y);
+        ctx.rotate(spin);
+        ctx.fillStyle = `rgba(${(c[0] * l[0]) | 0},${(c[1] * l[1]) | 0},${(c[2] * l[2]) | 0},0.85)`;
+        ctx.beginPath();
+        if (f.samara === 'maple') ctx.ellipse(1.6, 0, 2.6, 0.9 + Math.abs(Math.cos(spin)) * 0.3, 0, 0, Math.PI * 2);
+        else ctx.ellipse(0, 0, 1.6, 1.6 * (0.4 + 0.6 * Math.abs(Math.cos(spin * 0.7))), 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = `rgb(${(c[0] * l[0] * 0.55) | 0},${(c[1] * l[1] * 0.5) | 0},${(c[2] * l[2] * 0.45) | 0})`;
+        ctx.beginPath();
+        ctx.ellipse(0, 0, 0.6, 0.45, 0, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+        continue;
+      }
       if (f.fruit) {
         const c = fruitColor(f.tone);
         ctx.fillStyle = `rgb(${(c[0] * l[0]) | 0},${(c[1] * l[1]) | 0},${(c[2] * l[2]) | 0})`;
@@ -937,6 +1128,10 @@ export class Renderer {
 
   /** speed: sim time per real time (0 when paused). */
   render(sim: Sim, cam: Camera, dt: number, speed = 1, selected: Ant | null = null): void {
+    if (this.tree !== sim.tree) {
+      this.tree = sim.tree;
+      this.world.dirtyAll = true;
+    }
     this.time += dt;
     this.lastDt = dt;
     const w = this.world;
@@ -981,14 +1176,20 @@ export class Renderer {
     this.applyLight(lr);
     this.wctx.putImageData(this.img, 0, 0, vr.x0, vr.y0, vr.x1 - vr.x0 + 1, vr.y1 - vr.y0 + 1);
 
-    this.backdrop.draw(solar, this.time, w.w, w.ground, sim.weather.rain, sim.cal.month(doy), sim.snow);
+    // The tree beyond the glass: its boughs and their leaves through the year.
+    this.backdrop.tree = sim.tree;
+    this.backdrop.treeKind = sim.eco.treeKind ?? 'elm';
+    this.backdrop.leafCover = sim.eco.leafCover(doy);
+    this.backdrop.autumn = clamp((doy - 262) / 40, 0, 1);
+    this.backdrop.draw(solar, this.time, w.w, w.ground, sim.weather.rain, sim.cal.month(doy), sim.snow, sim.gust());
 
     const ctx = this.ctx;
     const W = this.canvas.width;
     const H = this.canvas.height;
     const z = cam.zoom * this.dpr;
-    const ox = W / 2 - cam.x * z;
-    const oy = H / 2 - cam.y * z;
+    const jolt = cam.jolt();
+    const ox = W / 2 - cam.x * z + jolt.x;
+    const oy = H / 2 - cam.y * z + jolt.y;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const sky = skyAt(solar);
     this.skyTop = sky.top;
@@ -1052,11 +1253,19 @@ export class Renderer {
       ctx.globalAlpha = 1;
     }
     this.drawPlan(sim, view, z, dt);
+    this.drawCracks(sim, view, z);
+    this.drawBuried(sim, view, z);
     if (this.trails) this.drawTrails(sim, view);
     this.painter.drawCorpses(ctx, col.corpses, z, this.lightAt, view);
     this.painter.drawBrood(ctx, col.brood, z, this.lightAt, view, TUNING.pupaTicks);
-    if (sim.critters.list.length) drawCritters(ctx, sim.critters.list.filter((c) => (c.kind === 'worm' ? this.known(sim, c.body[0]! % w.w, (c.body[0]! / w.w) | 0) : this.known(sim, c.x, c.kind === 'lark' ? c.y - 30 : c.y))), w, this.lightAt, view);
+    if (sim.critters.list.length) drawCritters(ctx, sim.critters.list.filter((c) => (c.kind === 'worm' ? this.known(sim, c.body[0]! % w.w, (c.body[0]! / w.w) | 0) : this.known(sim, c.x, c.y))), w, this.lightAt, view);
     if (sim.carcasses.list.length) drawCarcasses(ctx, sim.carcasses.list.filter((c) => this.known(sim, c.x, c.y)), this.lightAt, view);
+    if (sim.carcasses.bits.length) drawMorsels(ctx, sim.carcasses.bits.filter((m) => this.known(sim, m.x, m.y)), this.lightAt, view);
+    if (sim.tree) {
+      // (Its clock is the sim's: in seconds of sim time, so it hurries and stops with the game.)
+      this.treeLife.update(sim, dt * speed);
+      if (this.known(sim, Math.round(sim.tree.x < w.w / 2 ? sim.tree.x + sim.tree.r : sim.tree.x - sim.tree.r), w.ground[0]! - 5)) this.treeLife.draw(ctx, sim, this.lightAt, view);
+    }
     this.painter.draw(ctx, ants, z, this.lightAt, view, selected);
     if (sim.flyers.length) this.painter.drawFlyers(ctx, sim.flyers, z, this.lightAt);
     if (sim.eco.fallers.length) this.drawFallers(sim, view);

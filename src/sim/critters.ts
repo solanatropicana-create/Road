@@ -1,13 +1,15 @@
 import type { Sim } from './sim';
 import type { Ant } from './ant';
-import { EMPTY, SEED, PREY, SOIL, SOLID, WATER } from '../world/mat';
+import { EMPTY, SEED, SOIL, SOLID, WATER } from '../world/mat';
 import { TICK_HZ, DAY_TICKS } from '../config';
 import { clamp } from '../util/math';
+import { spawnUnderground, thief, centipede, moleCricket, backfill } from './underground';
+import { spawnPredators, toad, lizard, mole } from './predators';
+import { lasius, lasiusSeason } from './lasius';
+import type { Corpse } from './brood';
 
 /**
  * The other animals of the slice, above and below ground:
- *   lark   – a crested lark (Galerida cristata), the steppe's ground bird:
- *            drops in by day to peck seed off the ground, and the odd ant.
  *   hopper – a grasshopper, leaping about the summer meadow; dies in autumn
  *            (a meal of protein for whoever finds it).
  *   beetle – a seed-eating ground beetle (Harpalus), out at night: a
@@ -24,9 +26,11 @@ import { clamp } from '../util/math';
  *            Attaephilus molitori, a tiny beetle known only from Messor
  *            structor nests in the dry grasslands near Vienna and in Moravia.
  *   antlion – an antlion larva at the bottom of its sand pit.
- * At 1 mm per cell the lark is a giant: as long as the frame is tall.
+ *   thief, centipede, molecricket – enemies that come through the soil (see underground.ts).
+ *   toad, lizard, mole – big animals that can wreck a colony (see predators.ts).
+ *   lasius – black garden ants from the tree, foraging at the foot of its trunk (see lasius.ts).
  */
-export type CritterKind = 'lark' | 'hopper' | 'beetle' | 'worm' | 'spider' | 'phorid' | 'woodlouse' | 'cricket' | 'beetlet' | 'antlion';
+export type CritterKind = 'hopper' | 'beetle' | 'worm' | 'spider' | 'phorid' | 'woodlouse' | 'cricket' | 'beetlet' | 'antlion' | 'thief' | 'centipede' | 'molecricket' | 'toad' | 'lizard' | 'mole' | 'lasius';
 
 export interface Critter {
   kind: CritterKind;
@@ -38,7 +42,7 @@ export interface Critter {
   dir: number;
   /** Ticks alive. */
   t: number;
-  /** Kind-specific state (lark: 0 flying in, 1 on the ground, 2 flying off). */
+  /** Kind-specific state. */
   state: number;
   /** Ticks to the next action. */
   timer: number;
@@ -48,28 +52,41 @@ export interface Critter {
   peck: number;
   /** In the air (a hop or a flight). */
   air: boolean;
-  /** Worm: the cells its body lies along, head first. */
+  /** Worm, centipede: the cells its body lies along, head first. Thief ants: their gallery, from its start. Mole cricket: its gallery, newest first. */
   body: number[];
   /** Colour variant (spider: below 90 a young one). */
   tone: number;
   /** Spider: the ant it is holding. Phorid: the ant it is stalking. */
   prey?: Ant | null;
-  /** Antlion: the pit's centre and radius. */
+  /** Antlion: the pit's centre and radius. Thief ants: the nursery they dig toward (px, pr = x, y). Mole cricket: px, the column it heads for. */
   px?: number;
   pr?: number;
+  /** Lasius: the body of one of ours it is dragging home. */
+  load?: Corpse | null;
 }
 
-const LARK_MONTH = [1.4, 1.4, 1.2, 0.8, 0.7, 0.7, 0.8, 0.9, 1, 1.1, 1.3, 1.4];
 const HOPPER_MONTH = [0, 0, 0, 0, 0.2, 0.8, 1, 1, 0.7, 0.2, 0, 0];
 
 export class Critters {
   readonly list: Critter[] = [];
-  /** Ants a bird took since the start. */
-  taken = 0;
-  /** Where a bird is on the ground right now (NaN if none): foragers near it run for home. */
-  birdX = NaN;
+  /** Galleries dug by the enemies in the soil, oldest first: cell, tick dug, radius, in threes (see backfill). */
+  burrows: number[] = [];
 
-  private add(c: Partial<Critter> & { kind: CritterKind; x: number; y: number }): Critter {
+  /** When a toad last came to the nest (it comes back while it remembers), its return visits, and the workers it took. */
+  toadLast = 0;
+  toadNights = 0;
+  toadKills = 0;
+  /** Skirmishes with the garden ants from the tree: fights, our dead, theirs, and when one was last noted. */
+  lasiusFights = 0;
+  lasiusKills = 0;
+  lasiusDead = 0;
+  lasiusNote = -1e9;
+
+  /** Remember a gallery step for the soil to fill in later. */
+  dug(i: number, r: number, tick: number): void {
+    if (this.burrows.length < 30000) this.burrows.push(i, tick, r);
+  }
+  add(c: Partial<Critter> & { kind: CritterKind; x: number; y: number }): Critter {
     const full: Critter = { vx: 0, vy: 0, dir: 1, t: 0, state: 0, timer: 0, life: 0, peck: 0, air: false, body: [], tone: 0, ...c };
     this.list.push(full);
     return full;
@@ -82,7 +99,7 @@ export class Critters {
   }
 
   /** Surface: the empty cell just above the ground and whatever lies on it. */
-  private top(sim: Sim, x: number): number {
+  top(sim: Sim, x: number): number {
     const w = sim.world;
     const xx = clamp(Math.round(x), 1, w.w - 2);
     let y = w.ground[xx]!;
@@ -99,12 +116,7 @@ export class Critters {
     const day = sim.cal.daylight(sim.dayT, doy) > 0.15;
     const w = sim.world;
     const dry = !sim.raining && sim.snow < 20;
-    // A lark drops in now and then by day (more often in the lean months).
-    if (day && dry && this.count('lark') === 0 && rng.chance(0.03 * LARK_MONTH[m]!)) {
-      const dir = rng.chance(0.5) ? 1 : -1;
-      const tx = rng.int(160, w.w - 160);
-      this.add({ kind: 'lark', x: tx - dir * 260, y: -60, dir, state: 0, life: rng.int(TICK_HZ * 25, TICK_HZ * 60), timer: tx });
-    }
+    lasiusSeason(sim, this);
     // Grasshoppers in the summer grass, by day.
     if (day && dry && this.count('hopper') < 3 && rng.chance(0.08 * HOPPER_MONTH[m]!)) {
       const x = rng.int(20, w.w - 21);
@@ -134,6 +146,11 @@ export class Critters {
     }
     // Nest guests move in as the colony grows.
     if (nest.founded && sim.tick % (TICK_HZ * 60) < Critters.PERIOD) this.guests(sim);
+    // Enemies through the soil, and the old galleries they left filling in.
+    spawnUnderground(sim, this);
+    backfill(sim, this);
+    // Toads, lizards and moles.
+    spawnPredators(sim, this);
     // Earthworms in the topsoil when it is cool and damp (not in summer drought or frost).
     if (air > 4 && air < 17 && this.count('worm') < 2 && rng.chance(0.05)) {
       const x = rng.int(30, w.w - 31);
@@ -147,14 +164,12 @@ export class Critters {
   }
 
   step(sim: Sim): void {
-    this.birdX = NaN;
     if (!this.list.length) return;
     let j = 0;
     for (const c of this.list) {
       c.t++;
       let keep = true;
       switch (c.kind) {
-        case 'lark': keep = this.lark(sim, c); break;
         case 'hopper': keep = this.hopper(sim, c); break;
         case 'beetle': keep = this.beetle(sim, c); break;
         case 'worm': keep = this.worm(sim, c); break;
@@ -164,6 +179,13 @@ export class Critters {
         case 'cricket':
         case 'beetlet': keep = this.guest(sim, c); break;
         case 'antlion': keep = this.antlion(sim, c); break;
+        case 'thief': keep = thief(sim, c, this); break;
+        case 'centipede': keep = centipede(sim, c, this); break;
+        case 'molecricket': keep = moleCricket(sim, c, this); break;
+        case 'toad': keep = toad(sim, c, this); break;
+        case 'lizard': keep = lizard(sim, c, this); break;
+        case 'mole': keep = mole(sim, c); break;
+        case 'lasius': keep = lasius(sim, c, this); break;
       }
       if (keep) this.list[j++] = c;
     }
@@ -315,7 +337,7 @@ export class Critters {
       target = null;
       let best = 1e9;
       for (const a of col.ants) {
-        if (a.caste !== 'worker' || a.away || a.paralysed || a.parasite > 0 || a.id <= col.firstWorkerId + 8) continue;
+        if (a.caste !== 'worker' || a.away || a.paralysed || a.parasite > 0 || a.size < 0.9 || a.size > 1.12) continue;
         if (w.bg[a.y * w.w + a.x] !== 0) continue;
         const d = Math.abs(a.x - c.x) + Math.abs(a.y - c.y);
         if (d < best && d < 260) {
@@ -471,105 +493,6 @@ export class Critters {
     for (const c of this.list) if (c.kind === 'worm') c.life = Math.min(c.life, 1);
   }
 
-  // ------------------------------------------------------------- lark
-
-  private lark(sim: Sim, c: Critter): boolean {
-    const w = sim.world;
-    const rng = sim.rng;
-    if (c.state === 0) {
-      // Gliding down to the spot it picked (kept in timer).
-      const tx = c.timer;
-      const gy = this.top(sim, tx);
-      c.x += (tx - c.x) * 0.045 + c.dir * 0.4;
-      c.y += (gy - c.y) * 0.05 + 0.3;
-      c.air = true;
-      if (Math.abs(c.x - tx) < 6 && Math.abs(c.y - gy) < 4) {
-        c.x = tx;
-        c.y = gy;
-        c.state = 1;
-        c.air = false;
-        c.timer = rng.int(TICK_HZ / 2, TICK_HZ * 2);
-        sim.noteYearly('lark', { x: c.x, y: c.y - 40 });
-      }
-      return true;
-    }
-    if (c.state === 2) {
-      // Off it goes, up and away.
-      c.vx += c.dir * 0.08;
-      c.vy -= 0.09;
-      c.x += c.vx;
-      c.y += c.vy;
-      c.air = true;
-      return c.y > -120 && c.x > -250 && c.x < w.w + 250;
-    }
-    // On the ground: hop, look about, peck.
-    this.birdX = c.x;
-    if (--c.life <= 0 || sim.raining || sim.cal.daylight(sim.dayT, sim.doy) < 0.1) {
-      c.state = 2;
-      c.vx = c.dir * 1.2;
-      c.vy = -1.5;
-      return true;
-    }
-    if (c.peck > 0) c.peck--;
-    if (c.air) {
-      c.x += c.vx;
-      c.y += c.vy;
-      c.vy += 0.22;
-      const gy = this.top(sim, c.x);
-      if (c.y >= gy) {
-        c.y = gy;
-        c.air = false;
-      }
-      return true;
-    }
-    c.y = this.top(sim, c.x);
-    if (--c.timer > 0) return true;
-    if (rng.chance(0.55)) {
-      // Peck at the ground in front of the bill.
-      c.peck = 12;
-      this.peckAt(sim, c.x + c.dir * 62, c.y);
-      c.timer = rng.int(10, 30);
-    } else {
-      // Hop on (or turn round near the edge).
-      if (c.x < 120 || c.x > w.w - 120 || rng.chance(0.15)) c.dir = -c.dir;
-      c.vx = c.dir * rng.range(0.9, 1.8);
-      c.vy = -rng.range(1.8, 2.6);
-      c.air = true;
-      c.timer = rng.int(8, 30);
-    }
-    return true;
-  }
-
-  /** The bill comes down: seeds, a dead insect, or an ant on the surface there are taken. */
-  private peckAt(sim: Sim, bx: number, by: number): void {
-    const w = sim.world;
-    const rng = sim.rng;
-    let took = 0;
-    for (let dy = -6; dy <= 3 && took < 3; dy++) {
-      for (let dx = -5; dx <= 5 && took < 3; dx++) {
-        const x = Math.round(bx + dx);
-        const y = Math.round(by + dy);
-        if (!w.inside(x, y)) continue;
-        const i = y * w.w + x;
-        const m = w.mat[i];
-        if ((m === SEED || m === PREY) && w.bg[i] === 0 && w.mat[i - w.w] === EMPTY) {
-          w.set(i, EMPTY, 0, 0);
-          took++;
-        }
-      }
-    }
-    // Larks eat ants too, though a Messor is a mouthful of hard bits and formic bites.
-    for (const a of sim.colony.ants) {
-      if (a.away || Math.abs(a.x - bx) > 4 || Math.abs(a.y - by) > 6) continue;
-      if (w.bg[a.y * w.w + a.x] !== 0) continue;
-      if (rng.chance(0.12)) {
-        sim.colony.kill(a, 'eaten by a bird');
-        this.taken++;
-      }
-      break;
-    }
-  }
-
   // ------------------------------------------------------------- grasshopper
 
   private hopper(sim: Sim, c: Critter): boolean {
@@ -658,8 +581,15 @@ export class Critters {
       c.vy = -c.vy + rng.range(-0.5, 0.5);
       return true;
     }
-    c.body.pop();
+    const tail = c.body.pop()!;
     c.body.unshift(n);
+    // It leaves an open burrow behind it here and there, lined with slime and
+    // casts (never right up to the surface): ants take these as shortcuts.
+    const tx = tail % w.w;
+    const ty = (tail / w.w) | 0;
+    if (tail !== n && SOIL[w.mat[tail]!] && !w.plan[tail] && ty > w.ground[tx]! + 6 && rng.chance(0.1)) {
+      w.set(tail, EMPTY, Math.max(0, w.tone[tail]! - 20), w.mat[tail]);
+    }
     // Its casts darken the soil a little where it passed (never to black).
     const old = w.tone[n]!;
     if (old > 50 && rng.chance(0.5)) {

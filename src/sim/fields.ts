@@ -19,7 +19,9 @@ export const FIELD_COUNT = 11;
 export const FAR = 65535;
 
 /** Rebuild interval per field, in ticks. Fast-changing targets refresh more often. */
-const INTERVAL = [20, 30, 10, 24, 18, 30, 14, 20, 30, 45, 45];
+// (The two surface-wide fields, Out and Entr, reach tens of thousands of cells
+// and change slowly: every two seconds is plenty.)
+const INTERVAL = [60, 60, 10, 24, 18, 30, 14, 20, 30, 45, 45];
 
 /** Outside cells closer than this to an entrance are included in the in-nest fields. */
 const MOUTH = 9;

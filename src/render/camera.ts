@@ -104,11 +104,33 @@ export class Camera {
     this.follow = null;
   }
 
+  /** A jolt (a roof coming down nearby): screen pixels of shake, dying away. */
+  private shakeAmp = 0;
+  private shakeT = 0;
+  /** The player can turn the shaking off (settings). */
+  shakeOn = true;
+  shake(px: number): void {
+    if (!this.shakeOn) return;
+    this.shakeAmp = Math.max(this.shakeAmp, px);
+  }
+  /** The current shake offset, in screen pixels. */
+  jolt(): { x: number; y: number } {
+    if (this.shakeAmp < 0.2) return { x: 0, y: 0 };
+    const a = this.shakeAmp;
+    return { x: Math.sin(this.shakeT * 53) * a * 0.6, y: Math.sin(this.shakeT * 71 + 1) * a };
+  }
+
   update(dt: number): void {
+    if (this.shakeAmp > 0) {
+      this.shakeT += dt;
+      this.shakeAmp *= Math.exp(-dt * 3.2);
+      if (this.shakeAmp < 0.2) this.shakeAmp = 0;
+    }
     if (this.follow) {
       this.tx = this.follow.x;
       this.ty = this.follow.y;
     }
+    this.tzoom = clamp(this.tzoom, this.minZoom, this.maxZoom);
     const k = 1 - Math.exp(-dt * this.ease);
     this.zoom += (this.tzoom - this.zoom) * k;
     this.x += (this.tx - this.x) * k;
