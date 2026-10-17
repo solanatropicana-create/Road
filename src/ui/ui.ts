@@ -1,20 +1,30 @@
 import type { Game } from '../main';
 import { CSS } from './style';
-import { WORK, Work, Task, ChamberKind } from '../sim/types';
+import { WORK, Work, Task, ChamberKind, holdsStores } from '../sim/types';
 import type { Ant } from '../sim/ant';
 import type { Chamber } from '../sim/nest';
-import { SPEEDS, TICK_HZ, DAY_TICKS, TUNING } from '../config';
-import { ZONE_TINT } from '../render/palette';
-import { savedMeta } from '../sim/save';
+import { SPEEDS, TICK_HZ, DAY_TICKS, TUNING, TEMPOS, Tempo } from '../config';
+import { ZONE_TINT, SAMARA_TONE } from '../render/palette';
+import { bodyLength } from '../render/antdraw';
+import { getPrefs, setPref } from './prefs';
+import { Pad } from './gamepad';
+import { Replay } from './replay';
+import { installErrorLog, errorLog, VERSION } from '../util/errors';
+import { latestSlot, listSlots, removeSlot, exportSlot, importSlot, type SlotMeta } from '../sim/slots';
 import { t, num, getLang, setLang, Lang, Vars } from './i18n';
 import { metabolism } from '../sim/calendar';
 import type { Sim } from '../sim/sim';
 import { ICON, LOGO_ANT } from './icons';
 import { SITES, SITE_IDS } from '../world/sites';
-import { TWIG, BERRY, FLOWER, SEEDHEAD, FRUIT, PREY, STONE, LITTER, SEED, EMPTY, SAND } from '../world/mat';
+import { TWIG, BERRY, FLOWER, SEEDHEAD, FRUIT, PREY, STONE, LITTER, SEED, EMPTY, SAND, WOOD } from '../world/mat';
 import { PACKED, PLUG } from '../world/physics';
 
 export type Mode = 'watch' | 'guide';
+/** Seconds without input before the documentary starts on its own (in Watch mode). */
+const IDLE_DOC = 90;
+/** Set once the nest's film has been pointed out (in this browser). */
+const FILM_TIP_KEY = 'underfoot.tipFilm';
+type Tab = 'guide' | 'colony' | 'notes';
 const MODE_KEY = 'underfoot.mode';
 /** Scale-bar lengths to choose from, in mm. */
 const SCALE_STEPS = [1, 2, 5, 10, 20, 50, 100];
@@ -87,6 +97,15 @@ const MAT_KEYS = ['air', 'humus', 'loam', 'clay', 'subsoil', 'gravel', 'stone', 
 export class UI {
   /** Panels hidden for a clean frame (H); the documentary caption stays. */
   cinema = false;
+  /** The documentary's current shot, by its caption's head (for the fade between shots). */
+  private lastShot = '';
+  private dipEl: HTMLElement | null = null;
+  /** Seconds since the player last touched anything. */
+  private idle = 0;
+  /** The film's tip has been considered this session. */
+  private filmTip = false;
+  /** Where the latest located event happened (J jumps there). */
+  private lastLoc: { x: number; y: number } | null = null;
   /** Watch: the colony runs itself. Guide: the player is the colony brain. */
   mode: Mode = 'watch';
   /** The title screen's question has been answered (or a colony resumed). */
@@ -97,12 +116,19 @@ export class UI {
   private root: HTMLElement;
   private els: Record<string, HTMLElement> = {};
   private spark!: HTMLCanvasElement;
+  /** The nest's time-lapse film. */
+  private replay: Replay;
   private markerMode = false;
   private lastPhase = '';
   private refresh = 0;
   private pointer = { x: 0, y: 0, inside: false };
   private journal: Entry[] = [];
-  private notesOpen = false;
+  /** The drawer's open tab. */
+  private tab: Tab = 'colony';
+  /** Journal lines written while the Notes tab was out of sight. */
+  private unread = false;
+  private toastQueue: { html: string; ms: number; loc?: { x: number; y: number } }[] = [];
+  private toastShowing = false;
   private milestone = 0;
   private notedChambers = new Set<number>();
   private restNoted = false;
@@ -113,7 +139,6 @@ export class UI {
   private starvedDay = -1;
   private lowFoodDay = -1;
   private wingsNoted = false;
-  private replaceArmedAt = 0;
   private pluggedNoted = false;
   private followed: Ant | null = null;
   private lifeCardUntil = 0;
@@ -122,6 +147,11 @@ export class UI {
   constructor(game: Game, root: HTMLElement) {
     this.game = game;
     this.root = root;
+    this.replay = new Replay(game, async (name, data) => {
+      const ok = await this.offerFile(name, data);
+      if (ok) this.toast(t('replaySaved'));
+      return ok;
+    });
     try {
       if (localStorage.getItem(MODE_KEY) === 'guide') this.mode = 'guide';
     } catch {
@@ -132,6 +162,12 @@ export class UI {
     document.head.appendChild(style);
     this.build();
     this.bindInput(game.renderer.canvas);
+    this.applyPrefs();
+    // Something broke: keep the colony, and say how to tell us (once a session).
+    installErrorLog(() => {
+      this.toast(t('errorToast'), 10000);
+      void game.save();
+    });
   }
 
   // ------------------------------------------------------------------ building
@@ -140,61 +176,40 @@ export class UI {
     const r = this.root;
     const coarse = typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
 
-    // --- field card
+    // --- header: the colony's name, its numbers, the date and the sky (one compact card)
     const card = h('div', 'panel');
     card.id = 'card';
     card.innerHTML = `
-      <div class="brand">${LOGO_ANT}<span class="wordmark-s">Underfoot</span></div>
-      <div class="species">${t(`site_${this.game.sim.site}`)}</div>
-      <div class="cname" id="cname"></div>
-      <div class="specimen">${t('colonyNo', { n: String(this.game.sim.seed).padStart(4, '0') })}</div>
-      <div class="pop"><b id="pop">0</b><span>${t('workers')}</span></div>
-      <div class="grid">
-        <div><span class="eyebrow">${t('majors')}</span><b id="maj">0</b></div>
-        <div><span class="eyebrow">${t('brood')}</span><b id="brood">0</b></div>
-        <div><span class="eyebrow">${t('seeds')}</span><b id="food">0</b><small id="fooddays"></small></div>
-      </div>`;
-    this.spark = document.createElement('canvas');
-    this.spark.width = 440;
-    this.spark.height = 76;
-    card.appendChild(this.spark);
-    card.appendChild(h('div', 'sparkkey', `<span><i class="k-pop"></i>${t('sparkWorkers')}</span><span><i class="k-food"></i>${t('sparkSeeds')}</span>`));
-    card.appendChild(h('div', 'clock', `<span id="skyico"></span><span id="day"></span><span id="time"></span>`));
-    card.appendChild(h('div', 'clock sub', `<span id="year"></span><span id="sky"></span>`));
-    const legend = h('div', 'legend');
-    for (const [kind, key] of [['queen', 'legendQueen'], ['nursery', 'legendNursery'], ['granary', 'legendGranary'], ['rest', 'legendRest']] as const) {
-      const c = ZONE_TINT[kind]!;
-      legend.appendChild(h('span', '', `<i style="background:rgb(${c[0]},${c[1]},${c[2]})"></i>${t(key)}`));
-    }
-    card.appendChild(legend);
-    const notes = h('div', 'notes', `<div class="notes-head"><span class="eyebrow">${ICON.journal}${t('fieldNotes')}</span><button class="collapse" id="notes-all">${this.notesOpen ? t('notesLess') : t('notesAll')}</button></div><ol id="notes"></ol>`);
-    notes.classList.toggle('open', this.notesOpen);
-    card.appendChild(notes);
-    (notes.querySelector('#notes-all') as HTMLElement).onclick = () => {
-      this.notesOpen = !this.notesOpen;
-      notes.classList.toggle('open', this.notesOpen);
-      (notes.querySelector('#notes-all') as HTMLElement).textContent = this.notesOpen ? t('notesLess') : t('notesAll');
-      this.renderNotes();
-    };
-    // Journal lines with a place on them take the camera there.
-    (notes.querySelector('#notes') as HTMLElement).onclick = (e) => {
-      const b = (e.target as HTMLElement).closest('[data-loc]') as HTMLElement | null;
-      if (!b) return;
-      const [x, y] = b.dataset.loc!.split(',').map(Number);
-      this.lookAt(x!, y!);
-    };
+      <div class="hrow">${LOGO_ANT}<span class="cname" id="cname">${t(`site_${this.game.sim.site}`)}</span></div>
+      <div class="stats">
+        <div class="stat big"><b id="pop">0</b><span>${t('workers')}</span></div>
+        <div class="stat"><b id="maj">0</b><span>${t('majors')}</span></div>
+        <div class="stat"><b id="brood">0</b><span>${t('brood')}</span></div>
+        <div class="stat"><b id="food">0</b><span>${t('seeds')}</span></div>
+      </div>
+      <div class="clock"><span id="skyico"></span><span id="day"></span><span id="time"></span><span id="sky"></span></div>
+      <div class="clock sub"><span id="year"></span><small id="fooddays"></small></div>`;
     r.appendChild(card);
 
     // --- one-line strip for phones (the card is hidden there)
     r.appendChild(h('div', '', `${ICON.ant}<b id="s-pop">0</b><span id="s-brood"></span><span id="s-food"></span><span id="s-day"></span>`)).id = 'strip';
 
+    // --- the drawer on the right: Guide (the colony brain), Colony (read-only), Notes (the journal)
+    const drawer = h('div', 'panel');
+    drawer.id = 'drawer';
+    drawer.innerHTML = `<div class="dhead"><div class="tabs" id="tabs">
+        <button data-tab="guide">${ICON.brain}<span>${t('tabGuide')}</span></button>
+        <button data-tab="colony">${ICON.ant}<span>${t('tabColony')}</span></button>
+        <button data-tab="notes">${ICON.journal}<span>${t('tabNotes')}</span><i class="dot" id="notes-dot"></i></button>
+      </div><button class="collapse" id="dcollapse"></button></div>`;
+    r.appendChild(drawer);
+
     // --- colony brain
-    const brain = h('div', 'panel');
+    const brain = h('div', 'pane');
     brain.id = 'brain';
-    brain.innerHTML = `<button class="collapse" id="collapse"></button><div class="title">${t('brainTitle')}</div>
-      <div id="dormant">${t('brainDormant')}</div>
+    brain.innerHTML = `<div id="dormant">${t('brainDormant')}</div>
       <div class="body">
-      <div class="hint" style="margin-top:4px">${t('brainIntro')}</div>
+      <div class="hint">${t('brainIntro')}</div>
       <h3 class="eyebrow">${t('workPriorities')}</h3><div id="work"></div>
       <h3 class="eyebrow">${t('queen')}</h3>
       <div class="row"><label>${t('breeding')}</label><div class="seg" id="breed"></div></div>
@@ -207,14 +222,14 @@ export class UI {
         <button class="btn" data-order="rest">${t('order_rest')}</button>
         <button class="btn" id="deeper">${t('digDeeper')}</button>
       </div>
-      <div class="btns" style="margin-top:6px; grid-template-columns: 1fr;"><button class="btn" id="mark"></button></div>
+      <div class="btns one"><button class="btn" id="mark"></button></div>
       <div class="queue" id="queue"></div>
       <div class="hint">${t('planHint')}</div>
       <h3 class="eyebrow">${t('sandbox')}</h3>
       <div class="btns"><button class="btn" id="rain">${t('bringRain')}</button><button class="btn" id="storm">${t('storm')}</button></div>
       <div class="hint">${t('sandboxHint')}</div>
       </div>`;
-    r.appendChild(brain);
+    drawer.appendChild(brain);
     const work = brain.querySelector('#work')!;
     for (const wk of WORK) {
       const row = h('div', 'row', `<label>${ICON[wk]}${t('work_' + wk)}</label>`);
@@ -276,41 +291,70 @@ export class UI {
     };
     (brain.querySelector('#rain') as HTMLElement).onclick = () => this.game.sim.startRain(false);
     (brain.querySelector('#storm') as HTMLElement).onclick = () => this.game.sim.startRain(true);
-    (brain.querySelector('#collapse') as HTMLElement).onclick = () => {
-      brain.classList.toggle('collapsed');
-      this.syncCollapse();
-    };
-    // Narrow screens start with the brain folded so the slice stays visible.
-    if (innerWidth < 1500) brain.classList.add('collapsed');
 
-    // --- the colony, read-only (watch mode): what it is doing, its brood, its rooms
-    const colony = h('div', 'panel');
+    // --- the colony, read-only: what it is doing, its brood, its rooms, its growth
+    const colony = h('div', 'pane');
     colony.id = 'colony';
     const trow = (k: string, label: string): string =>
       `<div class="trow"><span class="tl">${ICON[k as keyof typeof ICON]}${label}</span><div class="track"><i id="ct-${k}"></i></div><b id="cn-${k}">0</b></div>`;
-    colony.innerHTML = `<button class="collapse" id="ccollapse"></button><div class="title">${t('colonyTitle')}</div>
-      <div id="cdormant">${t('colonyDormant')}</div>
+    colony.innerHTML = `<div id="cdormant">${t('colonyDormant')}</div>
       <div class="body">
-      <div class="hint" style="margin-top:4px">${t('colonyIntro')}</div>
+      <div class="hint">${t('colonyIntro')}</div>
       <h3 class="eyebrow">${t('doingNow')}</h3>
       ${['dig', 'forage', 'nurse', 'clean'].map((k) => trow(k, t('work_' + k))).join('')}${trow('idle', t('work_idle'))}
       <h3 class="eyebrow">${t('brood')}</h3>
       <div class="broodrow"><span>${ICON.egg}<b id="cb-e">0</b> ${t('eggs')}</span><span>${ICON.larva}<b id="cb-l">0</b> ${t('larvae')}</span><span>${ICON.pupa}<b id="cb-p">0</b> ${t('pupae')}</span><span id="cb-t"></span><span id="cb-a"></span></div>
+      <h3 class="eyebrow">${t('growthTitle')}</h3>
+      <div id="sparkbox"></div>
+      <div class="sparkkey"><span><i class="k-pop"></i>${t('sparkWorkers')}</span><span><i class="k-food"></i>${t('sparkSeeds')}</span></div>
+      <div class="btns one"><button class="btn" id="film">${ICON.play}${t('replayOpen')}</button></div>
       <h3 class="eyebrow">${t('rooms')}</h3>
       <div id="crooms"></div>
       </div>`;
-    r.appendChild(colony);
-    (colony.querySelector('#ccollapse') as HTMLElement).onclick = () => {
-      colony.classList.toggle('collapsed');
-      this.syncCollapse();
-    };
+    drawer.appendChild(colony);
+    this.spark = document.createElement('canvas');
+    this.spark.width = 520;
+    this.spark.height = 96;
+    (colony.querySelector('#sparkbox') as HTMLElement).appendChild(this.spark);
+    (colony.querySelector('#film') as HTMLElement).onclick = () => this.showFilm();
     (colony.querySelector('#crooms') as HTMLElement).onclick = (e) => {
       const b = (e.target as HTMLElement).closest('[data-loc]') as HTMLElement | null;
       if (!b) return;
       const [x, y] = b.dataset.loc!.split(',').map(Number);
       this.lookAt(x!, y!);
     };
-    if (innerWidth < 1200 || !roomy()) colony.classList.add('collapsed');
+
+    // --- the field journal
+    const journal = h('div', 'pane');
+    journal.id = 'journal';
+    journal.innerHTML = `<ol id="notes"></ol>`;
+    drawer.appendChild(journal);
+    // Journal lines with a place on them take the camera there.
+    (journal.querySelector('#notes') as HTMLElement).onclick = (e) => {
+      const b = (e.target as HTMLElement).closest('[data-loc]') as HTMLElement | null;
+      if (!b) return;
+      const [x, y] = b.dataset.loc!.split(',').map(Number);
+      this.lookAt(x!, y!);
+    };
+
+    drawer.querySelectorAll<HTMLElement>('#tabs [data-tab]').forEach((b) => {
+      b.onclick = () => {
+        const tab = b.dataset.tab as Tab;
+        if (this.tab === tab && !drawer.classList.contains('collapsed')) drawer.classList.add('collapsed');
+        else {
+          this.tab = tab;
+          drawer.classList.remove('collapsed');
+          if (this.narrow() && this.els.keys) this.els.keys.hidden = true;
+        }
+        this.syncCollapse();
+      };
+    });
+    (drawer.querySelector('#dcollapse') as HTMLElement).onclick = () => {
+      drawer.classList.toggle('collapsed');
+      this.syncCollapse();
+    };
+    // Narrow screens start with the drawer folded so the slice stays visible.
+    if (innerWidth < 1440 || !roomy()) drawer.classList.add('collapsed');
 
     // --- time bar
     const bar = h('div', 'panel');
@@ -370,13 +414,11 @@ export class UI {
     view('v-plan', ICON.plan, t('plan'), t('titlePlan'), () => this.togglePlan());
     view('v-trails', ICON.trails, t('trails'), t('titleTrails'), () => this.toggleTrails());
     view('v-hide', ICON.hide, t('hidePanels'), t('titleHide'), () => this.toggleCinema());
-    view('help-btn', ICON.help, '', t('titleKeys'), () => {
+    view('v-sound', this.game.sound.on ? ICON.sound : ICON.mute, '', t('titleSound'), () => this.toggleSound());
+    view('help-btn', ICON.gear, '', t('titleSettings'), () => {
       this.els.keys!.hidden = !this.els.keys!.hidden;
     });
     bar.appendChild(views);
-    const perf = h('div', 'perf');
-    perf.id = 'perf';
-    bar.appendChild(perf);
     r.appendChild(bar);
 
     // --- inspector, prompt, toasts, tooltip, game over, keys, caption
@@ -406,11 +448,16 @@ export class UI {
       <h1 class="wordmark">Underfoot</h1>
       <div class="tagline">${t('tagline')}</div>
       <div class="latin"><i>Messor structor</i><span>·</span>${t('scaleNote')}</div>
+      <div class="tempo">
+        <div class="tempo-row"><span class="tempo-label">${t('tempoLabel')}</span>${this.tempoSeg('ttempo')}</div>
+        <div class="tempo-desc" id="ttempo-desc">${t(`tempo_${this.game.sim.tempo}D`)}</div>
+      </div>
       <div class="modes">
         <button class="mode${this.mode === 'watch' ? ' last' : ''}" data-mode="watch">${ICON.eye}<h3>${t('modeWatch')}</h3><p>${t('modeWatchD')}</p></button>
         <button class="mode${this.mode === 'guide' ? ' last' : ''}" data-mode="guide">${ICON.brain}<h3>${t('modeGuide')}</h3><p>${t('modeGuideD')}</p></button>
       </div>
       <button class="btn on" id="resume" hidden></button>
+      <div id="slots" hidden></div>
       ${this.siteCard()}
       <div class="title-foot">
         <div class="seg" id="tlang"><button data-lang="en" class="${lang0 === 'en' ? 'on' : ''}">EN</button><button data-lang="tr" class="${lang0 === 'tr' ? 'on' : ''}">TR</button></div>
@@ -418,22 +465,14 @@ export class UI {
     r.appendChild(title);
     title.querySelectorAll<HTMLElement>('[data-mode]').forEach((b) => {
       b.onclick = () => {
-        // A saved colony would be replaced: ask first (a real second click).
-        if (savedMeta()) {
-          const now = performance.now();
-          if (!this.replaceArmedAt || now - this.replaceArmedAt > 6000) {
-            this.replaceArmedAt = now;
-            this.toast(t('replaceSave'), 6000);
-            return;
-          }
-          if (now - this.replaceArmedAt < CONFIRM_DELAY_MS) return;
-        }
+        // (A new colony goes into a slot of its own: the kept ones stay in the list.)
         this.setMode(b.dataset.mode as Mode, false);
         this.modeChosen = true;
         this.applyPhase(this.game.sim.phase);
         this.beginLanding();
       };
     });
+    this.wireTempo(title, 'ttempo');
     title.querySelectorAll<HTMLElement>('#tlang [data-lang]').forEach((b) => {
       b.onclick = () => {
         setLang(b.dataset.lang as Lang);
@@ -452,24 +491,14 @@ export class UI {
         this.rebuild();
       };
     });
-    const meta = savedMeta();
+    const meta = latestSlot();
     const resume = title.querySelector('#resume') as HTMLButtonElement;
     if (meta) {
       resume.hidden = false;
       resume.textContent = t('continueColony', { d: meta.day, n: meta.adults });
-      resume.onclick = async () => {
-        resume.textContent = t('opening');
-        if (await this.game.resume()) {
-          this.modeChosen = true;
-          this.applyPhase(this.game.sim.phase);
-          this.toast(t('welcomeBack'));
-        }
-        else {
-          resume.textContent = t('saveBroken');
-          this.game.clearSave();
-        }
-      };
+      resume.onclick = () => void this.openSlot(meta.id, resume);
     }
+    this.buildSlots(title.querySelector('#slots') as HTMLElement);
     (prompt.querySelector('#anywhere') as HTMLElement).onclick = () => this.beginLanding();
     const toasts = h('div');
     toasts.id = 'toasts';
@@ -510,13 +539,66 @@ export class UI {
       <dt>P</dt><dd>${t('keyP')}</dd>
       <dt>T</dt><dd>${t('keyT')}</dd>
       <dt>H</dt><dd>${t('keyH')}</dd>
-      <dt>F</dt><dd>${t('keyF')}</dd></dl>
+      <dt>F</dt><dd>${t('keyF')}</dd>
+      <dt>J</dt><dd>${t('keyJ')}</dd>
+      <dt>M</dt><dd>${t('keyM')}</dd>
+      <dt>X</dt><dd>${t('keyX')}</dd>
+      <dt>G</dt><dd>${t('keyG')}</dd>
+      <dt>Q</dt><dd>${t('keyQ')}</dd>
+      <dt>${t('keyArrows')}</dt><dd>${t('keyArrowsD')}</dd>
+      <dt>${t('keyPad')}</dt><dd>${t('keyPadD')}</dd></dl>
       <div class="row langrow"><label>${t('modeLabel')}</label><div class="seg" id="modeseg">
         <button data-mode="watch" class="${this.mode === 'watch' ? 'on' : ''}">${t('modeWatch')}</button><button data-mode="guide" class="${this.mode === 'guide' ? 'on' : ''}">${t('modeGuide')}</button></div></div>
+      <div class="row langrow"><label>${t('tempoLabel')}</label>${this.tempoSeg('ktempo')}</div>
       <div class="row langrow"><label>${t('language')}</label><div class="seg" id="lang">
         <button data-lang="en" class="${lang === 'en' ? 'on' : ''}">English</button><button data-lang="tr" class="${lang === 'tr' ? 'on' : ''}">Türkçe</button></div></div>
-      <button class="btn" id="new-colony">${t('newColony')}</button>`;
+      <div class="row langrow"><label>${t('music')}</label><div class="seg" id="musicseg">
+        <button data-music="on" class="${this.game.sound.music ? 'on' : ''}">${t('on')}</button><button data-music="off" class="${this.game.sound.music ? '' : 'on'}">${t('off')}</button></div></div>
+      <div class="row langrow vol"><label>${t('volMaster')}</label><input type="range" min="0" max="100" data-vol="master" value="${Math.round(this.game.sound.vol.master * 100)}" /></div>
+      <div class="row langrow vol"><label>${t('volSound')}</label><input type="range" min="0" max="100" data-vol="sound" value="${Math.round(this.game.sound.vol.sound * 100)}" /></div>
+      <div class="row langrow vol"><label>${t('volMusic')}</label><input type="range" min="0" max="100" data-vol="music" value="${Math.round(this.game.sound.vol.music * 100)}" /></div>
+      <div class="row langrow"><label>${t('uiScale')}</label><div class="seg" id="scaleseg">${[0.9, 1, 1.15, 1.3].map((v, k) => `<button data-scale="${v}" class="${getPrefs().uiScale === v ? 'on' : ''}">${['S', 'M', 'L', 'XL'][k]}</button>`).join('')}</div></div>
+      <div class="row langrow"><label>${t('shakeLabel')}</label><div class="seg" id="shakeseg">
+        <button data-shake="on" class="${getPrefs().shake ? 'on' : ''}">${t('on')}</button><button data-shake="off" class="${getPrefs().shake ? '' : 'on'}">${t('off')}</button></div></div>
+      <button class="btn" id="fullscreen">${t('fullscreen')}</button>
+      <button class="btn" id="new-colony">${t('newColony')}</button>
+      <button class="linkbtn" id="report">${t('reportProblem')}</button>
+      <div class="version">Underfoot ${VERSION}</div>
+      <div class="perf" id="perf"></div>`;
     r.appendChild(keys);
+    keys.querySelectorAll<HTMLElement>('#musicseg [data-music]').forEach((b) => {
+      b.onclick = () => {
+        const on = b.dataset.music === 'on';
+        this.game.sound.setMusic(on);
+        keys.querySelectorAll<HTMLElement>('#musicseg [data-music]').forEach((o) => o.classList.toggle('on', o === b));
+      };
+    });
+    keys.querySelectorAll<HTMLInputElement>('[data-vol]').forEach((el) => {
+      el.oninput = () => {
+        this.game.sound.wake();
+        this.game.sound.setVolume(el.dataset.vol as 'master' | 'sound' | 'music', Number(el.value) / 100);
+      };
+    });
+    keys.querySelectorAll<HTMLElement>('#scaleseg [data-scale]').forEach((b) => {
+      b.onclick = () => {
+        setPref('uiScale', Number(b.dataset.scale));
+        this.applyPrefs();
+        keys.querySelectorAll<HTMLElement>('#scaleseg [data-scale]').forEach((o) => o.classList.toggle('on', o === b));
+      };
+    });
+    keys.querySelectorAll<HTMLElement>('#shakeseg [data-shake]').forEach((b) => {
+      b.onclick = () => {
+        setPref('shake', b.dataset.shake === 'on');
+        this.applyPrefs();
+        keys.querySelectorAll<HTMLElement>('#shakeseg [data-shake]').forEach((o) => o.classList.toggle('on', o === b));
+      };
+    });
+    (keys.querySelector('#fullscreen') as HTMLElement).onclick = () => this.toggleFullscreen();
+    (keys.querySelector('#report') as HTMLElement).onclick = async () => {
+      const day = new Date().toISOString().slice(0, 10);
+      if (await this.offerFile(`underfoot-report-${day}.txt`, new Blob([this.problemReport()], { type: 'text/plain' }))) this.toast(t('reportSaved'), 7000);
+    };
+    this.wireTempo(keys, 'ktempo');
     keys.querySelectorAll<HTMLElement>('#modeseg [data-mode]').forEach((b) => {
       b.onclick = () => {
         this.setMode(b.dataset.mode as Mode, true);
@@ -536,8 +618,8 @@ export class UI {
     fresh.onclick = () => {
       const now = performance.now();
       if (armedAt && now - armedAt > CONFIRM_DELAY_MS) {
-        this.game.clearSave();
-        location.reload();
+        // This colony is kept (saved first); the title screen starts the next.
+        void this.game.save().then(() => location.reload());
         return;
       }
       if (armedAt) return;
@@ -553,6 +635,14 @@ export class UI {
     const caption = h('div', '', `<div class="eyebrow">${t('watching')}</div><div class="line"></div>`);
     caption.id = 'caption';
     r.appendChild(caption);
+    const cross = h('div', '', '');
+    cross.id = 'padcross';
+    r.appendChild(cross);
+    // The documentary's dip to dark between far-apart shots (under everything else).
+    const dip = h('div', '', '');
+    dip.id = 'dip';
+    r.insertBefore(dip, r.firstChild);
+    this.dipEl = dip;
     const exit = h('button', 'btn', t('showPanels'));
     exit.id = 'cinema-exit';
     exit.onclick = () => this.toggleCinema();
@@ -569,7 +659,7 @@ export class UI {
     scale.id = 'scale';
     r.appendChild(scale);
 
-    for (const id of ['cinedate', 'cineline', 'cineskip', 'season', 'review', 'cname', 'title', 'colony', 'scale', 'skyico', 'year', 'winter', 'crooms', 'cb-e', 'cb-l', 'cb-p', 'cb-t', 'cb-a', 'pop', 'maj', 'brood', 'food', 'fooddays', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'here', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark', 'notes', 'caption', 'watch', 'keys', 'broodtrend', 'majval', 's-pop', 's-brood', 's-food', 's-day', 'v-plan', 'v-trails']) {
+    for (const id of ['cinedate', 'cineline', 'cineskip', 'season', 'review', 'cname', 'title', 'colony', 'scale', 'skyico', 'year', 'winter', 'crooms', 'drawer', 'journal', 'notes-dot', 'cb-e', 'cb-l', 'cb-p', 'cb-t', 'cb-a', 'pop', 'maj', 'brood', 'food', 'fooddays', 'day', 'sky', 'time', 'queue', 'perf', 'inspect', 'here', 'prompt', 'toasts', 'tip', 'over', 'brain', 'mark', 'notes', 'caption', 'watch', 'keys', 'broodtrend', 'majval', 's-pop', 's-brood', 's-food', 's-day', 'v-plan', 'v-trails']) {
       this.els[id] = r.querySelector(`#${id}`) as HTMLElement;
     }
     this.syncCollapse();
@@ -580,6 +670,29 @@ export class UI {
   }
 
   /** The title's site card: where this is, which ant, and what is special about this map. */
+  /** The three tempos as a segmented choice (the colony's own one lit). */
+  private tempoSeg(id: string): string {
+    const now = this.game.sim.tempo;
+    return `<div class="seg" id="${id}">${TEMPOS.map((k) => `<button data-tempo="${k}" class="${k === now ? 'on' : ''}" title="${t(`tempo_${k}D`)}">${t(`tempo_${k}`)}</button>`).join('')}</div>`;
+  }
+
+  /**
+   * A tempo choice sets the colony's pace at once (on the title screen, the
+   * colony about to land) and is remembered for the next new colony.
+   */
+  private wireTempo(root: HTMLElement, id: string): void {
+    root.querySelectorAll<HTMLElement>(`#${id} [data-tempo]`).forEach((b) => {
+      b.onclick = () => {
+        const k = b.dataset.tempo as Tempo;
+        this.game.sim.tempo = k;
+        setPref('tempo', k);
+        this.root.querySelectorAll<HTMLElement>('[data-tempo]').forEach((o) => o.classList.toggle('on', o.dataset.tempo === k));
+        const desc = this.root.querySelector('#ttempo-desc');
+        if (desc) desc.textContent = t(`tempo_${k}D`);
+      };
+    });
+  }
+
   private siteCard(): string {
     const sim = this.game.sim;
     const id = sim.site;
@@ -601,29 +714,248 @@ export class UI {
   }
 
   /** Rebuild every panel (after a language change), keeping the state. */
+  /** A gamepad drives the same controls as the keys and the mouse. */
+  private pad = new Pad({
+    menu: () => this.padMenu() !== null,
+    pan: (dx, dy) => {
+      const game = this.game;
+      if (game.cine.busy) return;
+      if (game.director.active) game.director.stop();
+      game.selected = null;
+      game.cam.pan(-dx, -dy);
+    },
+    zoom: (f) => {
+      if (this.game.director.active) this.game.director.stop();
+      this.game.cam.zoomAt(innerWidth / 2, innerHeight / 2, f);
+    },
+    pick: () => this.click(innerWidth / 2, innerHeight / 2),
+    key: (k) => this.padKey(k),
+    speedStep: (d) => {
+      const i = (SPEEDS as readonly number[]).indexOf(this.game.speed);
+      this.game.setSpeed((i < 0 ? 0 : i) + d);
+    },
+    cross: (on) => this.root.classList.toggle('padcross', on),
+  });
+
+  /** The menu a gamepad is in (title, closing card, year review, settings), if any. */
+  private padMenu(): HTMLElement | null {
+    for (const id of ['review', 'over', 'title', 'keys']) {
+      const el = this.els[id];
+      if (el && !el.hidden && el.getClientRects().length > 0 && getComputedStyle(el).display !== 'none') return el;
+    }
+    return null;
+  }
+
+  private padKey(k: string): void {
+    const menu = this.padMenu();
+    if (menu && (k === 'Tab' || k === 'Shift+Tab' || k === 'Enter')) {
+      const items = [...menu.querySelectorAll<HTMLElement>('button, input, [data-mode]')].filter((e) => e.getClientRects().length > 0 && !(e as HTMLButtonElement).disabled);
+      if (!items.length) return;
+      const cur = document.activeElement as HTMLElement | null;
+      let i = cur ? items.indexOf(cur) : -1;
+      if (k === 'Enter') {
+        if (i < 0) i = 0;
+        items[i]!.click();
+        return;
+      }
+      i = i < 0 ? 0 : (i + (k === 'Tab' ? 1 : -1) + items.length) % items.length;
+      document.querySelectorAll('.padfocus').forEach((e) => e.classList.remove('padfocus'));
+      items[i]!.classList.add('padfocus');
+      items[i]!.focus();
+      items[i]!.scrollIntoView({ block: 'nearest' });
+      return;
+    }
+    dispatchEvent(new KeyboardEvent('keydown', { key: k }));
+  }
+
+  /** A plain-text report of what the player's game looks like, for a bug report. */
+  private problemReport(): string {
+    const g = this.game;
+    const sim = g.sim;
+    const col = sim.colony;
+    const lines = [
+      `Underfoot ${VERSION}`,
+      `Date: ${new Date().toISOString()}`,
+      `Browser: ${navigator.userAgent}`,
+      `Screen: ${innerWidth}x${innerHeight} @${devicePixelRatio}x · language ${getLang()}`,
+      `Settings: ${JSON.stringify({ prefs: getPrefs(), volume: g.sound.vol, sound: g.sound.on, music: g.sound.music, mode: this.mode })}`,
+      '',
+      `Colony: seed ${sim.seed} · site ${sim.site} · phase ${sim.phase} · day ${sim.day} · tick ${sim.tick}`,
+      `Workers ${col.adults} (majors ${col.majors}) · brood ${col.brood.length} · seeds ${col.stored} · rooms ${sim.nest.chambers.map((c) => c.kind[0] + (c.ready ? '' : '*')).join('')}`,
+      `Speed ${g.speed}× · paused ${g.paused} · documentary ${g.director.active} · ${g.tps.toFixed(0)} ticks/s`,
+      '',
+      'Recent errors:',
+      ...(errorLog().length ? errorLog().map((e) => `- ${new Date(e.t).toISOString()} ${e.msg}${e.stack ? `\n  ${e.stack.split('\n').slice(0, 6).join('\n  ')}` : ''}`) : ['(none)']),
+      '',
+      'What happened (please write a line or two here):',
+      '',
+    ];
+    return lines.join('\n');
+  }
+
+  /** Apply the display preferences (interface scale, shake). */
+  applyPrefs(): void {
+    const p = getPrefs();
+    this.root.style.zoom = p.uiScale === 1 ? '' : String(p.uiScale);
+    this.root.style.setProperty('--uizoom', String(p.uiScale));
+    if (this.game.cam) this.game.cam.shakeOn = p.shake;
+  }
+
+  toggleFullscreen(): void {
+    try {
+      if (document.fullscreenElement) void document.exitFullscreen();
+      else void document.documentElement.requestFullscreen();
+    } catch {
+      // not allowed here (some embedded views)
+    }
+  }
+
+  /** The kept colonies have been read: show them on the title screen. */
+  slotsReady(): void {
+    if (!this.modeChosen && this.game.sim.phase === 'choose') this.rebuild();
+  }
+
+  private async openSlot(id: string, btn: HTMLElement): Promise<void> {
+    btn.textContent = t('opening');
+    if (await this.game.resume(id)) {
+      this.modeChosen = true;
+      this.applyPhase(this.game.sim.phase);
+      this.toast(t('welcomeBack'));
+    } else btn.textContent = t('saveBroken');
+  }
+
+  /** The list of kept colonies under the title: open, save to a file, delete; and bring one in from a file. */
+  private buildSlots(el: HTMLElement): void {
+    const slots = listSlots();
+    el.hidden = false;
+    const name = (m: SlotMeta): string => (m.queen ? `${t('queenTitle', { name: m.queen })}${m.colony ? ` · ${t(m.colony)}` : ''}` : t('slotUnnamed'));
+    const when = (ms: number): string => new Date(ms).toLocaleDateString(getLang() === 'tr' ? 'tr-TR' : 'en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+    el.innerHTML = `${slots.length > 1 ? `<button class="linkbtn" id="slots-toggle">${t('slotsShow', { n: slots.length })}</button>` : ''}
+      <div class="slot-list"${slots.length > 1 ? ' hidden' : ''}>${slots
+        .map(
+          (m) => `<div class="slot" data-id="${m.id}"><div class="slot-txt"><b>${name(m)}</b><span>${t('slotLine', { d: m.day, n: m.adults, w: when(m.savedAt) })}${m.tempo && m.tempo !== 'true' ? ` · ${t(`tempo_${m.tempo}`)}` : ''}</span></div>
+          <button class="btn" data-act="open">${t('slotOpen')}</button><button class="btn" data-act="export" title="${t('slotExportT')}">${t('slotExport')}</button><button class="btn" data-act="delete">${t('slotDelete')}</button></div>`,
+        )
+        .join('')}</div>
+      <button class="linkbtn" id="slot-import">${t('slotImport')}</button><input type="file" id="slot-file" accept=".json,application/json" hidden />`;
+    const toggle = el.querySelector('#slots-toggle') as HTMLElement | null;
+    if (toggle) toggle.onclick = () => {
+      const list = el.querySelector('.slot-list') as HTMLElement;
+      list.hidden = !list.hidden;
+    };
+    el.querySelectorAll<HTMLElement>('.slot').forEach((row) => {
+      const id = row.dataset.id!;
+      const meta = slots.find((m) => m.id === id)!;
+      let armed = 0;
+      row.querySelectorAll<HTMLButtonElement>('[data-act]').forEach((b) => {
+        b.onclick = async () => {
+          const act = b.dataset.act;
+          if (act === 'open') void this.openSlot(id, b);
+          else if (act === 'export') {
+            const f = await exportSlot(id);
+            if (f) await this.offerFile(`underfoot-${(meta.queen || 'colony').toLowerCase().replace(/[^a-z0-9ğüşıöç]+/gi, '-')}-day${meta.day}.json`, new Blob([JSON.stringify(f)], { type: 'application/json' }));
+          } else if (act === 'delete') {
+            // Deleting a colony takes a second, separate click.
+            const now = performance.now();
+            if (armed && now - armed > CONFIRM_DELAY_MS) {
+              await removeSlot(id);
+              this.rebuild();
+              return;
+            }
+            if (armed) return;
+            armed = now;
+            b.textContent = t('slotDeleteConfirm');
+            b.classList.add('danger');
+            setTimeout(() => {
+              armed = 0;
+              b.textContent = t('slotDelete');
+              b.classList.remove('danger');
+            }, 4000);
+          }
+        };
+      });
+    });
+    const file = el.querySelector('#slot-file') as HTMLInputElement;
+    (el.querySelector('#slot-import') as HTMLElement).onclick = () => file.click();
+    file.onchange = async () => {
+      const f = file.files?.[0];
+      if (!f) return;
+      const m = await importSlot(await f.text());
+      if (m) this.rebuild();
+      else this.toast(t('slotImportBad'), 5000);
+    };
+  }
+
+  /** Hand the player a file: through the viewer's downloads capability where there is one, else a plain download. */
+  private async offerFile(filename: string, data: Blob): Promise<boolean> {
+    const claude = (window as unknown as { claude?: { use?: (n: string) => Promise<{ save(r: { filename: string; data: Blob }): Promise<unknown> } | null> } }).claude;
+    if (claude?.use) {
+      try {
+        const dl = await claude.use('downloads');
+        if (dl) {
+          await dl.save({ filename, data });
+          return true;
+        }
+      } catch {
+        return false;
+      }
+    }
+    const url = URL.createObjectURL(data);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    // (In the page, or some browsers lose the file's name.)
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    return true;
+  }
+
   private rebuild(): void {
     const tipShown = this.els.keys && !this.els.keys.hidden;
-    const folded = this.els.brain?.classList.contains('collapsed');
-    const cfolded = this.els.colony?.classList.contains('collapsed');
+    const folded = this.els.drawer?.classList.contains('collapsed');
     this.root.innerHTML = '';
     this.els = {};
     this.queueSig = '';
     this.roomSig = '';
     this.skySig = '';
+    this.toastQueue.length = 0;
+    this.toastShowing = false;
     this.build();
-    this.els.brain!.classList.toggle('collapsed', !!folded);
-    this.els.colony!.classList.toggle('collapsed', !!cfolded);
+    this.els.drawer!.classList.toggle('collapsed', !!folded);
     this.syncCollapse();
     if (this.game.sim.phase === 'failed') this.showOver();
     if (tipShown) this.els.keys!.hidden = false;
   }
 
+  /** A phone-sized screen: one sheet open at a time. */
+  private narrow(): boolean {
+    return innerWidth <= 760;
+  }
+
+  /** The drawer's tabs, fold button and which pane shows. */
   private syncCollapse(): void {
-    for (const [id, btn] of [['brain', '#collapse'], ['colony', '#ccollapse']] as const) {
-      const panel = this.els[id] ?? (this.root.querySelector(`#${id}`) as HTMLElement | null);
-      if (!panel) continue;
-      (panel.querySelector(btn) as HTMLElement).textContent = panel.classList.contains('collapsed') ? t('show') : t('hide');
-    }
+    const d = this.els.drawer ?? (this.root.querySelector('#drawer') as HTMLElement | null);
+    if (!d) return;
+    if (this.mode === 'watch' && this.tab === 'guide') this.tab = 'colony';
+    d.dataset.tab = this.tab;
+    const open = !d.classList.contains('collapsed');
+    d.querySelectorAll<HTMLElement>('#tabs [data-tab]').forEach((b) => b.classList.toggle('on', open && b.dataset.tab === this.tab));
+    const btn = d.querySelector('#dcollapse') as HTMLElement;
+    btn.innerHTML = open ? ICON.chevronUp : ICON.chevronDown;
+    btn.title = open ? t('hide') : t('show');
+    if (open && this.tab === 'notes') this.unread = false;
+    this.els['notes-dot']?.classList.toggle('on', this.unread);
+    if (open && this.tab === 'notes') this.renderNotes();
+  }
+
+  /** Open the drawer on a tab (unless the screen is too small to spare the room). */
+  private openTab(tab: Tab): void {
+    if (!roomy()) return;
+    this.tab = tab;
+    this.els.drawer!.classList.remove('collapsed');
+    this.syncCollapse();
   }
 
   /**
@@ -645,6 +977,8 @@ export class UI {
     }
     this.root.classList.toggle('m-watch', mode === 'watch');
     this.root.classList.toggle('m-guide', mode === 'guide');
+    if (mode === 'guide' && changed) this.tab = 'guide';
+    this.syncCollapse();
     this.syncBrain();
     if (announce && changed) this.toast(t(mode === 'watch' ? 'toWatch' : 'toGuide'));
   }
@@ -666,13 +1000,49 @@ export class UI {
 
   // ------------------------------------------------------------------ messages
 
-  toast(html: string, ms = 5200): void {
-    const box = this.els.toasts!;
-    while (box.children.length >= 3) box.firstElementChild!.remove();
-    const el = h('div', 'toast', html);
+  /**
+   * A line of news across the top: one at a time, like a subtitle. Lines that
+   * come while one is showing wait their turn (the oldest are dropped when
+   * many arrive at once); everything is in the journal anyway.
+   */
+  /** Until then (performance.now ms) news waits: a title card is on screen. */
+  private toastHold = 0;
+
+  toast(html: string, ms = 5200, loc?: { x: number; y: number }): void {
+    this.toastQueue.push({ html, ms, loc });
+    while (this.toastQueue.length > 3) this.toastQueue.shift();
+    if (!this.toastShowing) this.nextToast();
+  }
+
+  private nextToast(): void {
+    const box = this.els.toasts;
+    if (!box) return;
+    box.innerHTML = '';
+    const hold = this.toastHold - performance.now();
+    if (hold > 0 && this.toastQueue.length) {
+      this.toastShowing = true;
+      setTimeout(() => this.nextToast(), hold);
+      return;
+    }
+    const item = this.toastQueue.shift();
+    if (!item) {
+      this.toastShowing = false;
+      return;
+    }
+    this.toastShowing = true;
+    // With more waiting, each gets a little less time.
+    const ms = this.toastQueue.length ? Math.min(item.ms, 3400) : item.ms;
+    const el = h('div', 'toast', item.html);
     el.style.animationDuration = `${ms / 1000}s`;
+    // A line with a place on it: click it to go there.
+    const loc = item.loc;
+    if (loc) {
+      el.classList.add('toastgo');
+      el.title = t('toastGo');
+      el.onclick = () => this.lookAt(loc.x, loc.y);
+    }
     box.appendChild(el);
-    setTimeout(() => el.remove(), ms);
+    setTimeout(() => this.nextToast(), ms);
   }
 
   /** The journal and what it has already noted, for saving with the colony. */
@@ -729,8 +1099,12 @@ export class UI {
       this.journal.push({ at, tick: sim.tick, key, vars, loc: opts.loc });
       if (this.journal.length > 80) this.journal.shift();
     }
-    this.renderNotes();
-    if (opts.toast) this.toast(this.entryText({ at: '', key, vars }));
+    const d = this.els.drawer;
+    if (!d || d.classList.contains('collapsed') || this.tab !== 'notes') {
+      this.unread = true;
+      this.els['notes-dot']?.classList.add('on');
+    } else this.renderNotes();
+    if (opts.toast) this.toast(this.entryText({ at: '', key, vars }), 5200, opts.loc);
   }
 
   /** The last n journal lines as plain text (for tests and the play-test harness). */
@@ -750,7 +1124,7 @@ export class UI {
   private renderNotes(): void {
     const list = this.els.notes;
     if (!list) return;
-    const shown = this.notesOpen ? this.journal.slice().reverse() : this.journal.slice(-3).reverse();
+    const shown = this.journal.slice().reverse();
     list.innerHTML =
       shown
         .map((n) => {
@@ -775,11 +1149,7 @@ export class UI {
     const row = this.root.querySelector(`#row-${work}`);
     if (!row) return;
     // A folded brain would hide the flash: open it (phones keep their slice clear).
-    const brain = this.els.brain!;
-    if (brain.classList.contains('collapsed') && roomy()) {
-      brain.classList.remove('collapsed');
-      this.syncCollapse();
-    }
+    this.openTab('guide');
     row.classList.remove('pulse');
     void (row as HTMLElement).offsetWidth;
     row.classList.add('pulse');
@@ -879,9 +1249,17 @@ export class UI {
     const montage = this.root.classList.contains('montage');
     this.root.classList.remove('cine');
     this.root.classList.remove('montage');
+    // A title card still up ("She comes down"): the panels and the news wait until it fades.
+    if (this.els.season!.classList.contains('on')) {
+      const settle = 3400;
+      this.toastHold = performance.now() + settle;
+      this.root.classList.add('settling');
+      setTimeout(() => this.root.classList.remove('settling'), settle);
+    }
     this.markerMode = false;
-    // Founding is slow at 1×: carry on at 4× (the player can slow down).
-    game.setSpeed(2);
+    // Founding is slow at 1×: carry on at 4× (the player can slow down); at the
+    // faster tempos the colony already lives quicker, and 2× keeps the ants readable.
+    game.setSpeed(game.sim.tempo === 'true' ? 2 : 1);
     this.syncBar();
     this.syncBrain();
     if (montage) setTimeout(() => this.cineCaption('', '', ''), 5000);
@@ -960,6 +1338,67 @@ export class UI {
     this.syncBar();
   }
 
+  /** Save the scene as a picture (X): the slice as drawn, with the colony's name and date in a corner. */
+  /** The nest's time-lapse (once there is a little of a nest to show). */
+  private showFilm(): void {
+    if (this.replay.open) return;
+    if (this.game.director.active) this.game.director.stop();
+    this.replay.show(this.root);
+  }
+
+  private snapshot(): void {
+    const game = this.game;
+    const src = game.canvas;
+    const c = document.createElement('canvas');
+    c.width = src.width;
+    c.height = src.height;
+    const ctx = c.getContext('2d');
+    if (!ctx) return;
+    ctx.drawImage(src, 0, 0);
+    const sim = game.sim;
+    const k = src.width / Math.max(1, src.clientWidth);
+    const label = `${sim.names.colony ? t(sim.names.colony) + ' · ' : ''}${dateText(sim)}`;
+    ctx.font = `italic ${Math.round(15 * k)}px Georgia, serif`;
+    ctx.fillStyle = 'rgba(240,228,206,0.85)';
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = 6 * k;
+    ctx.fillText(`Underfoot · ${label}`, 18 * k, c.height - 18 * k);
+    c.toBlob(async (blob) => {
+      if (!blob) return;
+      const filename = `underfoot-${sim.seed}-${sim.tick}.png`;
+      // In the claude.ai viewer a page cannot download by itself: the viewer is offered the file.
+      const host = (window as unknown as { claude?: { use(n: string): Promise<{ save(r: { filename: string; data: Blob }): Promise<unknown> } | null> } }).claude;
+      if (host?.use) {
+        const dl = await host.use('downloads').catch(() => null);
+        if (dl) {
+          try {
+            await dl.save({ filename, data: blob });
+            this.toast(t('snapSaved'));
+          } catch {
+            // declined, or not available here: nothing more to do
+          }
+          return;
+        }
+      }
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+      this.toast(t('snapSaved'));
+    }, 'image/png');
+  }
+
+  /** Sound on or off (M). */
+  private toggleSound(): void {
+    const on = this.game.sound.toggle();
+    const b = this.root.querySelector('#v-sound');
+    if (b) b.innerHTML = on ? ICON.sound : ICON.mute;
+    this.toast(t(on ? 'soundOn' : 'soundOff'));
+  }
+
   /** Clean frame for screenshots and clips; the documentary caption stays. */
   private toggleCinema(): void {
     this.cinema = !this.cinema;
@@ -1003,7 +1442,14 @@ export class UI {
   private syncBar(): void {
     const btns = this.root.querySelectorAll<HTMLElement>('#speeds button');
     btns.forEach((b, i) => {
-      if (i === 0) b.classList.toggle('on', this.game.paused);
+      if (i === 0) {
+        b.classList.toggle('on', this.game.paused);
+        const want = this.game.paused ? 'play' : 'pause';
+        if (b.dataset.icon !== want) {
+          b.dataset.icon = want;
+          b.innerHTML = ICON[want];
+        }
+      }
       else b.classList.toggle('on', !this.game.paused && SPEEDS[i - 1] === this.game.speed);
     });
     this.els['v-plan']?.classList.toggle('on', this.game.renderer.planAlways);
@@ -1067,8 +1513,22 @@ export class UI {
       },
       { passive: false },
     );
+    // Any sign of the player resets the idle clock (see update: the documentary takes over when idle).
+    for (const ev of ['pointerdown', 'pointermove', 'keydown', 'wheel']) addEventListener(ev, () => (this.idle = 0), { passive: true });
     addEventListener('keydown', (e) => {
       if (e.target instanceof HTMLInputElement) return;
+      if (e.key === 'F11') {
+        e.preventDefault();
+        this.toggleFullscreen();
+        return;
+      }
+      // Ctrl/Cmd+S: save now (not the browser's "save page").
+      if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        const ph = game.sim.phase;
+        if (ph === 'founding' || ph === 'growing') void game.save().then(() => this.toast(t('savedNow'), 2500));
+        return;
+      }
       // A sequence running: Space, Esc or Enter skip it.
       if ((game.cine.busy || game.cine.montage) && (e.key === ' ' || e.key === 'Escape' || e.key === 'Enter')) {
         game.cine.skip();
@@ -1096,8 +1556,45 @@ export class UI {
         this.toggleCinema();
       } else if (e.key === '?' || e.key === '/') {
         this.els.keys!.hidden = !this.els.keys!.hidden;
+      } else if (e.key === 'x' || e.key === 'X') {
+        this.snapshot();
+      } else if (e.key === 'g' || e.key === 'G') {
+        this.showFilm();
+      } else if (e.key === 'm' || e.key === 'M') {
+        this.toggleSound();
+      } else if (e.key === 'j' || e.key === 'J') {
+        // Jump to the latest thing worth seeing.
+        const l = this.lastLoc;
+        if (l) {
+          if (game.director.active) game.director.stop();
+          game.selected = null;
+          const c = game.cam;
+          c.follow = null;
+          c.tx = l.x;
+          c.ty = l.y;
+          c.tzoom = Math.max(c.tzoom, 6);
+        }
+      } else if (e.key === 'q' || e.key === 'Q') {
+        const q = game.sim.colony.queen;
+        if (q && q.alive) {
+          if (game.director.active) game.director.stop();
+          game.selected = q;
+          game.cam.tzoom = Math.max(game.cam.tzoom, 9);
+        }
+      } else if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'a', 'd', 'w', 's', 'A', 'D', 'W', 'S'].includes(e.key)) {
+        if (game.director.active) game.director.stop();
+        game.selected = null;
+        const k = e.key.toLowerCase();
+        const step = 140;
+        const dx = k === 'arrowleft' || k === 'a' ? step : k === 'arrowright' || k === 'd' ? -step : 0;
+        const dy = k === 'arrowup' || k === 'w' ? step : k === 'arrowdown' || k === 's' ? -step : 0;
+        game.cam.follow = null;
+        game.cam.tx -= dx / game.cam.tzoom;
+        game.cam.ty -= dy / game.cam.tzoom;
+        e.preventDefault();
       } else if (e.key === 'Escape') {
         this.els.keys!.hidden = true;
+        if (game.director.active) game.director.stop();
         game.selected = null;
         if (this.cinema) this.toggleCinema();
         this.markerMode = false;
@@ -1132,12 +1629,14 @@ export class UI {
       return;
     }
     let best: Ant | null = null;
-    let bd = (8 / game.cam.zoom) ** 2 + 6;
+    // Generous: ants are small and quick, a click a little off should still catch one.
+    let bd = (22 / game.cam.zoom) ** 2 + 9;
     const col = sim.colony;
     const all = col.queen ? [col.queen, ...col.ants] : col.ants;
     for (const a of all) {
-      if (!a.alive) continue;
-      const d = (a.x - p.x) ** 2 + (a.y - 2 - p.y) ** 2;
+      if (!a.alive || a.away) continue;
+      // (Drawn standing on its cell, so the body is a little above it.)
+      const d = (a.x + 0.5 - p.x) ** 2 + Math.min((a.y - 1.5 - p.y) ** 2, (a.y + 0.5 - p.y) ** 2);
       if (d < bd) {
         bd = d;
         best = a;
@@ -1150,21 +1649,45 @@ export class UI {
   // ------------------------------------------------------------------ per frame
 
   update(dt: number): void {
+    this.pad.poll(dt, performance.now());
     const game = this.game;
     const sim = game.sim;
     const col = sim.colony;
     const phase = sim.phase;
+    // Paused: a quiet badge says so (the bar's button is easy to miss).
+    const showPause = game.paused && (phase === 'growing' || phase === 'founding') && !game.cine.busy && !game.cine.montage;
+    if (showPause !== this.root.classList.contains('paused')) {
+      this.root.dataset.paused = t('pausedBadge');
+      this.root.classList.toggle('paused', showPause);
+    }
+    // Left to watch for a while: the documentary camera takes over, like a screen saver.
+    this.idle += dt;
+    if (this.mode === 'watch' && phase === 'growing' && !game.director.active && !game.paused && !game.cine.busy && !game.cine.montage && !game.selected && this.idle > IDLE_DOC && !this.root.classList.contains('modal')) {
+      game.director.start();
+      this.toast(t('autoDoc'));
+    }
+    // Once (ever), when there is a little nest to show: the film.
+    if (phase === 'growing' && !this.filmTip && sim.story.steps >= 16 && sim.nest.chambers.filter((c) => c.ready).length >= 4 && !this.root.classList.contains('modal')) {
+      this.filmTip = true;
+      let seen = false;
+      try {
+        seen = localStorage.getItem(FILM_TIP_KEY) === '1';
+        localStorage.setItem(FILM_TIP_KEY, '1');
+      } catch {
+        // no storage: show it this time
+      }
+      if (!seen) this.toast(t('tipFilm'), 9000);
+    }
     if (phase !== this.lastPhase) {
       const was = this.lastPhase;
       this.lastPhase = phase;
       this.applyPhase(phase);
       if (phase === 'growing' && was === 'founding') {
         this.note('j_firstWorkers', undefined, { toast: true });
+        // Once, as the colony comes to life: how to watch it.
+        setTimeout(() => this.toast(t('tipKeys'), 9000), 6500);
         // The moment to act (or to start watching): open the panel (except on phones) and point at the camera.
-        if (roomy()) {
-          this.els[this.mode === 'guide' ? 'brain' : 'colony']!.classList.remove('collapsed');
-          this.syncCollapse();
-        }
+        this.openTab(this.mode === 'guide' ? 'guide' : 'colony');
         setTimeout(() => this.toast(t(this.mode === 'guide' ? 'tipBrainAwake' : 'tipWatchAwake'), 9000), 1800);
         const w = this.els.watch!;
         w.classList.add('pulse');
@@ -1177,10 +1700,27 @@ export class UI {
       }
     }
     const dir = game.director;
+    const dipA = dir.dip > 0.01 ? (dir.dip * 0.96).toFixed(3) : '0';
+    if (this.dipEl && this.dipEl.style.opacity !== dipA) this.dipEl.style.opacity = dipA;
     this.els.watch!.classList.toggle('on', dir.active);
+    this.root.classList.toggle('doc', dir.active);
     const cap = this.els.caption!;
     cap.style.display = dir.active && dir.caption ? 'block' : 'none';
-    if (dir.active) (cap.querySelector('.line') as HTMLElement).innerHTML = dir.caption;
+    if (dir.active) {
+      const line = dir.caption + (game.slowed ? ` <span class="slowtag">${t('slowTag')}</span>` : '');
+      const el = cap.querySelector('.line') as HTMLElement;
+      if (el.innerHTML !== line) {
+        // A new shot (not just the ant moving on a few millimetres): the line fades in.
+        const shot = dir.caption.split(' · ')[0]!.replace(/^\S+ /, '');
+        if (shot !== this.lastShot) {
+          this.lastShot = shot;
+          el.classList.remove('fresh');
+          void el.offsetWidth;
+          el.classList.add('fresh');
+        }
+        el.innerHTML = line;
+      }
+    }
     while (sim.events.length) {
       const e = sim.events.shift()!;
       if (phase === 'failed') continue;
@@ -1198,6 +1738,8 @@ export class UI {
         if (e.what) vars.what = t(`what_${e.what}`);
         vars.queen = sim.names.queen;
         const loc = e.x !== undefined && e.y !== undefined ? { x: e.x, y: e.y } : undefined;
+        if (loc) this.lastLoc = loc;
+        game.sound.event(game, e.key, loc);
         if (e.key.startsWith('season_')) this.seasonCard(e.key.slice(7));
         if (e.key === 'sealedIn' && !sim.colony.hadWorkers) {
           this.root.classList.add('montage');
@@ -1206,10 +1748,16 @@ export class UI {
           game.cine.startMontage();
         }
         if (e.key === 'dormancy' && sim.colony.hadWorkers) this.yearReview();
+        // A roof coming down shakes the view, the more the nearer it is to what's on screen.
+        if ((e.key === 'caveIn' || e.key === 'caveInDead') && loc) {
+          const cam = game.cam;
+          const d = Math.hypot(loc.x - cam.x, loc.y - cam.y) * cam.zoom / Math.max(cam.screenW, cam.screenH);
+          if (d < 1.2) cam.shake((e.key === 'caveInDead' ? 9 : 6) * (1 - d / 1.2) + 1.5);
+        }
         this.note(`ev_${e.key}`, vars, { toast: true, merge: !e.kind, loc });
-        if (loc) dir.notice(loc.x, loc.y, t(`ev_${e.key}`, vars), e.key);
+        if (loc) dir.notice(loc.x, loc.y, t(`ev_${e.key}`, vars.kind ? { ...vars, kind: t(String(vars.kind)) } : vars), e.key);
         // Big news gets a ring on the spot, so the eye finds it.
-        if (loc && ['neighbourMetL', 'neighbourMetR', 'youngColony', 'youngColonyGone', 'war', 'raid', 'secondGate', 'raidYoung', 'warYoung', 'tugOfWar'].includes(e.key)) game.renderer.mark(loc.x, loc.y);
+        if (loc && ['neighbourMetL', 'neighbourMetR', 'youngColony', 'youngColonyGone', 'war', 'raid', 'secondGate', 'raidYoung', 'warYoung', 'tugOfWar', 'moleNest', 'queenKilledMole', 'toad', 'caveIn', 'caveInDead', 'lasiusFight', 'lasiusKill'].includes(e.key)) game.renderer.mark(loc.x, loc.y);
       }
     }
     // The ant being followed died: show its life card for a moment.
@@ -1227,11 +1775,15 @@ export class UI {
 
     const [e, l, p] = col.broodCounts();
     const days = (col.stored + col.reserve) / Math.max(1, this.dailyNeed());
-    const foodText = days >= 10 ? t('foodDays', { n: '10+' }) : days >= 1 ? t('foodDays', { n: num(days) }) : t('foodHours', { n: Math.floor(days * 24) });
+    const foodText = days >= 10 ? t('foodDays', { n: '10+' }) : days >= 1 ? t('foodDays', { n: num(days) }) : t('foodHours', { n: Math.floor(days * 7) });
     this.els.pop!.textContent = String(col.adults);
     // The time-lapse shows the weeks going by.
     if (game.cine.montage) this.els.cinedate!.textContent = dateText(sim);
-    if (sim.names.queen && !this.els.cname!.textContent) this.els.cname!.textContent = `${t('queenTitle', { name: sim.names.queen })} · ${t(sim.names.colony)}`;
+    if (sim.names.queen && this.els.cname!.dataset.named !== '1') {
+      this.els.cname!.dataset.named = '1';
+      this.els.cname!.textContent = `${t('queenTitle', { name: sim.names.queen })} · ${t(sim.names.colony)}`;
+      this.els.cname!.title = t(`site_${sim.site}`);
+    }
     this.els.maj!.textContent = String(col.majors);
     this.els.brood!.textContent = String(e + l + p);
     this.els.brood!.title = t('broodTitle', { e, l, p });
@@ -1244,9 +1796,14 @@ export class UI {
     const mins = Math.floor(sim.dayT * 24 * 60);
     const clock = `${String(Math.floor(mins / 60)).padStart(2, '0')}:${String(mins % 60).padStart(2, '0')}`;
     this.els.day!.textContent = dateText(sim);
-    this.els.sky!.textContent = `${t(sky)} · ${t('tempNow', { t: Math.round(sim.surfaceT) })}`;
-    this.els.sky!.title = t('tempTitle', { s: Math.round(sim.surfaceT), n: Math.round(col.nestTemp) });
-    this.els.year!.textContent = `${t(`season_${sim.season}`)} · ${t('yearN', { n: sim.cal.year(sim.simDays) })}`;
+    // The icon says clear, rain or night; the words would push the temperature off the card.
+    const gust = sim.gust();
+    const windy = Math.abs(gust) > 0.65 ? t('windGale') : Math.abs(gust) > 0.35 ? t('windBreeze') : '';
+    this.els.sky!.textContent = t('tempNow', { t: Math.round(sim.surfaceT) }) + (windy ? ` · ${windy} ${gust > 0 ? '→' : '←'}` : '');
+    this.els.sky!.title = `${t(sky)} · ${t('tempTitle', { s: Math.round(sim.surfaceT), n: Math.round(col.nestTemp) })}`;
+    this.els.skyico!.title = t(sky);
+    // (At a faster tempo the header says so: it is why the colony grows as it does.)
+    this.els.year!.textContent = `${t(`season_${sim.season}`)} · ${t('yearN', { n: sim.cal.year(sim.simDays) })}${sim.tempo && sim.tempo !== 'true' ? ` · ${t(`tempo_${sim.tempo}`)}` : ''}`;
     if (sky !== this.skySig) {
       this.skySig = sky;
       this.els.skyico!.innerHTML = sky === 'skyStorm' ? ICON.storm : sky === 'skyRain' || sky === 'skySnow' ? ICON.rain : sky === 'skyNight' ? ICON.moon : ICON.sun;
@@ -1278,7 +1835,7 @@ export class UI {
     this.els.broodtrend!.textContent = col.adults > 0 ? t('broodTrend', { n: brood, arrow }) : '';
     this.syncBrain();
     this.syncWinter();
-    if (this.mode === 'watch') this.syncColony(counts, e, l, p, arrow);
+    this.syncColony(counts, e, l, p, arrow);
     this.drawSpark();
     if (performance.now() > this.lifeCardUntil) this.inspector();
     this.observe();
@@ -1307,8 +1864,11 @@ export class UI {
     const rows = rooms.map((c) => {
       let status = '';
       if (!c.ready) status = t('roomDigging', { p: Math.min(99, Math.round((100 * c.dug) / Math.max(1, c.cells.length))) });
-      else if (c.kind === 'granary' || c.kind === 'queen') status = c.seeds ? t('roomSeeds', { n: c.seeds }) : '';
+      else if (holdsStores(c.kind)) status = c.seeds ? t('roomSeeds', { n: c.seeds }) : '';
       else if (c.kind === 'nursery') status = t('roomBrood', { n: col.brood.filter((b) => !b.carried && sim.nest.chamberAt(b.y * w.w + b.x) === c).length });
+      // A roof under strain says so, in the warning colour.
+      const strain = c.ready ? sim.ground.strain[c.id] ?? 0 : 0;
+      if (strain >= 0.15) status = `<b class="warn">${t('roomCracking', { p: Math.round(Math.min(1, strain) * 100) })}</b>${status ? ' · ' + status : ''}`;
       const tint = ZONE_TINT[c.kind]!;
       return `<button class="roomrow${c.ready ? '' : ' dig'}" data-loc="${Math.round(c.cx)},${Math.round(c.cy)}"><i style="background:rgb(${tint[0]},${tint[1]},${tint[2]})"></i><span>${t(`ch_${c.kind}`)}</span><em>${depthCm(c, w.ground)} cm</em><small>${status}</small></button>`;
     });
@@ -1433,15 +1993,26 @@ export class UI {
       place();
       return;
     }
+    // A part of a carcass in the nest: what it is, and how much is left of it.
+    const mo = game.sim.carcasses.bitAt(x, y);
+    if (mo && game.renderer.inSight(game.sim, mo.x, mo.y)) {
+      const who = mo.tone < 150 ? 'beetle' : mo.tone < 220 ? 'hopper' : 'worm';
+      tip.innerHTML = `<b>${t(`part_${mo.look}`)}</b> <span class="dim">${t(`partOf_${who}`)}</span><br>${mo.food > 0 ? t('partBites', { n: mo.food }) : t('partHusk')}`;
+      place();
+      return;
+    }
     // A carcass: how heavy, and who has hold of it.
     const cc = game.sim.carcasses.at(x, y);
     if (cc && game.renderer.inSight(game.sim, cc.x, cc.y)) {
       const key = cc.kind === 'beetle' ? 'deadBeetle' : cc.kind === 'hopper' ? 'deadHopper' : 'deadWorm';
       const ours = cc.carriers.filter((a) => !a.rival).length;
       const theirs = cc.carriers.length - ours;
+      const cutting = cc.carriers.filter((a) => a.cutPart >= 0).length;
       const state = cc.atGate
-        ? t('cdCut')
-        : ours && theirs
+        ? t('cdCut', { n: cutting })
+        : cutting
+          ? t('cdCutting', { n: cutting })
+          : ours && theirs
           ? t('cdTug', { n: ours, m: theirs })
           : ours + theirs
             ? ours + theirs >= cc.weight
@@ -1467,13 +2038,19 @@ export class UI {
       return;
     }
     let body = '';
-    if (c.kind === 'granary' || c.kind === 'queen') body = t('seedsStored', { n: c.seeds });
+    if (holdsStores(c.kind) && (c.kind !== 'rest' || c.seeds > 0)) body = t('seedsStored', { n: c.seeds });
     if (c.kind === 'nursery') {
       const n = game.sim.colony.brood.filter((b) => !b.carried && game.sim.nest.chamberAt(b.y * w.w + b.x) === c).length;
       body = t('broodSpots', { n, s: c.floor.length });
     }
     if (c.kind === 'rest') body = t('restBody');
-    tip.innerHTML = `<b>${t(`ch_${c.kind}`)}</b> · ${t('cmDown', { d: depthCm(c, w.ground) })}<br>${body}<div class="fact">${t(`fact_${c.kind}`)}</div>`;
+    // How its roof is holding: the soil, the span, the wet, the shoring (see Ground).
+    const g = game.sim.ground;
+    const strain = g.strain[c.id] ?? 0;
+    const roof = strain >= 0.15
+      ? `<div class="warnline">${t('roofStrain', { p: Math.round(Math.min(1, strain) * 100) })}${g.shore[c.id] ? ' · ' + t('roofShored', { p: Math.round(g.shore[c.id]! * 100) }) : ''}</div>`
+      : '';
+    tip.innerHTML = `<b>${t(`ch_${c.kind}`)}</b> · ${t('cmDown', { d: depthCm(c, w.ground) })}<br>${body}${roof}<div class="fact">${t(`fact_${c.kind}`)}</div>`;
     tip.style.display = 'block';
     tip.style.left = `${Math.min(this.pointer.x + 14, innerWidth - 260)}px`;
     tip.style.top = `${this.pointer.y + 14}px`;
@@ -1501,7 +2078,7 @@ export class UI {
     const sim = this.game.sim;
     const col = sim.colony;
     const y = sim.closeYear();
-    const lost = y.deaths.filter(([k]) => k !== 'brood drowned' && k !== 'larva starved');
+    const lost = y.deaths.filter(([k]) => !k.startsWith('brood') && k !== 'larva starved');
     const lostN = lost.reduce((s, [, n]) => s + n, 0);
     const causes = lost.slice(0, 4).map(([k, n]) => t('rvCause', { n, what: t(`cause_${k.replace(/ /g, '_')}`) })).join(', ');
     const rows = [
@@ -1511,18 +2088,35 @@ export class UI {
       [t('rvSeeds'), String(col.stored + col.reserve)],
     ];
     if (y.wars || y.raids) rows.push([t('rvNeighbours'), t('rvNeighboursV', { w: y.wars, r: y.raids })]);
+    if (y.taken > 0 && sim.neighbours.some((nb) => nb.found)) rows.push([t('rvTaken'), t('rvTakenV', { n: y.taken, m: y.gathered })]);
     if (y.flown) rows.push([t('rvFlown'), String(y.flown)]);
+    if (y.caveIns || y.rescued) rows.push([t('rvGround'), t('rvGroundV', { c: y.caveIns, r: y.rescued })]);
+    if (y.skirmishes) rows.push([t('rvTree'), t('rvTreeV', { n: y.skirmishes })]);
     const el = this.els.review!;
     el.innerHTML = `<div class="eyebrow">${t('yearN', { n: y.year })}${sim.names.colony ? ` · ${t(sim.names.colony)}` : ''}</div><h2>${t('rvTitle')}</h2>
       <dl>${rows.map(([a, b]) => `<dt>${a}</dt><dd>${b}</dd>`).join('')}</dl>
-      <p>${t('rvRest', { queen: sim.names.queen || '' })}</p><button class="btn" id="rvok">${t('rvOk')}</button>`;
+      <p>${t('rvRest', { queen: sim.names.queen || '' })}</p><div class="btns"><button class="btn" id="rvfilm">${ICON.play}${t('replayOpen')}</button><button class="btn" id="rvok">${t('rvOk')}</button></div>`;
     el.style.display = 'block';
+    this.root.classList.add('modal');
     const close = (): void => {
       el.style.display = 'none';
+      this.root.classList.remove('modal');
     };
     (el.querySelector('#rvok') as HTMLElement).onclick = close;
-    // Watching on its own, the card steps aside by itself.
-    if (this.mode === 'watch') setTimeout(close, 16000);
+    (el.querySelector('#rvfilm') as HTMLElement).onclick = () => {
+      close();
+      this.showFilm();
+    };
+    // Watching on its own, the card steps aside by itself, and the year's film plays once.
+    if (this.mode === 'watch') setTimeout(() => {
+      if (el.style.display === 'none') return;
+      close();
+      // (Only to someone watching hands-off: the film then closes by itself and the colony goes on.)
+      if (this.idle > 30) {
+        if (this.game.director.active) this.game.director.stop();
+        this.replay.show(this.root, true);
+      }
+    }, 16000);
     this.note('j_yearReview', { y: y.year, n: col.adults, b: y.born, l: lostN });
   }
 
@@ -1553,7 +2147,8 @@ export class UI {
     if (a.rival) {
       const nb = a.rivalOf;
       const whose = t(nb?.young ? 'tipYoungColony' : nb && nb.side < 0 ? 'tipNeighbourL' : 'tipNeighbourR');
-      const doing = t(a.fight > 0 ? 'dc_boxing' : a.haul ? 'tipRivalHaul' : a.carry ? 'tipRivalCarry' : a.rstate === 3 ? 'tipRivalRaid' : a.rstate === 4 ? 'tipRivalWar' : a.rstate === 2 ? 'tipRivalBack' : 'tipRivalForage');
+      const held = a.holders.filter((h) => h.alive && h.foe === a).length + 1;
+      const doing = a.fight > 0 && held >= 2 ? t('dc_pinned', { n: held }) : t(a.fight > 0 ? 'dc_boxing' : a.haul ? 'tipRivalHaul' : a.carry ? 'tipRivalCarry' : a.rstate === 3 ? 'tipRivalRaid' : a.rstate === 4 ? 'tipRivalWar' : a.rstate === 2 ? 'tipRivalBack' : 'tipRivalForage');
       return `<b>${t(a.caste === 'soldier' ? 'tipStrangerMajor' : 'tipStranger')}</b> · ${whose}<br>${doing}<div class="fact">${t(nb?.young ? 'tipYoungFact' : 'tipStrangerFact')}</div>`;
     }
     if (a.foreign) return `<b>${t('dc_gyne')}</b><div class="fact">${t('tipForeignQueen')}</div>`;
@@ -1561,8 +2156,9 @@ export class UI {
     const name = a.caste === 'queen' ? t('queenTitle', { name: sim.names.queen }) : head;
     const body = rest;
     const temper = a.caste === 'queen' ? '' : (a.zeal ?? 0.75) < 0.4 ? ` · ${t('tipQuiet')}` : (a.zeal ?? 0.75) > 0.92 ? ` · ${t('tipTireless')}` : '';
-    const age = a.caste === 'queen' ? '' : t('tipAge', { n: num(a.age / DAY_TICKS) }) + temper;
-    return `<b>${name}</b>${body.length ? `<br>${body.join(' · ')}` : ''}${age ? `<br><span class="dim">${age}</span>` : ''}<div class="fact">${t('tipFollow')}</div>`;
+    const size = `${num(bodyLength(a))} mm`;
+    const dim = a.caste === 'queen' ? size : `${t('tipAge', { n: num(a.age / DAY_TICKS) })} · ${size}${temper}`;
+    return `<b>${name}</b>${body.length ? `<br>${body.join(' · ')}` : ''}<br><span class="dim">${dim}</span><div class="fact">${t('tipFollow')}</div>`;
   }
 
   /**
@@ -1627,14 +2223,24 @@ export class UI {
     const cc = sim.carcasses.at(x, y);
     if (cc) return { key: cc.kind === 'beetle' ? 'deadBeetle' : cc.kind === 'hopper' ? 'deadHopper' : 'deadWorm' };
     for (const c of sim.critters.list) {
-      if (c.kind === 'lark' && Math.abs(x - c.x) < 75 && y > c.y - 110 && y <= c.y + 2) return { key: 'lark' };
       if (c.kind === 'hopper' && Math.abs(x - c.x) < 14 && Math.abs(y - c.y + 4) < 8) return { key: 'hopper' };
       if (c.kind === 'beetle' && Math.abs(x - c.x) < 8 && Math.abs(y - c.y + 3) < 5) return { key: 'beetle' };
       if (c.kind === 'worm' && c.body.some((i) => Math.abs((i % w.w) - x) < 3 && Math.abs(((i / w.w) | 0) - y) < 3)) return { key: 'worm' };
       if (c.kind === 'antlion' && Math.abs(x - (c.px ?? c.x)) < (c.pr ?? 8) && y > c.y - (c.pr ?? 8) && y <= c.y + 2) return { key: 'antlion' };
       if ((c.kind === 'spider' || c.kind === 'phorid' || c.kind === 'woodlouse' || c.kind === 'cricket' || c.kind === 'beetlet') && Math.abs(x - c.x) < 4 && Math.abs(y - c.y + 1) < 4) return { key: c.kind };
+      if (c.kind === 'thief' && Math.abs(x - c.x) < 6 && Math.abs(y - c.y) < 6) return { key: 'thief' };
+      if (c.kind === 'lasius' && Math.abs(x - c.x) < 4 && Math.abs(y - c.y) < 4) return { key: 'lasius' };
+      if (c.kind === 'centipede' && c.body.some((i) => Math.abs((i % w.w) - x) < 3 && Math.abs(((i / w.w) | 0) - y) < 3)) return { key: 'centipede' };
+      if (c.kind === 'molecricket' && Math.hypot(x - c.x, y - c.y) < 16) return { key: 'molecricket' };
+      if (c.kind === 'toad' && Math.abs(x - c.x) < 30 && y > c.y - 28 && y <= c.y + 2) return { key: 'toad' };
+      if (c.kind === 'lizard' && (x - c.x) * c.dir > -128 && (x - c.x) * c.dir < 48 && y > c.y - 14 && y <= c.y + 2) return { key: 'lizard' };
+      if (c.kind === 'mole' && (x - c.x) * c.dir > -112 && (x - c.x) * c.dir < 8 && Math.abs(y - c.y) < 20) return { key: 'mole' };
     }
+    // Life on the tree's bark, and the tree itself.
+    const bark = this.game.renderer.treeLife.at(sim, x, y);
+    if (bark) return { key: bark };
     const i = y * w.w + x;
+    if (sim.tree && w.mat[i] === WOOD && y < w.ground[x]!) return { key: `tree_${sim.eco.treeKind ?? 'elm'}` };
     const pl = w.plant[i]!;
     const doy = sim.doy;
     if (pl) {
@@ -1652,6 +2258,7 @@ export class UI {
     if (m === STONE && w.tint[i] === 4) return { key: 'shard' };
     if (m === STONE && w.tint[i] === 5) return { key: 'bone' };
     if (m === LITTER && w.tint[i] === 2) return { key: 'leaf' };
+    if (m === SEED && w.bg[i] === 0 && w.tone[i]! >= SAMARA_TONE[0]) return { key: 'seed_samara' };
     if (m === SEED && w.bg[i] === 0) return { key: `seed_${['grass', 'clover', 'purse', 'stipa', 'erodium'][Math.min(4, Math.floor(w.tone[i]! / 51.2))]}` };
     return null;
   }
@@ -1661,15 +2268,22 @@ export class UI {
     const col = sim.colony;
     const peak = Math.max(0, ...col.history.map((s) => s.pop));
     let cause = 'end_old';
-    if (col.prio.forage === 0) cause = 'end_forageOff';
+    if (!col.hadWorkers && col.queen && !col.queen.alive) cause = 'end_foundress';
+    else if (col.queen && !col.queen.alive && col.queen.deathCause === 'killed by a mole') cause = 'end_queenMole';
+    else if (col.prio.forage === 0) cause = 'end_forageOff';
     else if (col.lastDeath === 'starvation') cause = 'end_hunger';
     else if (col.lastDeath === 'drowned') cause = 'end_flood';
     else if (col.prio.nurse === 0) cause = 'end_nurseOff';
+    // Starved on a slice the neighbours were gleaning: say how much they took.
+    const taken = sim.rivalTaken();
+    const rivals = cause === 'end_hunger' && taken >= 100 && sim.neighbours.some((nb) => nb.found) ? ` ${t('end_rivalsTook', { n: taken, m: col.delivered })}` : '';
     const el = this.els.over!;
     el.style.display = 'block';
     el.innerHTML = `<div class="eyebrow">${t('dateYear', { date: dateText(sim), y: sim.cal.year(sim.simDays) })}</div><h2>${t('overTitle')}</h2>
-      <p>${t(cause)} ${t('overPeak', { n: peak })}</p>
-      <button class="btn" id="again" style="padding:8px 16px">${t('foundNew')}</button>`;
+      <p>${t(cause)}${rivals}${col.hadWorkers ? ` ${t('overPeak', { n: peak })}` : ''}</p>
+      <div class="btns">${this.replay.ready() ? `<button class="btn" id="overfilm">${ICON.play}${t('replayOpen')}</button>` : ''}<button class="btn" id="again" style="padding:8px 16px">${t('foundNew')}</button></div>`;
     (el.querySelector('#again') as HTMLElement).onclick = () => location.reload();
+    const film = el.querySelector('#overfilm') as HTMLElement | null;
+    if (film) film.onclick = () => this.showFilm();
   }
 }

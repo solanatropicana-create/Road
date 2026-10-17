@@ -2,6 +2,42 @@
 export const FOG = 8;
 
 /**
+ * What a sense of radius r reaches from a point (ox, oy) mm inside its fog
+ * cell: the fog cells around (dx, dy, how well known 0..255, sensed now 0/1),
+ * and the columns of air above (dx, how well known). Full knowledge near the
+ * ant, softening toward the edge of its senses.
+ */
+interface Stamp {
+  cells: Int16Array;
+  sky: Int16Array;
+}
+const STAMPS = new Map<number, Stamp>();
+function stamp(r: number, ox: number, oy: number): Stamp {
+  const key = Math.round(r * 16) * 4096 + ox * 64 + oy;
+  let s = STAMPS.get(key);
+  if (s) return s;
+  const cells: number[] = [];
+  const sky: number[] = [];
+  const reach = Math.ceil(r / FOG) + 1;
+  for (let dy = -reach; dy <= reach; dy++) {
+    for (let dx = -reach; dx <= reach; dx++) {
+      const ddx = dx * FOG + FOG / 2 - ox;
+      const ddy = dy * FOG + FOG / 2 - oy;
+      const d = Math.sqrt(ddx * ddx + ddy * ddy) / r;
+      if (d >= 1) continue;
+      cells.push(dx, dy, Math.min(255, Math.round(255 * (1 - d) * 2.2)), d < 0.85 ? 1 : 0);
+    }
+  }
+  for (let dx = -reach; dx <= reach; dx++) {
+    const d = Math.abs(dx * FOG + FOG / 2 - ox) / r;
+    if (d < 1) sky.push(dx, Math.min(255, Math.round(255 * (1 - d) * 2.2)));
+  }
+  s = { cells: Int16Array.from(cells), sky: Int16Array.from(sky) };
+  STAMPS.set(key, s);
+  return s;
+}
+
+/**
  * What the colony knows of its world. It starts as a hand's breadth around
  * the queen and grows only where ants go: out on the meadow a forager takes
  * in a few centimetres around her; underground, the diggers know the soil
@@ -48,32 +84,34 @@ export class Fog {
 
   /** Learn the ground within r mm of (x, y); surface reveals also light the air above. */
   reveal(x: number, y: number, r: number, surface: boolean): void {
-    const gx0 = Math.max(0, Math.floor((x - r) / FOG));
-    const gx1 = Math.min(this.gw - 1, Math.floor((x + r) / FOG));
-    const gy0 = Math.max(0, Math.floor((y - r) / FOG));
-    const gy1 = Math.min(this.gh - 1, Math.floor((y + r) / FOG));
+    // (Every ant does this every few ticks: the cells a sense reaches come from a
+    // stamp worked out once per radius and per position inside a fog cell.)
+    const xi = Math.round(x);
+    const yi = Math.round(y);
+    const cx = Math.floor(xi / FOG);
+    const cy = Math.floor(yi / FOG);
+    const st = stamp(r, xi - cx * FOG, yi - cy * FOG);
+    const gw = this.gw;
+    const gh = this.gh;
     let changed = false;
-    for (let gy = gy0; gy <= gy1; gy++) {
-      for (let gx = gx0; gx <= gx1; gx++) {
-        const dx = gx * FOG + FOG / 2 - x;
-        const dy = gy * FOG + FOG / 2 - y;
-        const d = Math.sqrt(dx * dx + dy * dy) / r;
-        if (d >= 1) continue;
-        if (d < 0.85) this.vis[gy * this.gw + gx] = 1;
-        // Full knowledge near the ant, softening toward the edge of its senses.
-        const v = Math.min(255, Math.round(255 * (1 - d) * 2.2));
-        const k = gy * this.gw + gx;
-        if (v > this.seen[k]!) {
-          this.seen[k] = v;
-          changed = true;
-        }
+    for (let k = 0; k < st.cells.length; k += 4) {
+      const gx = cx + st.cells[k]!;
+      const gy = cy + st.cells[k + 1]!;
+      if (gx < 0 || gy < 0 || gx >= gw || gy >= gh) continue;
+      const i = gy * gw + gx;
+      if (st.cells[k + 3]) this.vis[i] = 1;
+      const v = st.cells[k + 2]!;
+      if (v > this.seen[i]!) {
+        this.seen[i] = v;
+        changed = true;
       }
     }
     if (surface) {
-      for (let gx = gx0; gx <= gx1; gx++) {
-        const d = Math.abs(gx * FOG + FOG / 2 - x) / r;
-        const v = Math.min(255, Math.round(255 * (1 - d) * 2.2));
-        if (d < 1 && v > this.sky[gx]!) {
+      for (let k = 0; k < st.sky.length; k += 2) {
+        const gx = cx + st.sky[k]!;
+        if (gx < 0 || gx >= gw) continue;
+        const v = st.sky[k + 1]!;
+        if (v > this.sky[gx]!) {
           this.sky[gx] = v;
           changed = true;
         }

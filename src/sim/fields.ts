@@ -19,7 +19,9 @@ export const FIELD_COUNT = 11;
 export const FAR = 65535;
 
 /** Rebuild interval per field, in ticks. Fast-changing targets refresh more often. */
-const INTERVAL = [20, 30, 10, 24, 18, 30, 14, 20, 30, 45, 45];
+// (The two surface-wide fields, Out and Entr, reach tens of thousands of cells
+// and change slowly: every two seconds is plenty.)
+const INTERVAL = [60, 60, 10, 24, 18, 30, 14, 20, 30, 45, 45];
 
 /** Outside cells closer than this to an entrance are included in the in-nest fields. */
 const MOUTH = 9;
@@ -38,6 +40,11 @@ export class Fields {
   private touched: Int32Array[] = [];
   private touchedCount = new Int32Array(FIELD_COUNT);
   private due = new Int32Array(FIELD_COUNT);
+  /**
+   * Rebuilds come this much less often in a big nest (each one floods all of it):
+   * set from the nest's size. The brood's fields keep their pace.
+   */
+  slow = 1;
 
   constructor(world: World) {
     this.world = world;
@@ -118,7 +125,7 @@ export class Fields {
         best = f;
       }
     }
-    if (best >= 0) this.due[best] = tick + INTERVAL[best]!;
+    if (best >= 0) this.due[best] = tick + Math.round(INTERVAL[best]! * (best === F.Larva || best === F.Egg ? 1 : this.slow));
     return best;
   }
 

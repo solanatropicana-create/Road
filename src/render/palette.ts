@@ -39,7 +39,8 @@ export const PAL = {
     ramp('#3e3d40', '#575659', '#727175', '#908f93', '#b3b2b4', '#cfcecf'),
     ramp('#363d48', '#4b5461', '#646f7d', '#7f8a98', '#a0aab6', '#c2c9d1'),
     ramp('#4a3a28', '#655238', '#826c4a', '#9e875f', '#bba479', '#d6c299'),
-    ramp('#6b6862', '#8a877f', '#a9a59c', '#c6c2b8', '#dedad0', '#f0ede5'),
+    // Limestone: pale, but a weathered grey-beige, never white.
+    ramp('#5e5a52', '#757067', '#8c867b', '#a19a8d', '#b3ac9e', '#c2bbac'),
     // Potsherd: fired clay, a dark burnished face over a brick-red core.
     ramp('#4a2a1e', '#6e3a24', '#8f4a2c', '#ad5d36', '#c27245', '#d38a5c'),
     // Bone: ivory, browned by the soil.
@@ -100,6 +101,8 @@ const SPAN = 256 / KINDS;
 
 /** Colour and half-size (mm) of a seed of this tone. */
 export const seedLook = (tone: number): { col: RGB; rx: number; ry: number } => {
+  // A samara: a papery wing round the seed, pale straw (elm) to rosy tan (maple).
+  if (tone >= SAMARA_TONE[0]) return { col: mixRGB([196, 182, 128], [182, 132, 98], (tone - 240) / 15), rx: 1.5, ry: 1.05 };
   const kind = Math.min(KINDS - 1, Math.floor(tone / SPAN));
   const t = (tone - kind * SPAN) / SPAN;
   const [rx, ry] = SEED_SIZE[kind]!;
@@ -112,8 +115,14 @@ export const SEED_TONE: Record<string, [number, number]> = {
   clover: [52, 101],
   purse: [103, 152],
   stipa: [154, 203],
-  erodium: [205, 255],
+  erodium: [205, 239],
 };
+
+/**
+ * Tone band for tree seed (elm or maple samaras): the top of the stork's
+ * bill band, drawn as a papery wing round the seed (see seedLook).
+ */
+export const SAMARA_TONE: [number, number] = [240, 255];
 
 /** Colour of fallen soft fruit by its tone: 0–99 sloe, 100–199 grape (or old pulp), 200+ rose hip. */
 export const fruitColor = (tone: number): RGB =>

@@ -29,6 +29,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURES = {
   big: { seed: 3, days: 70, tod: 0.55 },
   meadow: { seed: 7, days: 64, tod: 0.72 },
+  // Messor structor proper (the Anatolian 'meadow' is the M. structor group): for the marketing films.
+  pannonian: { seed: 6, days: 64, tod: 0.62 },
+  sand: { seed: 8, days: 64, tod: 0.62 },
 };
 
 async function makeFixture(name, url) {
@@ -46,7 +49,25 @@ async function makeFixture(name, url) {
   await g.pause();
   await g.page.evaluate(() => window.game.save());
   await g.page.waitForTimeout(1500);
-  const data = await g.page.evaluate(() => ({ save: localStorage.getItem('underfoot.save3'), meta: localStorage.getItem('underfoot.meta3') }));
+  // The colony is kept in an IndexedDB slot (localStorage where IndexedDB is unavailable).
+  const data = await g.page.evaluate(async () => {
+    const local = { save: localStorage.getItem('underfoot.save3'), meta: localStorage.getItem('underfoot.meta3') };
+    if (local.save) return local;
+    const db = await new Promise((ok, fail) => {
+      const r = indexedDB.open('underfoot', 1);
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => fail(r.error);
+    });
+    const all = await new Promise((ok, fail) => {
+      const r = db.transaction('slots').objectStore('slots').getAll();
+      r.onsuccess = () => ok(r.result);
+      r.onerror = () => fail(r.error);
+    });
+    all.sort((a, b) => b.savedAt - a.savedAt);
+    if (!all[0]) return { save: null, meta: null };
+    const { blob, id: _id, colony: _c, queen: _q, ...meta } = all[0];
+    return { save: blob, meta: JSON.stringify(meta) };
+  });
   await g.close();
   if (!data.save) throw new Error('the colony did not save');
   writeFileSync(file, JSON.stringify({ seed: f.seed, ...data }));

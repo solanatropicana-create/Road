@@ -10,17 +10,20 @@ import { Fields, F, FIELD_COUNT, FAR } from './fields';
 import { Colony } from './colony';
 import { Ant } from './ant';
 import { Particles } from './particles';
-import { Task } from './types';
-import { TUNING, TICK_HZ, DAY_TICKS, GROUND_Y } from '../config';
-import { pack, sampleRamp, PAL, mixRGB, SEED_TONE } from '../render/palette';
+import { Task, Carry, holdsStores } from './types';
+import { TUNING, TICK_HZ, DAY_TICKS, GROUND_Y, PACE, Pace, Tempo } from '../config';
+import { pack, sampleRamp, PAL, mixRGB, SEED_TONE, SAMARA_TONE } from '../render/palette';
 import { HUMUS, LOAM, CLAY, SUBSOIL } from '../world/mat';
 import { Calendar, Season, forageWindow } from './calendar';
 import { SITES, SiteId, Variant, siteForSeed } from '../world/sites';
 import { Ecology } from './ecology';
 import { Critters } from './critters';
+import { Story } from './story';
+import { SoilLife } from './soil';
 import { Neighbour } from './rivals';
 import { Fog } from './fog';
 import { Carcasses } from './carcass';
+import { Ground } from './ground';
 
 /** An event for the player; `key` names a message in the UI's string table. */
 export interface SimEvent {
@@ -94,15 +97,29 @@ export class Sim {
   readonly cal: Calendar;
   /** Which real place this slice is, and what makes this map of it different. */
   readonly site: SiteId;
+  /** How fast the colony lives against the calendar (chosen with a new colony; see PACE). */
+  tempo: Tempo = 'true';
+  /** The multipliers of the chosen tempo. (Saves from before tempos have none: Messor's own pace.) */
+  get pace(): Pace {
+    return PACE[this.tempo] ?? PACE.true;
+  }
   readonly variant: Variant;
+  /** The soil's own life: roots, the water table, grubs, hidden hollows. */
+  readonly soil: SoilLife;
+  /** The soil as something that fails: roofs that crack and cave in, walls that weep, the buried. */
+  readonly ground = new Ground();
   /** A tree at the edge of the slice (shade, roots, autumn leaves), if any. */
   readonly tree: { x: number; r: number } | null;
   /** The surface's year beyond the meadow: shrub, tree, dead insects. */
   readonly eco: Ecology;
-  /** Birds, grasshoppers, ground beetles, earthworms. */
+  /** Grasshoppers, ground beetles, earthworms, spiders, nest guests. */
   readonly critters = new Critters();
   /** What the year brought, for the review at the start of the winter rest. */
-  private yearStart = { born: 0, deaths: {} as Record<string, number>, flown: 0 };
+  private yearStart: { born: number; deaths: Record<string, number>; flown: number; caveIns?: number; rescued?: number; skirmishes?: number; taken?: number; delivered?: number } = { born: 0, deaths: {}, flown: 0, taken: 0, delivered: 0 };
+  /** Seed carried off our slice by neighbours since wiped out, and the weekly tally for the gleaning note. */
+  private goneHarvest = 0;
+  private gleanWeek = -1;
+  private gleanMark = { taken: 0, ours: 0 };
   readonly yearCount = { wars: 0, raids: 0, peak: 0 };
   /** The queen's name (from the site's own region) and the colony's (from the place it chose). */
   names = { queen: '', colony: '' };
@@ -110,6 +127,8 @@ export class Sim {
   readonly neighbours: Neighbour[] = [];
   /** Dead insects and worms lying whole on the ground (too heavy for one worker). */
   readonly carcasses = new Carcasses();
+  /** When each part of the nest was dug, for its time-lapse film. */
+  story: Story;
   /** Other young queens that came down after the same flight, and how many landed. */
   readonly foreigners: Ant[] = [];
   foreignLanded = 0;
@@ -131,6 +150,14 @@ export class Sim {
   /** Cloud cover 0..1 (full under rain). */
   cloud = 0.2;
   private cloudGoal = 0.2;
+  /**
+   * Wind over the ground, -1..1 (sign: blowing toward +x). Mostly still or a
+   * light breeze; now and then a blustery day; a gale with a storm. It lifts
+   * loose spoil and chaff off the tops of heaps and drops them downwind, so
+   * a mound is shaped by the weather and never grows past what it can hold.
+   */
+  wind = 0;
+  private windGoal = 0;
   /** Soil-surface temperature now, °C (refreshed twice a second of sim time). */
   surfaceT = 15;
   season: Season = 'spring';
@@ -146,11 +173,11 @@ export class Sim {
   private flightYear = 0;
   private flightCount = { gynes: 0, males: 0 };
   /** When it last rained (flights follow rain, when the soil is soft for the new queens). */
-  private lastRain = -1e9;
+  lastRain = -1e9;
   /** Alates in the air after take-off (drawn until they are out of sight). */
   readonly flyers: { x: number; y: number; vx: number; vy: number; caste: string; t: number }[] = [];
   seedRain = 0.4;
-  /** Seeds lying loose on the surface (birds and mice keep this in check). */
+  /** Seeds lying loose on the surface (mice and beetles keep this in check). */
   looseSeeds = 0;
   /** Awned seeds that drilled themselves into the soil. */
   drilled = 0;
@@ -168,7 +195,8 @@ export class Sim {
     this.horizons = gen.horizons;
     this.variant = gen.variant;
     this.tree = gen.tree;
-    this.eco = new Ecology(gen.shrub, gen.tree);
+    // A field maple on the limestone and by the vineyard; elsewhere a field elm.
+    this.eco = new Ecology(gen.shrub, gen.tree, site === 'limestone' || site === 'vineyard' ? 'maple' : 'elm');
     this.fog = new Fog(this.world.w, this.world.h);
     // (When its foragers reach us is set when we land.)
     if (gen.variant.neighbour) this.neighbours.push(new Neighbour(gen.variant.neighbourSide, gen.variant.neighbour, 1e9));
@@ -177,13 +205,17 @@ export class Sim {
     this.cal.tOffset = gen.variant.exposure * 1.5;
     this.cal.heat = SITES[site].surfaceHeat;
     this.physics = new Physics(this.world, this.rng);
-    for (const i of gen.wet) this.physics.moisture.add(i, 215);
+    // The water table: soaked from the start (and kept so by SoilLife).
+    if (gen.waterTop) SoilLife.soak(this.world, gen.waterTop, 0);
     // Before the landing the whole meadow can be scanned, but only the top of the soil.
     Object.assign(this.view, { x0: 0, x1: this.world.w, y1: GROUND_Y + 240 });
     Object.assign(this.viewGoal, this.view);
     this.nest = new Nest(this.world, this.rng, seed);
+    this.soil = new SoilLife(gen.waterTop, gen.hollows);
+    this.nest.waterTop = gen.waterTop;
     this.fields = new Fields(this.world);
     this.colony = new Colony(this.world.size, this.world.w);
+    this.story = new Story(this.world.size);
     this.pher = new Float32Array(this.world.size);
     this.src = new Int32Array(this.world.size);
   }
@@ -233,7 +265,7 @@ export class Sim {
 
   /** Is this column a reasonable place for a queen to dig in? (Not on a tree or a bush.) */
   canFound(x: number): boolean {
-    return x > 40 && x < this.world.w - 40 && !this.woodNear(Math.round(x), 8) && !this.inPit(x, 10);
+    return x > 40 && x < this.world.w - 40 && !this.woodNear(Math.round(x), 8) && !this.inPit(x, 10) && this.nest.burrowPath(Math.round(x)) !== null;
   }
 
   /** Within an antlion's pit (or this close to its rim)? */
@@ -362,8 +394,8 @@ export class Sim {
   }
 
   /**
-   * The other founding queens: almost none survive. Birds take those still
-   * on the surface; foragers of established colonies (ours, once we have
+   * The other founding queens: almost none survive. Heat and hunting beetles
+   * take those still on the surface; foragers of established colonies (ours, once we have
    * workers, and the neighbours') find their burrows, dig them out and kill
    * them; others starve or sicken in their cells.
    */
@@ -374,10 +406,10 @@ export class Sim {
       if (!q.alive) continue;
       q.tick(this);
       if (this.tick % 30 !== 0) continue;
-      const bird = this.critters.birdX;
-      if (q.phase < 2 && bird === bird && Math.abs(q.x - bird) < 70 && rng.chance(0.05)) {
+      // Still on the open ground: the midday heat or a hunting beetle gets many of them.
+      if (q.phase < 2 && rng.chance(0.004)) {
         q.alive = false;
-        this.noteYearly('foundressBird', q);
+        this.noteYearly('foundressLost', q);
         continue;
       }
       if (q.phase === 2) {
@@ -546,7 +578,11 @@ export class Sim {
         break;
       }
       case F.Entr: {
-        for (const e of nest.entrances) {
+        // A mouth buried under spoil or wash leads nowhere: home by the others
+        // (until the diggers inside open it again). If every one is shut, as
+        // under a rain plug, they all still count.
+        const open = nest.entrances.filter((e) => this.mouthOpen(e));
+        for (const e of open.length ? open : nest.entrances) {
           const ex = e % w.w;
           const ey = (e / w.w) | 0;
           for (let dy = -3; dy <= 1; dy++)
@@ -558,7 +594,9 @@ export class Sim {
         break;
       }
       case F.Dig:
+        // (During a rescue, nobody stops to shore a roof.)
         for (const i of nest.digSpots) push(i);
+        if (!nest.rescuing) for (const i of this.ground.shoreSpots(this)) push(i);
         break;
       case F.Gran: {
         // Only granaries hold physical stores; without one, food goes into the
@@ -575,7 +613,21 @@ export class Sim {
           for (const i of c.floor) if (((i / w.w) | 0) >= lim && entr[i]! >= door + 5 && entr[i] !== FAR) { push(i); n++; }
           if (n === 0) for (const i of c.floor) if (((i / w.w) | 0) >= lim) push(i);
         }
-
+        // No granary with room: seed is piled where there is space. First on
+        // the queen's floor, to either side of her (a founding nest's cache),
+        // then along the back of the resting rooms.
+        if (n === 0) {
+          for (const c of nest.chambers) {
+            if (!c.ready) continue;
+            if (c.kind === 'queen' && c.seeds < Math.min(28, c.capacity * 0.6)) {
+              for (const i of c.floor) if (Math.abs((i % w.w) - c.cx) > c.w * 0.28) push(i);
+            } else if (c.kind === 'rest' && c.seeds < c.capacity * 0.4) {
+              let door = FAR;
+              for (const i of c.floor) door = Math.min(door, entr[i]!);
+              for (const i of c.floor) if (entr[i]! >= door + 6 && entr[i] !== FAR) push(i);
+            }
+          }
+        }
         break;
       }
       case F.Store:
@@ -584,8 +636,11 @@ export class Sim {
         }
         break;
       case F.Nurse:
+        // The nurseries where brood grows fastest right now (sun-warmed near
+        // the top on a cool morning, deeper in the midday heat).
         for (const c of nest.chambers) {
           if (c.kind !== 'nursery' || !c.ready) continue;
+          if ((col.roomRate[c.id] ?? 1) < col.bestNurseryRate - 0.15) continue;
           for (const i of c.floor) if (!col.broodCell[i]) push(i);
         }
         break;
@@ -593,11 +648,18 @@ export class Sim {
         for (const b of col.brood) if (col.isHungry(b)) push(b.y * w.w + b.x);
         break;
       case F.Egg: {
+        // Brood to carry: eggs the queen has just laid, brood lying outside a
+        // nursery, and brood in a nursery much colder (or hotter) than the best.
         if (this.fields.sourceCount[F.Nurse] === 0) break;
         for (const b of col.brood) {
-          if (b.stage !== 0 || b.carried) continue;
+          if (b.carried || b.restUntil > this.tick) continue;
           const i = b.y * w.w + b.x;
-          if (nest.chamberAt(i)?.kind !== 'nursery') push(i);
+          const room = nest.chamberAt(i);
+          if (room?.kind !== 'nursery') {
+            push(i);
+            continue;
+          }
+          if ((col.roomRate[room.id] ?? 1) < col.bestNurseryRate - 0.3) push(i);
         }
         break;
       }
@@ -606,7 +668,7 @@ export class Sim {
         for (const c of col.corpses) if (!c.carried && w.bg[c.y * w.w + c.x] === 1) push(c.y * w.w + c.x);
         for (const c of nest.chambers) {
           // Husks wait on the floor of whichever room holds the stores.
-          const store = col.husks > 0 && c.ready && (c.kind === 'granary' || c.kind === 'queen');
+          const store = col.husks > 0 && c.ready && holdsStores(c.kind);
           if (store) for (const i of c.floor) push(i);
           for (const i of c.cells) {
             if (w.mat[i] !== REFUSE) continue;
@@ -654,7 +716,7 @@ export class Sim {
   }
 
   /**
-   * Birds and mice glean the surface, so fallen seed never piles up for long;
+   * Mice and beetles glean the surface, so fallen seed never piles up for long;
    * other scavengers take dead insects. Feather-grass and stork's-bill seeds
    * left lying on damp ground screw themselves into the soil with their awns.
    */
@@ -668,9 +730,9 @@ export class Sim {
         const i = y * w.w + x;
         const m = w.mat[i];
         if (m === SEED && w.bg[i] === 0) {
-          // Awned seed (feather grass, stork's bill) drills down when wet.
+          // Awned seed (feather grass, stork's bill) drills down when wet (a samara's wing doesn't).
           const dn = i + w.w;
-          if (w.tone[i]! >= 154 && SOIL[w.mat[dn]!] && w.moist[dn]! > 30 && w.mat[i - w.w] === EMPTY && this.rng.chance(0.05)) {
+          if (w.tone[i]! >= 154 && w.tone[i]! < SAMARA_TONE[0] && SOIL[w.mat[dn]!] && w.moist[dn]! > 30 && w.mat[i - w.w] === EMPTY && this.rng.chance(0.05)) {
             w.set(dn, SEED, w.tone[i], 0);
             w.set(i, EMPTY, 0, 0);
             this.drilled++;
@@ -714,16 +776,19 @@ export class Sim {
     // Plants grow and ripen in their season; the year turns for the meadow, shrub and tree.
     const air = this.cal.airMean(this.doy);
     // (Seedlings come up in the week or so after rain, while the topsoil is damp.)
-    this.plants.tick(this.doy, air, this.tick - this.lastRain < DAY_TICKS * 1.2);
+    this.plants.tick(this.doy, air, this.tick - this.lastRain < DAY_TICKS * 1.2, this.pace.plenty);
     this.eco.step(this);
     this.critters.step(this);
+    this.soil.step(this);
     if (this.tick % Ecology.PERIOD === 0) {
       const doy = this.doy;
       this.plants.season(doy, air);
       this.eco.season(this);
       this.critters.season(this);
       for (const nb of this.neighbours) nb.season(this);
+      this.gleanCheck();
       if (this.neighbours.some((nb) => nb.dead)) {
+        for (const nb of this.neighbours) if (nb.dead) this.goneHarvest += nb.harvested;
         const left = this.neighbours.filter((nb) => !nb.dead);
         this.neighbours.length = 0;
         this.neighbours.push(...left);
@@ -736,16 +801,26 @@ export class Sim {
       if (this.plants.gardens > 0) this.noteOnce('antGarden');
     }
     this.physics.step();
-    if (this.tick % 15 === 0) this.nest.scan();
+    if (this.tick % 15 === 0) {
+      const was = this.nest.rescuing;
+      this.nest.scan(this.ground.buried);
+      // A nest of thousands of cells refreshes its maps a little less often.
+      this.fields.slow = Math.min(1.8, Math.max(1, this.nest.openCells / 8000));
+      // A rescue starting or over: the diggers' map changes at once.
+      if (this.nest.rescuing !== was) this.fields.hurry(F.Dig, this.tick);
+    }
     if (this.nest.founded) {
       this.colony.tick(this);
       // Rebuild at most one distance field per tick, whichever is most overdue.
       const f = this.fields.nextDue(this.tick);
       if (f >= 0) this.buildField(f);
       if (this.tick % (TICK_HZ * 3) === 0 && this.colony.hadWorkers) this.growNest();
+      if (this.tick % (TICK_HZ * 2) === 1 && this.colony.hadWorkers) this.selfDig();
       for (const nb of this.neighbours) nb.step(this);
       this.carcasses.step(this);
+      this.ground.step(this);
       if (this.foreigners.length) this.foundresses();
+      if (this.tick % Math.round(DAY_TICKS / 4) === 0 && this.phase !== 'failed') this.story.record(this);
     }
     if ((this.tick & 3) === 0) this.decayPheromone();
     this.particles.step();
@@ -764,6 +839,7 @@ export class Sim {
     this.physics.moisture.step();
     this.seasonal();
     if (this.tick % 20 === 0) this.settleSpoil();
+    if (this.tick % 3 === 0) this.blow();
     this.rain();
     const m = this.physics.moisture;
     this.pendingCollapse += m.collapses;
@@ -786,21 +862,91 @@ export class Sim {
   }
 
   /**
+   * Can an ant walk from the shaft out into the air at this entrance? (A
+   * small flood fill around the mouth, through cells an ant can step to.)
+   */
+  private mouthOpen(e: number): boolean {
+    const w = this.world;
+    const fields = this.fields;
+    const ex = e % w.w;
+    const ey = (e / w.w) | 0;
+    const inBox = (i: number): boolean => Math.abs((i % w.w) - ex) <= 6 && Math.abs(((i / w.w) | 0) - ey) <= 8;
+    const stack: number[] = [];
+    const seen = new Set<number>();
+    for (let dy = -2; dy <= 6; dy++) {
+      for (let dx = -3; dx <= 3; dx++) {
+        const i = (ey + dy) * w.w + ex + dx;
+        if (w.walk[i] && w.bg[i] === 1) {
+          stack.push(i);
+          seen.add(i);
+        }
+      }
+    }
+    while (stack.length) {
+      const i = stack.pop()!;
+      if (w.bg[i] === 0) return true;
+      for (let k = 0; k < 8; k++) {
+        if (!fields.canStep(i, k)) continue;
+        const n = i + fields.off[k]!;
+        if (seen.has(n) || !inBox(n)) continue;
+        seen.add(n);
+        stack.push(n);
+      }
+    }
+    return false;
+  }
+
+  /** Seed the neighbours have carried off our slice (gleaned or stolen), the wiped-out ones' included. */
+  rivalTaken(): number {
+    return this.neighbours.reduce((s, nb) => s + nb.harvested, this.goneHarvest);
+  }
+
+  /**
+   * Once a week: if the neighbours took a big share of our slice's harvest,
+   * say so (once a year). Their foragers glean quietly, one seed at a time,
+   * and a hungry winter can be their doing as much as the weather's.
+   */
+  private gleanCheck(): void {
+    const week = Math.floor(this.simDays);
+    if (week === this.gleanWeek) return;
+    const taken = this.rivalTaken();
+    const ours = this.colony.delivered;
+    const dt = taken - this.gleanMark.taken;
+    const dours = ours - this.gleanMark.ours;
+    const first = this.gleanWeek < 0;
+    this.gleanWeek = week;
+    this.gleanMark = { taken, ours };
+    if (first || this.dormant || !this.colony.hadWorkers || dt < 25 || dt < dours * 0.5) return;
+    if (!this.neighbours.some((nb) => nb.found)) return;
+    const y = this.cal.year(this.simDays);
+    if (this.noted['rivalsGlean'] === y) return;
+    this.noted['rivalsGlean'] = y;
+    this.events.push({ key: 'rivalsGlean', n: dt, m: dours });
+  }
+
+  /**
    * Close the year's books: births, deaths by cause, battles and raids, the
    * nuptial flight, since the last review. (Called by the field notes when
    * the colony goes into its winter rest.)
    */
-  closeYear(): { year: number; born: number; deaths: [string, number][]; flown: number; wars: number; raids: number; peak: number } {
+  closeYear(): { year: number; born: number; deaths: [string, number][]; flown: number; wars: number; raids: number; peak: number; caveIns: number; rescued: number; skirmishes: number; taken: number; gathered: number } {
     const c = this.colony;
     const s = this.yearStart;
+    const taken = this.rivalTaken();
     const deaths: [string, number][] = [];
     for (const [k, v] of Object.entries(c.deaths)) {
       const d = v - (s.deaths[k] ?? 0);
       if (d > 0) deaths.push([k, d]);
     }
     deaths.sort((a, b) => b[1] - a[1]);
-    const out = { year: this.cal.year(this.simDays), born: c.born - s.born, deaths, flown: c.flown.total - s.flown, wars: this.yearCount.wars, raids: this.yearCount.raids, peak: Math.max(this.yearCount.peak, c.adults) };
-    this.yearStart = { born: c.born, deaths: { ...c.deaths }, flown: c.flown.total };
+    // (Saves from before the soil could fail have no ground counts in the year's start.)
+    const g = { caveIns: this.ground.caveIns, rescued: this.ground.rescued, skirmishes: this.critters.lasiusFights };
+    const out = {
+      year: this.cal.year(this.simDays), born: c.born - s.born, deaths, flown: c.flown.total - s.flown, wars: this.yearCount.wars, raids: this.yearCount.raids, peak: Math.max(this.yearCount.peak, c.adults),
+      caveIns: g.caveIns - (s.caveIns ?? 0), rescued: g.rescued - (s.rescued ?? 0), skirmishes: g.skirmishes - (s.skirmishes ?? 0),
+      taken: taken - (s.taken ?? taken), gathered: c.delivered - (s.delivered ?? c.delivered),
+    };
+    this.yearStart = { born: c.born, deaths: { ...c.deaths }, flown: c.flown.total, ...g, taken, delivered: c.delivered };
     this.yearCount.wars = 0;
     this.yearCount.raids = 0;
     this.yearCount.peak = c.adults;
@@ -877,7 +1023,7 @@ export class Sim {
     const n = wt.rain * 5;
     const spawn = Math.floor(n) + (this.rng.next() < n % 1 ? 1 : 0);
     for (let k = 0; k < spawn; k++) this.drops.push({ x: this.rng.range(0, w.w), y: this.rng.range(-6, 0) });
-    const wind = wt.storm ? 0.35 : 0.12;
+    const wind = this.gust() * 0.5;
     let j = 0;
     for (let k = 0; k < this.drops.length; k++) {
       const d = this.drops[k]!;
@@ -946,10 +1092,94 @@ export class Sim {
     }
   }
 
+  /**
+   * The nest growing without a plan (stigmergy): where a room is crowded the
+   * ants nearest its wall dig into it, so rooms bulge toward where their ants
+   * crowd; and now and then a worker idling in a tunnel starts a gallery of
+   * her own, which her nestmates carry on while its scent lasts.
+   */
+  private selfDig(): void {
+    const col = this.colony;
+    const nest = this.nest;
+    const w = this.world;
+    if (!nest.founded || col.adults < 12 || this.dormant) return;
+    const n = nest.chambers.length;
+    const count = new Array<number>(n).fill(0);
+    const pick: Ant[] = new Array(n);
+    let idler: Ant | null = null;
+    let idlers = 0;
+    for (const a of col.ants) {
+      if (a.away) continue;
+      const i = a.y * w.w + a.x;
+      if (w.bg[i] !== 1) continue;
+      const z = w.zone[i]!;
+      if (z) {
+        // One of them at random (reservoir pick) stands for the crowd.
+        if (this.rng.next() * ++count[z - 1]! < 1) pick[z - 1] = a;
+      } else if (a.task === Task.Idle && a.carry === Carry.None && w.plan[i] && this.rng.next() * ++idlers < 1) idler = a;
+    }
+    if (nest.pendingCells > 60 + col.adults) return;
+    for (const c of nest.chambers) {
+      if (!c.ready || c.kind === 'queen') continue;
+      const k = count[c.id]!;
+      // Crowded: more ants than its floor holds comfortably.
+      if (k < 6 || k < c.floor.length * 0.45 || !this.rng.chance(0.2)) continue;
+      const a = pick[c.id]!;
+      if (nest.bulge(c, a.x, a.y)) nest.zonesChanged = true;
+    }
+    if (idler && this.tick - nest.lastGallery > TICK_HZ * 240 && col.adults >= 20 && this.rng.chance(0.25)) {
+      if (nest.explore(idler.y * w.w + idler.x)) {
+        nest.lastGallery = this.tick;
+        // She starts on it herself.
+        idler.task = Task.Dig;
+      }
+    }
+  }
+
+  /**
+   * The queen's safety. A royal chamber gone bad (its floor worn to a crust
+   * over the tunnels below, its roof straining, become a crossroads, or left
+   * shallow while the nest went deep) is replaced: the workers dig a new one
+   * deeper down and walk her to it once it is ready.
+   */
+  private royalSafety(): void {
+    const col = this.colony;
+    const nest = this.nest;
+    const q = col.queen;
+    if (!q?.alive || q.phase !== 2) return;
+    const step = nest.royalStep(q.x, q.y);
+    if (step === 'ready') {
+      this.fields.hurry(F.Royal, this.tick);
+      this.events.push({ key: 'queenMoving', x: q.x, y: q.y });
+      return;
+    }
+    if (step === 'arrived') {
+      this.events.push({ key: 'queenMoved', n: Math.round((q.y - this.world.ground[q.x]!) / 10), x: q.x, y: q.y });
+      return;
+    }
+    // A move that can't be finished is given up (the room left as a resting room).
+    if (nest.royalMove && this.simDays - nest.lastRoyalMove > 20) {
+      nest.royalMove.kind = 'rest';
+      nest.royalMove = null;
+      nest.zonesChanged = true;
+    }
+    if (nest.queenMoving && this.simDays - nest.lastRoyalMove > 24) nest.queenMoving = false;
+    if (nest.royalMove || nest.queenMoving || col.adults < 40 || this.dormant || this.simDays - nest.lastRoyalMove < 26) return;
+    if (this.tick % (TICK_HZ * 30) >= TICK_HZ * 3) return;
+    const qc = nest.queenChamber();
+    if (!qc) return;
+    const why = nest.royalTrouble(this.ground.strain[qc.id] ?? 0);
+    if (why && nest.planRoyalMove()) {
+      nest.lastRoyalMove = this.simDays;
+      this.events.push({ key: `royal_${why}`, x: qc.cx, y: qc.floorY - 3 });
+    }
+  }
+
   private growNest(): void {
     const col = this.colony;
     const wanted = Nest.wanted(col.adults, col.brood.length, TUNING.nestCellsPerAnt, TUNING.nestCellsBase);
     this.nest.grow({ adults: col.adults, brood: col.brood.length, seeds: col.stored, orders: col.orders, harvestSide: col.harvestRight >= col.harvestLeft ? 1 : -1 }, wanted);
+    this.royalSafety();
     // The second gate is dug through: the colony starts using it at once.
     if (this.nest.gateOpened()) {
       const e = this.nest.entrances[this.nest.entrances.length - 1]!;
@@ -985,6 +1215,58 @@ export class Sim {
    * two cells away (a slope steeper than about 1 in 2) works loose and slides.
    * Wind, foot traffic and drying do this slowly; rain does it fast (see impact).
    */
+  /** The wind right now, with its gusts. */
+  gust(): number {
+    return this.wind * (1 + 0.45 * Math.sin(this.tick * 0.071) * Math.sin(this.tick * 0.0127 + 1.3));
+  }
+
+  /**
+   * Wind at work on the ground: loose grains of spoil and chaff on the top
+   * of a heap (and, in a strong wind, anywhere they lie exposed) are lifted
+   * and come down again downwind, or blow off the slice altogether. The
+   * higher a grain sits above the old ground, the likelier it goes; damp or
+   * settled grains hold; nothing in the crater over a gate is touched.
+   */
+  private blow(): void {
+    const v = this.gust();
+    const a = Math.abs(v);
+    if (a < 0.2 || this.weather.snowing || this.snow > 2) return;
+    const w = this.world;
+    const dir = v > 0 ? 1 : -1;
+    const tries = Math.round(a * a * 10);
+    for (let k = 0; k < tries; k++) {
+      const x = this.rng.int(3, w.w - 4);
+      let y = 1;
+      while (y < w.h - 1 && w.mat[y * w.w + x] === EMPTY) y++;
+      const i = y * w.w + x;
+      const m = w.mat[i]!;
+      if ((m !== SAND && m !== REFUSE) || w.plan[i] || w.bg[i] !== 0 || w.plan[i - w.w]) continue;
+      // Chaff and husks are light; sand blows only off the top of a heap.
+      const high = w.ground[x]! - y;
+      const light = m === REFUSE ? 2.2 : 1;
+      if (m === SAND && high < 1) continue;
+      const damp = w.moist[i]! > 50 ? 0.15 : 1;
+      const set = w.tint[i]! & PACKED ? 0.35 : 1;
+      if (!this.rng.chance(Math.min(0.9, a * a * (0.08 + 0.05 * Math.max(0, high)) * light * damp * set))) continue;
+      const tone = w.tone[i]!;
+      const tint = w.tint[i]! & ~PACKED;
+      w.set(i, EMPTY, 0, 0);
+      // A few grains in the air, streaming downwind.
+      const src = m === SAND ? tint & 0x3f : 0;
+      const ramp = m === REFUSE ? PAL.refuse : src === HUMUS ? PAL.humus : src === CLAY ? PAL.clay : src === SUBSOIL ? PAL.subsoil : PAL.loam;
+      const c = sampleRamp(ramp, this.rng.next());
+      this.particles.add({ x: x + 0.5, y: y - 0.5, vx: dir * this.rng.range(0.6, 1.6) * a, vy: -this.rng.range(0.05, 0.35), life: this.rng.int(18, 50), gravity: 0.012, color: pack(c[0], c[1], c[2]) });
+      // Down again some way off (farther in a strong wind), or off the slice.
+      const nx = x + dir * this.rng.int(4, Math.round(12 + a * 90));
+      if (nx < 3 || nx > w.w - 4) continue;
+      let ny = 1;
+      while (ny < w.h - 1 && w.mat[ny * w.w + nx] === EMPTY) ny++;
+      const j = (ny - 1) * w.w + nx;
+      if (w.bg[j] !== 0 || w.plan[j] || w.plan[j + w.w]) continue;
+      w.set(j, m, tone, tint);
+    }
+  }
+
   private settleSpoil(): void {
     if (!this.nest.founded) return;
     const w = this.world;
@@ -1021,6 +1303,14 @@ export class Sim {
   private climate(): void {
     const doy = this.doy;
     const wt = this.weather;
+    // The wind changes every hour or two (a minute or so of play); a storm brings a gale.
+    // (This runs twice a second.)
+    if (this.rng.next() < 1 / 80) {
+      const keep = this.rng.chance(0.65) ? Math.sign(this.windGoal) || 1 : this.rng.chance(0.5) ? -1 : 1;
+      this.windGoal = keep * Math.pow(this.rng.next(), 1.8) * 0.85;
+    }
+    const windTo = wt.storm && wt.rain > 0.3 ? (Math.sign(this.windGoal) || 1) * 0.95 : this.windGoal;
+    this.wind += (windTo - this.wind) * 0.03;
     // Cloud drifts toward a new cover every few hours; rain closes it.
     if (this.rng.next() < 0.01) this.cloudGoal = Math.pow(this.rng.next(), 1.6) * 0.9;
     const goal = wt.rain > 0.15 ? 1 : this.cloudGoal;
@@ -1065,10 +1355,11 @@ export class Sim {
       this.openAt = 0;
       if (!this.raining && !this.dormant) this.openNest();
     }
-    // Shut the door once everyone is in (or after a while, leaving stragglers to shelter outside).
+    // Shut the door once everyone is in (or after a while: in the rain the
+    // stragglers are let in at the plug; for the winter they get longer to come home).
     if (this.sealAt && this.tick >= this.sealAt) {
       const outside = this.colony.ants.some((a) => this.world.bg[a.y * this.world.w + a.x] === 0);
-      if (!outside || this.tick > this.sealAt + TICK_HZ * 20) {
+      if (!outside || this.tick > this.sealAt + TICK_HZ * (this.dormant ? 100 : 20)) {
         this.sealAt = 0;
         if (!this.world.sealed && (this.raining || this.dormant)) {
           this.nest.seal();
@@ -1106,8 +1397,13 @@ export class Sim {
 
   /** An alate leaves the ground: off it goes, up and away on the breeze. */
   takeOff(a: Ant): void {
-    if (a.caste === 'gyne') this.flightCount.gynes++;
-    else this.flightCount.males++;
+    if (a.caste === 'gyne') {
+      this.flightCount.gynes++;
+      this.colony.flown.gynes++;
+    } else {
+      this.flightCount.males++;
+      this.colony.flown.males++;
+    }
     this.colony.flown.total++;
     this.flyers.push({ x: a.x + 0.5, y: a.y, vx: this.rng.range(-0.15, 0.25), vy: this.rng.range(-0.35, -0.22), caste: a.caste, t: 0 });
   }
@@ -1132,11 +1428,14 @@ export class Sim {
       const q = this.colony.queen;
       if (q?.alive) see(q, 40);
     }
-    // The view (and the camera's "whole colony" framing) follows what is known.
+    // The view (and the camera's "whole colony" framing) follows what is known,
+    // kept even on both sides of the nest so the nest stays in the middle.
     const b = fog.box;
     const g = this.viewGoal;
-    g.x0 = Math.max(0, b.x0 - 30);
-    g.x1 = Math.min(w.w, b.x1 + 30);
+    const fx = this.nest.foundX;
+    const half = Math.max(fx - b.x0, b.x1 - fx) + 30;
+    g.x0 = Math.max(0, fx - half);
+    g.x1 = Math.min(w.w, fx + half);
     g.y1 = Math.min(w.h, b.y1 + 30);
     const v = this.view;
     const k = 0.08;
@@ -1151,6 +1450,14 @@ export class Sim {
    */
   private discoveries(): void {
     const w = this.world;
+    // Broke into one of the map's hidden spaces: an old root channel, a hollow.
+    for (const n of this.nest.breaches) {
+      const k = this.soil.breach(n, w.w);
+      if (k < 0) continue;
+      const h = this.soil.hollows[k]!;
+      this.events.push({ key: h.kind === 'root' ? 'foundRootChannel' : 'foundHollow', x: n % w.w, y: (n / w.w) | 0 });
+    }
+    this.nest.breaches.length = 0;
     const W = w.w;
     const once = (key: string, ev: SimEvent): void => {
       if (this.discovered[key]) return;

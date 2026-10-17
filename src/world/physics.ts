@@ -36,6 +36,7 @@ export class Physics {
     this.clock = (this.clock % 255) + 1;
     const leftFirst = (this.clock & 1) === 0;
 
+    const mat = w.mat;
     for (let cy = w.ch - 1; cy >= 0; cy--) {
       let any = false;
       for (let cx = 0; cx < w.cw; cx++) if (act[cy * w.cw + cx]) { any = true; break; }
@@ -43,12 +44,23 @@ export class Physics {
       const y1 = Math.min(w.h - 2, cy * CHUNK + CHUNK - 1);
       const y0 = cy * CHUNK;
       for (let y = y1; y >= y0; y--) {
+        const row = y * w.w;
         for (let cx = 0; cx < w.cw; cx++) {
           if (!act[cy * w.cw + cx]) continue;
           const x0 = cx * CHUNK;
           const x1 = Math.min(w.w - 1, x0 + CHUNK);
-          if (leftFirst) for (let x = x0; x < x1; x++) this.cell(y * w.w + x, x);
-          else for (let x = x1 - 1; x >= x0; x--) this.cell(y * w.w + x, x);
+          // Most cells are soil or air: only loose grains and water have rules.
+          if (leftFirst) {
+            for (let x = x0; x < x1; x++) {
+              const m = mat[row + x]!;
+              if (m === WATER || POWDER[m]) this.cell(row + x, x);
+            }
+          } else {
+            for (let x = x1 - 1; x >= x0; x--) {
+              const m = mat[row + x]!;
+              if (m === WATER || POWDER[m]) this.cell(row + x, x);
+            }
+          }
         }
       }
     }

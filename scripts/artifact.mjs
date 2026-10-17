@@ -11,7 +11,13 @@ if (js.length !== 1) throw new Error(`expected one bundle, got ${js.join(', ')}`
 const code = readFileSync(`dist/assets/${js[0]}`, 'utf8').replace(/<\/script/gi, '<\\/script');
 
 const title = html.match(/<title>[\s\S]*?<\/title>/)[0];
-const links = [...html.matchAll(/<link[^>]+>/g)].map((m) => m[0]).filter((l) => !l.includes('modulepreload'));
+// The game bundles its fonts (public/fonts) to run offline; a published page
+// takes the same faces from Google Fonts instead of carrying the files.
+const GOOGLE_FONTS = '<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,600;1,9..144,400;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />';
+const links = [...html.matchAll(/<link[^>]+>/g)]
+  .map((m) => m[0])
+  .filter((l) => !l.includes('modulepreload'))
+  .map((l) => (l.includes('fonts/fonts.css') ? GOOGLE_FONTS : l));
 const style = html.match(/<style>[\s\S]*?<\/style>/)[0];
 const body = html
   .match(/<body>([\s\S]*?)<\/body>/)[1]

@@ -62,6 +62,8 @@ export function skyAt(t: number): (typeof SKY)[number] {
  * the soft background of a macro photograph while the slice stays crisp.
  */
 export class Backdrop {
+  /** Wind now, -1..1 (the meadow leans with it). */
+  private wind = 0;
   readonly canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
   readonly scale = 0.5;
@@ -72,6 +74,17 @@ export class Backdrop {
   private site: string;
   /** Background features of the site: rocks, vine posts, distant hills, feather-grass plumes. */
   private props: { kind: string; x: number; y: number; w: number; h: number; phase: number }[] = [];
+  /**
+   * The tree at the slice's edge, as seen beyond the glass: its low boughs
+   * reaching out over the meadow, out of focus, the leaf masses on them
+   * green, then gold, then gone with the season. Set by the renderer.
+   */
+  tree: { x: number; r: number } | null = null;
+  treeKind = 'elm';
+  /** How much of the crown is in leaf (0..1), and how far into autumn its colour has turned (0..1). */
+  leafCover = 0;
+  autumn = 0;
+  private boughs: { tip: number; len: number; y: number; bend: number; leaves: { t: number; off: number; r: number; phase: number }[] }[] | null = null;
   /** Wildflowers in the meadow behind, far out of focus: soft discs of colour on stalks. */
   private flowers: { x: number; h: number; r: number; col: RGB; phase: number; layer: number }[] = [];
 
@@ -146,7 +159,8 @@ export class Backdrop {
    * (the meadow greens up in spring, dries to straw in high summer, browns in
    * autumn and lies flat and pale under winter snow). snow: mm lying.
    */
-  draw(dayT: number, time: number, worldW: number, ground: Int16Array, rain = 0, month = 4, snow = 0): void {
+  draw(dayT: number, time: number, worldW: number, ground: Int16Array, rain = 0, month = 4, snow = 0, wind = 0): void {
+    this.wind = wind;
     const c = this.ctx;
     const s = this.scale;
     const W = this.canvas.width;
@@ -195,7 +209,8 @@ export class Backdrop {
       c.lineCap = 'round';
       for (const b of this.blades) {
         if (b.layer !== layer) continue;
-        const sway = Math.sin(time * (0.5 + layer * 0.15) + b.phase) * (2 + layer * 1.5);
+        // The wind bends the blades its way and sets them shivering.
+        const sway = Math.sin(time * (0.5 + layer * 0.15) * (1 + Math.abs(this.wind) * 2.5) + b.phase) * (2 + layer * 1.5) * (1 + Math.abs(this.wind)) + this.wind * b.h * 0.28;
         const x0 = b.x * s;
         const y0 = (ground[Math.max(0, Math.min(worldW - 1, b.x | 0))]! + 4) * s;
         const tipX = x0 + (b.lean * b.h + sway) * s;
@@ -208,13 +223,108 @@ export class Backdrop {
       }
     }
 
+    // Low sun on a clear morning or evening: shafts of light slanting down through the grass,
+    // coming and going as the blades sway across them.
+    const low = daylight > 0.04 && daylight < 0.6 ? Math.min(1, (daylight - 0.04) / 0.1) * Math.min(1, (0.6 - daylight) / 0.2) : 0;
+    const rays = low * (1 - wet) * Math.min(1, sky.haze * 1.4);
+    if (rays > 0.03) {
+      c.save();
+      c.globalCompositeOperation = 'lighter';
+      const dir = sunX < W / 2 ? 1 : -1;
+      for (let k = 0; k < 7; k++) {
+        const slope = 0.55 + k * 0.17 + Math.sin(time * 0.04 + k * 2.1) * 0.05;
+        const x1 = sunX + dir * (gy - sunY) * slope;
+        const half = (14 + ((k * 37) % 23)) * s * 2;
+        const flicker = 0.55 + 0.45 * Math.sin(time * (0.21 + k * 0.03) + k * 1.3);
+        const beam = c.createLinearGradient(sunX, sunY, x1, gy);
+        beam.addColorStop(0, css(sky.sun, 0));
+        beam.addColorStop(0.35, css(sky.sun, 0.13 * rays * flicker));
+        beam.addColorStop(1, css(sky.sun, 0.03 * rays * flicker));
+        c.fillStyle = beam;
+        c.beginPath();
+        c.moveTo(sunX - half * 0.08, sunY);
+        c.lineTo(sunX + half * 0.08, sunY);
+        c.lineTo(x1 + half, gy);
+        c.lineTo(x1 - half, gy);
+        c.closePath();
+        c.fill();
+      }
+      c.restore();
+    }
+
+    // Ground mist on still spring and autumn mornings, lying low over the meadow until the sun lifts it.
+    const morning = dayT > 0.22 && dayT < 0.42 ? Math.min(1, (dayT - 0.22) / 0.04) * Math.min(1, (0.42 - dayT) / 0.1) : 0;
+    const mistSeason = (month >= 2 && month <= 4) || (month >= 8 && month <= 10) ? 1 : 0.25;
+    const mist = morning * mistSeason * (1 - Math.min(1, Math.abs(this.wind) * 1.5)) * (1 - wet * 0.5);
+    if (mist > 0.03) {
+      const band = c.createLinearGradient(0, gy - 70 * s, 0, gy + 6 * s);
+      band.addColorStop(0, 'rgba(232,234,238,0)');
+      band.addColorStop(0.6, `rgba(232,234,238,${0.22 * mist})`);
+      band.addColorStop(1, `rgba(240,240,242,${0.34 * mist})`);
+      c.fillStyle = band;
+      c.fillRect(0, gy - 70 * s, W, 76 * s);
+    }
+    // Dandelion seeds adrift on breezy days in May and June.
+    const pappus = (month === 4 || month === 5) && daylight > 0.2 && !wet ? Math.min(1, Math.abs(this.wind) * 2) : 0;
+    if (pappus > 0.1) {
+      c.save();
+      const dirW = this.wind >= 0 ? 1 : -1;
+      for (let k = 0; k < 30; k++) {
+        if (k / 30 > pappus) break;
+        const hx = ((k * 4513 + 77) % 1000) / 1000;
+        const x = ((((hx * worldW + dirW * time * (8 + (k % 4) * 3)) % worldW) + worldW) % worldW) * s;
+        const y = (GROUND_Y - 30 - ((k * 37) % 90) + Math.sin(time * 0.6 + k) * 6) * s;
+        const r = (3.2 + (k % 3) * 1.1) * s;
+        // A soft white puff of fluff (out of focus, like the meadow behind).
+        const g4 = c.createRadialGradient(x, y, 0, x, y, r);
+        g4.addColorStop(0, 'rgba(252,252,248,0.75)');
+        g4.addColorStop(0.5, 'rgba(250,250,245,0.35)');
+        g4.addColorStop(1, 'rgba(250,250,245,0)');
+        c.fillStyle = g4;
+        c.beginPath();
+        c.arc(x, y, r, 0, Math.PI * 2);
+        c.fill();
+      }
+      c.restore();
+    }
+    // Glow-worm males (Lamprohiza) drifting over the meadow on June and July nights, blinking.
+    const glowSeason = month === 5 || month === 6 ? 1 : 0;
+    const glow2 = glowSeason * Math.max(0, night - 0.6) / 0.4 * (1 - wet) * (snow > 1 ? 0 : 1);
+    if (glow2 > 0.05) {
+      c.save();
+      c.globalCompositeOperation = 'lighter';
+      for (let k = 0; k < 40; k++) {
+        const hx = ((k * 7919 + 131) % 1000) / 1000;
+        const x = (hx * worldW + Math.sin(time * 0.07 + k * 1.9) * 40 + time * (k % 2 ? 1.5 : -1.2)) % worldW;
+        const gx = ((x % worldW) + worldW) % worldW;
+        const y = (ground[Math.max(0, Math.min(worldW - 1, gx | 0))]! - 12 - ((k * 53) % 70) + Math.sin(time * 0.31 + k * 2.3) * 9) * s;
+        const blink = Math.pow(Math.max(0, Math.sin(time * (0.6 + (k % 5) * 0.11) + k * 4.1)), 4);
+        if (blink < 0.02) continue;
+        const r = (5 + (k % 3) * 2) * s;
+        const g3 = c.createRadialGradient(gx * s, y, 0, gx * s, y, r);
+        g3.addColorStop(0, `rgba(214,255,140,${0.85 * blink * glow2})`);
+        g3.addColorStop(0.25, `rgba(170,240,110,${0.35 * blink * glow2})`);
+        g3.addColorStop(1, 'rgba(120,200,80,0)');
+        c.fillStyle = g3;
+        c.beginPath();
+        c.arc(gx * s, y, r, 0, Math.PI * 2);
+        c.fill();
+      }
+      c.restore();
+    }
+
+    // The trunk's shadow across the meadow beside it, away from the sun: long
+    // and soft in the morning and evening, short at noon.
+    if (this.tree && daylight > 0.05) this.trunkShadow(c, s, ground, worldW, dayT, daylight, wet);
+    // The tree's low boughs: nearer than the meadow behind, so over its grass.
+    if (this.tree) this.drawTree(c, s, time, sky, night);
     // Wildflowers: blurred heads on their stalks, dimmed by night and haze. They
     // bloom from April into July; a few late ones linger into September.
     const bloom = [0, 0, 0.05, 0.5, 1, 1, 0.75, 0.4, 0.25, 0.05, 0, 0][month]!;
     for (let fi = 0; fi < this.flowers.length; fi++) {
       const f = this.flowers[fi]!;
       if (fi / this.flowers.length >= bloom) continue;
-      const sway = Math.sin(time * 0.5 + f.phase) * 2;
+      const sway = Math.sin(time * 0.5 * (1 + Math.abs(this.wind) * 2.5) + f.phase) * 2 * (1 + Math.abs(this.wind)) + this.wind * f.h * 0.22;
       const x0 = f.x * s;
       const y0 = (ground[Math.max(0, Math.min(worldW - 1, f.x | 0))]! + 4) * s;
       const tx = x0 + sway * s;
@@ -282,6 +392,103 @@ export class Backdrop {
     c.globalCompositeOperation = 'source-over';
   }
 
+  /**
+   * The tree beyond the glass: a few low boughs out of the trunk, reaching
+   * over the meadow and out of the frame, with soft leaf masses along them.
+   * Far out of focus, so it reads as depth behind the crisp slice.
+   */
+  private drawTree(c: CanvasRenderingContext2D, s: number, time: number, sky: { low: RGB; mid: RGB }, night: number): void {
+    const t = this.tree!;
+    const side = t.x < this.canvas.width / s / 2 ? 1 : -1;
+    if (!this.boughs) {
+      const rng = new Rng(Math.round(t.x * 7 + t.r));
+      this.boughs = [];
+      for (let k = 0; k < 4; k++) {
+        const leaves = [];
+        for (let j = 0; j < 26; j++) leaves.push({ t: rng.range(0.25, 1.05), off: rng.range(-28, 28), r: rng.range(14, 34), phase: rng.range(0, 6.28) });
+        // Low boughs: out from the trunk above the frame, drooping into view at their tips.
+        this.boughs.push({ tip: rng.range(45, 105), len: rng.range(380, 820), y: rng.range(-30, 20), bend: rng.range(-0.25, 0.1), leaves });
+      }
+    }
+    const bark = mixRGB(mixRGB(hex('#3a2c22'), sky.low, 0.45), hex('#0e1420'), night * 0.8);
+    // The leaves: fresh green in spring, deep in summer, gold to rust in autumn.
+    const green = mixRGB(hex('#5f7f3a'), hex('#3f5f2c'), 0.5);
+    const gold = this.treeKind === 'maple' ? hex('#c8742e') : hex('#c9a640');
+    const leaf = mixRGB(mixRGB(mixRGB(green, gold, this.autumn), sky.low, 0.35), hex('#101824'), night * 0.85);
+    const sway = (k: number): number => Math.sin(time * (0.35 + Math.abs(this.wind) * 0.9) + k) * (3 + Math.abs(this.wind) * 9) + this.wind * 14;
+    for (let k = 0; k < this.boughs.length; k++) {
+      const b = this.boughs[k]!;
+      // From the trunk's edge, up and out over the meadow.
+      const x0 = (t.x + side * t.r * 0.8) * s;
+      const y0 = (GROUND_Y - 150 + b.y) * s;
+      const ex = x0 + side * b.len * s;
+      const ey = (GROUND_Y - b.tip) * s + sway(k) * s;
+      const cx = (x0 + ex) / 2 + side * b.bend * b.len * s * 0.3;
+      const cy = Math.max(y0, ey) - b.len * 0.04 * s;
+      c.strokeStyle = css(bark, 0.8);
+      c.lineCap = 'round';
+      c.lineWidth = 18 * s;
+      c.beginPath();
+      c.moveTo(x0, y0);
+      c.quadraticCurveTo(cx, cy, ex, ey);
+      c.stroke();
+      if (this.leafCover <= 0.02) continue;
+      for (const l of b.leaves) {
+        // Only part of the crown is in leaf while it is coming out or falling.
+        if (l.phase / 6.28 > this.leafCover) continue;
+        const u = l.t;
+        const px = (1 - u) * (1 - u) * x0 + 2 * (1 - u) * u * cx + u * u * ex + side * l.off * 0.3 * s;
+        const py = (1 - u) * (1 - u) * y0 + 2 * (1 - u) * u * cy + u * u * ey + l.off * s + Math.sin(time * 0.6 + l.phase) * 2 * s;
+        const r = l.r * s;
+        // A clump of leaves out of focus: a darker heart, lit at the edge toward the sky.
+        const g = c.createRadialGradient(px, py, 0, px, py, r);
+        g.addColorStop(0, css(mixRGB(leaf, [8, 14, 6], 0.35), 0.8));
+        g.addColorStop(0.65, css(leaf, 0.55));
+        g.addColorStop(1, css(leaf, 0));
+        c.fillStyle = g;
+        c.beginPath();
+        c.arc(px, py, r, 0, Math.PI * 2);
+        c.fill();
+        const hx = px - r * 0.25;
+        const hy = py - r * 0.35;
+        const g2 = c.createRadialGradient(hx, hy, 0, hx, hy, r * 0.55);
+        g2.addColorStop(0, css(mixRGB(leaf, sky.low, 0.45), 0.35 * (1 - night)));
+        g2.addColorStop(1, css(leaf, 0));
+        c.fillStyle = g2;
+        c.beginPath();
+        c.arc(hx, hy, r * 0.55, 0, Math.PI * 2);
+        c.fill();
+      }
+    }
+  }
+
+  private trunkShadow(c: CanvasRenderingContext2D, s: number, ground: Int16Array, worldW: number, dayT: number, daylight: number, wet: number): void {
+    const t = this.tree!;
+    const side = t.x < worldW / 2 ? 1 : -1;
+    // Falls away from the sun: east (left) in the morning, so the shadow reaches
+    // right; after noon, left. Seen only when it falls into the slice.
+    if ((dayT < 0.5 ? 1 : -1) !== side) return;
+    const len = Math.min(900, (t.r * 1.5) / Math.max(0.18, daylight));
+    const x0 = t.x + side * (t.r + 20);
+    const gy = ground[Math.max(0, Math.min(worldW - 1, Math.round(x0)))]!;
+    // (Up through the grass in its shade, which is about this tall.)
+    const R = 110;
+    const a = 0.5 * (0.4 + 0.6 * daylight) * (1 - wet * 0.8);
+    c.save();
+    c.beginPath();
+    c.rect((side > 0 ? x0 : x0 - len) * s, (gy - R - 10) * s, len * s, (R + 16) * s);
+    c.clip();
+    c.translate(x0 * s, (gy + 4) * s);
+    c.scale(len / R, 1);
+    const g = c.createRadialGradient(0, 0, 0, 0, 0, R * s);
+    g.addColorStop(0, `rgba(10,14,10,${a.toFixed(3)})`);
+    g.addColorStop(0.55, `rgba(10,14,10,${(a * 0.6).toFixed(3)})`);
+    g.addColorStop(1, 'rgba(10,14,10,0)');
+    c.fillStyle = g;
+    c.fillRect(-R * s, -R * s, R * 2 * s, (R + 4) * s);
+    c.restore();
+  }
+
   /** Hills, rocks, vine rows and feather-grass plumes behind the meadow, soft and hazy. */
   private drawProps(c: CanvasRenderingContext2D, s: number, time: number, worldW: number, ground: Int16Array, sky: { low: RGB; mid: RGB }, night: number, grass: RGB[]): void {
     const g = (x: number): number => ground[Math.max(0, Math.min(worldW - 1, x | 0))]! * s;
@@ -327,7 +534,7 @@ export class Backdrop {
         c.strokeStyle = css(col, 0.5);
         c.lineWidth = 1.2 * s;
         for (let k = 0; k < 4; k++) {
-          const sway = Math.sin(time * 0.6 + p.phase + k) * 10 + 18;
+          const sway = Math.sin(time * 0.6 * (1 + Math.abs(this.wind) * 2) + p.phase + k) * 10 + 18 * (1 + this.wind * 1.6);
           c.beginPath();
           c.moveTo((p.x + k * 3) * s, base);
           c.quadraticCurveTo((p.x + k * 3 + sway * 0.4) * s, base - p.h * 0.7 * s, (p.x + k * 3 + sway + p.w * 0.4) * s, base - p.h * s + k * 4 * s);

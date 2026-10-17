@@ -104,7 +104,10 @@ export class Moisture {
       }
       // Soaked seed in the nest germinates: it is no longer food, and the
       // workers carry the sprouts out (a refuse grain flagged as a sprout).
-      if (mat === SEED && m > 40 && w.bg[i] === 1 && this.rng.next() < 0.15) {
+      // A seed has to stay wet for a while first (a day or two for a real
+      // grass seed, a few minutes here), which gives the workers time to
+      // carry damp seed up into the sun to dry.
+      if (mat === SEED && m > 40 && w.bg[i] === 1 && this.rng.next() < 0.0045 * Math.min(1.5, (m - 40) / 100)) {
         w.set(i, REFUSE, w.tone[i], SPROUT);
         if (!w.plan[i]) w.claimed.push(i);
         this.sprouted++;

@@ -17,6 +17,9 @@ import { Critters } from './critters';
 import { Neighbour } from './rivals';
 import { Fog, FOG } from './fog';
 import { Carcass, Carcasses } from './carcass';
+import { SoilLife } from './soil';
+import { Ground } from './ground';
+import { Story } from './story';
 
 /**
  * Saving a colony: the whole simulation object graph, written generically.
@@ -27,7 +30,7 @@ import { Carcass, Carcasses } from './carcass';
  */
 
 const CLASSES: Record<string, { prototype: object }> = {
-  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar, Ecology, Critters, Neighbour, Fog, Carcass, Carcasses,
+  Sim, Ant, Brood, Colony, Nest, Particles, World, Physics, Moisture, Plants, Plant, Rng, Noise, Calendar, Ecology, Critters, Neighbour, Fog, Carcass, Carcasses, SoilLife, Ground, Story,
 };
 
 const TYPED: Record<string, new (b: ArrayBuffer) => ArrayBufferView> = {
@@ -43,6 +46,8 @@ const SKIP: Record<string, string[]> = {
   Sim: ['fields', 'src', 'events', 'flyers'],
   Physics: ['stamp'],
   Colony: ['occ'],
+  // The nest planner's search buffers: scratch, refilled before each use.
+  Nest: ['planDist', 'g', 'seen', 'from'],
 };
 
 type Enc = number | string | boolean | null | { r: number } | { n: string } | { u: 1 };
@@ -171,6 +176,8 @@ export interface SaveMeta {
   day: number;
   adults: number;
   savedAt: number;
+  /** The colony's tempo (absent: true to life). */
+  tempo?: string;
 }
 
 /** Everything needed to bring a colony back, compressed and base64'd for storage. */
@@ -182,12 +189,20 @@ export async function saveSim(sim: Sim, extra: unknown = null): Promise<{ meta: 
   const parts: BlobPart[] = [new Uint32Array([json.length]), json];
   for (const b of bins) parts.push(new Uint32Array([b.length]), b as BlobPart);
   const blob = bytesToB64(await gzip(parts));
-  return { meta: { seed: sim.seed, day: sim.day, adults: sim.colony.adults, savedAt: Date.now() }, blob };
+  return { meta: { seed: sim.seed, day: sim.day, adults: sim.colony.adults, savedAt: Date.now(), tempo: sim.tempo }, blob };
 }
 
 /** Saves from before the fog and the list of neighbours: fill them in from what they had. */
 function upgrade(sim: Sim): void {
   const o = sim as unknown as { fog?: Fog; neighbours?: Neighbour[]; neighbour?: Neighbour | null };
+  // Saves from before the tempos: Messor's own pace.
+  (sim as unknown as { tempo?: string }).tempo ??= 'true';
+  // Saves from before the nest's time-lapse: its story starts with the nest as it is.
+  if (!(sim as unknown as { story?: Story }).story) {
+    const story = new Story(sim.world.size);
+    if (sim.nest.founded) story.record(sim);
+    sim.story = story;
+  }
   const w = sim.world;
   if (!o.fog) {
     // What the old growing view showed counts as known.
@@ -203,28 +218,102 @@ function upgrade(sim: Sim): void {
     Object.assign(fog.box, { x0: v.x0, x1: v.x1, y1: v.y1 });
     o.fog = fog;
   }
-  // Saves from before alarm, temperament, the gate queue, the second gate and the searcher's heading.
+  // Saves from before alarm, temperament, the gate queue, the second gate, the searcher's heading, group fights and casting about.
   const ants = [...sim.colony.ants, ...sim.colony.alates, ...(o.neighbours ?? (o.neighbour ? [o.neighbour] : [])).flatMap((nb) => nb.ants)];
   for (const a of ants) {
-    const x = a as unknown as { alarm?: number; zeal?: number; sent?: boolean; waiting?: boolean; lastDX?: number };
+    const x = a as unknown as { alarm?: number; zeal?: number; sent?: boolean; waiting?: boolean; lastDX?: number; exitX?: number; holders?: Ant[]; towardCheck?: number; towardDist?: number; casting?: number };
+    x.exitX ??= a.x;
+    const st = a as unknown as { stallX?: number; stallY?: number; stallT?: number };
+    st.stallX ??= a.x;
+    st.stallY ??= a.y;
+    st.stallT ??= 0;
+    (a as unknown as { pocketT?: number; pellet?: number }).pocketT ??= 0;
+    (a as unknown as { pellet?: number }).pellet ??= 0;
+    const ac = a as unknown as { cutPart?: number; carryPart?: number; carryLoad?: number };
+    ac.cutPart ??= -1;
+    ac.carryPart ??= 0;
+    ac.carryLoad ??= 1;
     if (x.alarm === undefined) x.alarm = 0;
+    if (x.holders === undefined) x.holders = [];
+    x.towardCheck ??= 0;
+    x.towardDist ??= 0;
+    x.casting ??= 0;
     if (x.lastDX === undefined) x.lastDX = 0;
     if (x.sent === undefined) x.sent = false;
     if (x.waiting === undefined) x.waiting = false;
     if (x.zeal === undefined) x.zeal = a.id % 4 === 0 ? 0.25 : 0.75;
   }
-  const col = sim.colony as unknown as { scoutChance?: number; returns?: number; harvestLeft?: number; harvestRight?: number };
+  const col = sim.colony as unknown as { scoutChance?: number; returns?: number; harvestLeft?: number; harvestRight?: number; roomRate?: Record<number, number>; bestNurseryRate?: number; looseRate?: number; income?: number; lastDelivered?: number };
+  col.roomRate ??= {};
+  col.bestNurseryRate ??= 0;
+  col.looseRate ??= 0.5;
+  col.income ??= 0;
+  col.lastDelivered ??= sim.colony.delivered;
   col.scoutChance ??= 0.002;
   col.returns ??= 0;
   col.harvestLeft ??= 0;
   col.harvestRight ??= 0;
-  const nest = sim.nest as unknown as { gateX?: number; gateShaft?: number[] };
+  const nest = sim.nest as unknown as { gateX?: number; gateShaft?: number[]; gateFrom?: number };
   if (nest.gateX === undefined) {
     nest.gateX = -1;
     nest.gateShaft = [];
   }
-  const oc = sim as unknown as { carcasses?: Carcasses };
+  nest.gateFrom ??= -1;
+  // Saves from before rooms grew lobes and colonies chose when to open a second gate.
+  const nx = sim.nest as unknown as { gateAt?: number; explored?: number };
+  nx.gateAt ??= 120;
+  nx.explored ??= 0;
+  // Saves from before the digging scent.
+  const ns = sim.nest as unknown as { scent?: Uint8Array; scentDir?: Uint8Array; lastGallery?: number };
+  ns.scent ??= new Uint8Array(sim.world.size);
+  ns.scentDir ??= new Uint8Array(sim.world.size);
+  ns.lastGallery ??= 0;
+  const nb2 = sim.nest as unknown as { breaches?: number[]; waterTop?: Int16Array | null };
+  nb2.breaches ??= [];
+  // Saves from before the queen could be moved to a safer chamber.
+  const nr = sim.nest as unknown as { royalMove?: unknown; queenMoving?: boolean; lastRoyalMove?: number };
+  nr.royalMove ??= null;
+  nr.queenMoving ??= false;
+  nr.lastRoyalMove ??= -999;
+  nb2.waterTop ??= null;
+  // Saves from before the soil had a life of its own.
+  const sl = sim as unknown as { soil?: SoilLife };
+  sl.soil ??= new SoilLife(null, []);
+  for (const c of sim.nest.chambers) {
+    const cc = c as unknown as { base?: number; lobes?: number };
+    cc.base ??= c.cells.length;
+    cc.lobes ??= 0;
+  }
+  // Saves from before the birds were taken out: drop any lark still visiting.
+  const cl = sim.critters.list as { kind: string }[];
+  for (let k = cl.length - 1; k >= 0; k--) if (cl[k]!.kind === 'lark') cl.splice(k, 1);
+  sim.critters.burrows ??= [];
+  const sw = sim as unknown as { wind?: number; windGoal?: number };
+  sw.wind ??= 0;
+  sw.windGoal ??= 0;
+  const cz = sim.critters as unknown as { toadLast?: number; toadNights?: number; toadKills?: number; lasiusFights?: number; lasiusKills?: number; lasiusDead?: number; lasiusNote?: number };
+  cz.toadLast ??= 0;
+  cz.toadNights ??= 0;
+  cz.toadKills ??= 0;
+  cz.lasiusFights ??= 0;
+  cz.lasiusKills ??= 0;
+  cz.lasiusDead ??= 0;
+  cz.lasiusNote ??= -1e9;
+  // Saves from before the tree had a kind and a seed season.
+  const eco = sim.eco as unknown as { treeKind?: string; samaras?: number };
+  eco.treeKind ??= sim.site === 'limestone' || sim.site === 'vineyard' ? 'maple' : 'elm';
+  eco.samaras ??= 0;
+  const oc = sim as unknown as { carcasses?: Carcasses; goneHarvest?: number; gleanWeek?: number; gleanMark?: { taken: number; ours: number } };
   oc.carcasses ??= new Carcasses();
+  oc.goneHarvest ??= 0;
+  oc.gleanWeek ??= -1;
+  oc.gleanMark ??= { taken: 0, ours: 0 };
+  // Saves from before carcasses came apart in parts.
+  for (const c of sim.carcasses.list) c.settle();
+  (sim.carcasses as unknown as { bits?: unknown[] }).bits ??= [];
+  // Saves from before the soil could fail.
+  (sim as unknown as { ground?: Ground }).ground ??= new Ground();
+  (sim.ground as unknown as { fell?: number[] }).fell ??= [];
   if (!o.neighbours) {
     const list = o.neighbour ? [o.neighbour] : [];
     for (const nb of list) {
@@ -260,6 +349,7 @@ export async function loadSim(blob: string): Promise<{ sim: Sim; extra: unknown 
   s.flyers = [];
   (sim.physics as unknown as { stamp: Uint8Array }).stamp = new Uint8Array(w.size);
   (sim.colony as unknown as { occ: Int32Array | null }).occ = null;
+  Object.assign(sim.nest, { planDist: new Uint8Array(w.size), g: new Float32Array(w.size), seen: new Uint32Array(w.size), from: new Int32Array(w.size) });
   upgrade(sim);
   for (let f = 0; f < FIELD_COUNT; f++) (sim as unknown as { buildField(f: number): void }).buildField(f);
   w.dirtyAll = true;
