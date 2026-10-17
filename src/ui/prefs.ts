@@ -1,3 +1,5 @@
+import type { Tempo } from '../config';
+
 /** Small display preferences, remembered in localStorage (and forgotten quietly where it is unavailable). */
 const KEY = 'underfoot.prefs';
 
@@ -6,9 +8,11 @@ export interface Prefs {
   uiScale: number;
   /** Shake the view when a roof comes down nearby. */
   shake: boolean;
+  /** Tempo for the next new colony (see PACE): the last one chosen. */
+  tempo: Tempo;
 }
 
-const prefs: Prefs = { uiScale: 1, shake: true };
+const prefs: Prefs = { uiScale: 1, shake: true, tempo: 'true' };
 try {
   const s = localStorage.getItem(KEY);
   if (s) Object.assign(prefs, JSON.parse(s) as Partial<Prefs>);

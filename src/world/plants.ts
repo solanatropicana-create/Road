@@ -398,9 +398,10 @@ export class Plants {
 
   /**
    * Plants grow and ripen in their season. `doy` is the day of the year,
-   * `air` today's mean air temperature.
+   * `air` today's mean air temperature, `plenty` how much more seed they set
+   * than a real meadow (the faster tempos).
    */
-  tick(doy: number, air: number, damp = false): void {
+  tick(doy: number, air: number, damp = false, plenty = 1): void {
     const w = this.world;
     const growing = air > 7;
     for (const p of this.list) {
@@ -410,7 +411,8 @@ export class Plants {
         continue;
       }
       const sp = SPECIES[p.kind];
-      if (doy >= sp.ripen[0] && doy <= sp.ripen[1] && air > 8 && --p.timer <= 0) {
+      // (A richer meadow, at the faster tempos, ripens its seed sooner.)
+      if (doy >= sp.ripen[0] && doy <= sp.ripen[1] && air > 8 && (p.timer -= plenty) <= 0) {
         p.timer = p.regrow;
         // Ripen one empty slot that still hangs off the plant.
         const s = p.slots[this.rng.int(0, p.slots.length - 1)];

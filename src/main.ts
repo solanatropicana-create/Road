@@ -2,7 +2,8 @@ import { Sim } from './sim/sim';
 import { Renderer } from './render/renderer';
 import { Camera } from './render/camera';
 import { UI } from './ui/ui';
-import { TICK_HZ, SPEEDS, DAY_TICKS } from './config';
+import { TICK_HZ, SPEEDS, DAY_TICKS, TEMPOS, Tempo } from './config';
+import { getPrefs } from './ui/prefs';
 import type { Ant } from './sim/ant';
 import { Director } from './ui/director';
 import { saveSim, loadSim } from './sim/save';
@@ -49,7 +50,7 @@ export class Game {
 
   constructor(canvas: HTMLCanvasElement, uiRoot: HTMLElement, seed: number, site: SiteId) {
     this.canvas = canvas;
-    this.sim = new Sim(seed, site);
+    this.sim = this.freshSim(seed, site);
     this.renderer = new Renderer(canvas, this.sim.world, seed, site);
     this.cam = new Camera(this.sim.world.w, this.sim.world.h);
     this.director = new Director(this);
@@ -140,9 +141,18 @@ export class Game {
     }
   }
 
+  /** A new world at the tempo last chosen (or the one asked for with ?tempo=). */
+  private freshSim(seed: number, site: SiteId): Sim {
+    const sim = new Sim(seed, site);
+    const asked = new URLSearchParams(location.search).get('tempo') as Tempo | null;
+    const kept = getPrefs().tempo;
+    sim.tempo = asked && TEMPOS.includes(asked) ? asked : TEMPOS.includes(kept) ? kept : 'true';
+    return sim;
+  }
+
   /** A fresh, unlanded world from another seed (the title screen's "another site"). */
   newWorld(seed: number, site: SiteId = siteForSeed(seed)): void {
-    this.sim = new Sim(seed, site);
+    this.sim = this.freshSim(seed, site);
     this.slotId = null;
     this.saveGen++;
     this.renderer = new Renderer(this.canvas, this.sim.world, seed, site);

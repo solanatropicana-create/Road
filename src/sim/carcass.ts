@@ -218,12 +218,11 @@ export class Carcasses {
     let best: Carcass | null = null;
     let bd = r;
     for (const c of this.list) {
-      if (c.full || c.pieces <= 0) continue;
+      // (Far off first: it is cheap, and most carcasses are; how many hands it wants is not.)
       const d = Math.max(0, Math.abs(c.x - x) - c.half) + Math.abs(c.y - y) * 0.5;
-      if (d < bd) {
-        bd = d;
-        best = c;
-      }
+      if (d >= bd || c.pieces <= 0 || c.full) continue;
+      bd = d;
+      best = c;
     }
     return best;
   }

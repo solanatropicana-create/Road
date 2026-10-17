@@ -25,6 +25,7 @@ npm run dev            # http://localhost:5173
 - `?seed=123` aynı haritayı yeniden üretir.
 - `?site=anatolia` sahayı seçer: `pannonian`, `sand`, `limestone`, `vineyard`, `anatolia`, `pontic`.
 - `?paused=1` duraklatılmış başlatır.
+- `?tempo=lapse` temposu seçili başlatır: `true`, `lively`, `lapse`.
 
 ## Dünya
 
@@ -38,6 +39,22 @@ Açılış ekranı iki yol sunar:
 - **Yönlendir:** Koloni beyni sensin: iş öncelikleri, üreme, majör oranı, oda siparişleri.
 
 Mod, tuşlar panelinden (?) her an değiştirilebilir. İzle'ye geçince bütün ayarlar koloninin kendi varsayılanına döner.
+
+## Tempo
+
+Yeni koloni kurulurken (ve sonra ayarlardan) koloninin ne kadar hızlı yaşayacağı seçilir:
+
+- **Gerçek:** *Messor*'un kendi temposu. Yumurtadan işçiye haftalar sürer, büyük bir yuva birkaç yaz sonra oluşur.
+- **Canlı:** Yaklaşık üç kat hızlı. İlk yazın sonunda 130–200 işçilik dolu bir yuva olur.
+- **Hızlı büyüme:** Hızlandırılmış bir film gibi. Yuva birkaç haftada yüzlerce işçiye ve 15–17 odaya ulaşır.
+
+Tempo yavru gelişimini, yumurtlamayı, kazıyı, yürüyüşü, çayırın tohum verimini ve genç komşu koloninin büyümesini birlikte hızlandırır. Mevsimler aynı uzunlukta kalır. Seçim koloniyle kaydedilir ve bir sonraki yeni koloni için hatırlanır.
+
+## Yuvanın filmi
+
+Her yuva hücresinin ne zaman kazıldığı koloniyle birlikte kaydedilir. **G** (ya da Koloni panelindeki "Yuvanın büyümesini izle") yuvanın ilk oyuktan bugüne zaman atlamalı filmini açar: toprak inişten önceki haline döner, tüneller ve odalar hafta hafta açılır, yeni kazılan yer bir an parlar, tarih ve sayılar akar.
+
+Film ileri geri sarılabilir. Geniş (16:9) ya da dikey (9:16, telefonlar için) olarak video kaydedilebilir; tarayıcı destekliyorsa MP4, yoksa WebM olur. Yıl özeti ve oyun sonu kartında da filmin düğmesi var. İzleme modunda kimse dokunmuyorsa yılın filmi kış başında kendiliğinden bir kez oynar.
 
 ## Kontroller
 
@@ -54,6 +71,11 @@ Mod, tuşlar panelinden (?) her an değiştirilebilir. İzle'ye geçince bütün
 | P | Kazı planını göster/gizle (kehribar noktalar) |
 | T | Koku izlerini (feromon) göster/gizle |
 | H | Sinema modu: paneller gizlenir, belgesel alt yazısı kalır |
+| G | Yuvanın zaman atlamalı filmi |
+| J / Q | Son olaya git / kraliçeye git |
+| X | Sahnenin fotoğrafını kaydet |
+| M | Sesi aç/kapa |
+| Oklar / WASD | Görüntüyü kaydır |
 | ? | Tuşlar paneli (dil seçimi ve yeni koloni de burada) |
 | Esc | Takibi, işaretlemeyi ya da sinema modunu bırak |
 
@@ -67,7 +89,7 @@ P, T, H, C ve ? alt çubukta düğme olarak da var (dokunmatik ekranlar için). 
 | `npm run build` | Tip kontrolü ve üretim derlemesi (`dist/`) |
 | `npm run build:artifact` | Tek dosyalık sayfa (`dist-artifact/underfoot.html`) |
 | `npm run headless -- 7 20` | Görüntüsüz: 7 numaralı harita, 20 dakika, büyüme raporu |
-| `scripts/batch.sh 40` | 8 haritayı paralel 40 dakika çalıştırır (sağlamlık testi) |
+| `scripts/batch.sh 40` | 8 haritayı paralel 40 hafta çalıştırır (sağlamlık testi); tek harita ve tempo için `node node_modules/.cache/batch.mjs <seed> <hafta> <x> <saha> <tempo>` |
 | `node scripts/shot.mjs ad 7 9000` | Çalışan dev sunucusundan ekran görüntüsü (`shots/`) |
 | `node scripts/beauty.mjs` | Belgelerdeki seçilmiş görüntüler (paneller gizli) |
 | `node scripts/play.mjs ad 3 40` | Oyuncu gibi oynar: kraliçeyi indirir, 16× hızda bekler, ekran görüntüsü alır |
