@@ -29,6 +29,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const FIXTURES = {
   big: { seed: 3, days: 70, tod: 0.55 },
   meadow: { seed: 7, days: 64, tod: 0.72 },
+  // Messor structor proper (the Anatolian 'meadow' is the M. structor group): for the marketing films.
+  pannonian: { seed: 6, days: 64, tod: 0.62 },
+  sand: { seed: 8, days: 64, tod: 0.62 },
 };
 
 async function makeFixture(name, url) {

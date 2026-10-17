@@ -77,6 +77,7 @@ P, T, H, C ve ? alt çubukta düğme olarak da var (dokunmatik ekranlar için). 
 | `node scripts/artlab.mjs` | Aynı iki olgun koloniden görsel referans görüntüleri (`shots/art/`), bkz. `docs/art-review/` |
 | `node scripts/sheet.mjs out.png [kimler] [yakınlıklar]` | Varlık sayfası: her canlı ve nesne tek başına, üç yakınlıkta (dev sunucusu açıkken; `/sheet.html`) |
 | `node node_modules/.cache/econ.mjs 7 110` | Yiyecek ekonomisi: hafta hafta işçi, yavru, ambar, gelir, tüketim (önce `npx esbuild scripts/econ.ts --bundle --platform=node --format=esm --outfile=node_modules/.cache/econ.mjs`) |
+| `node scripts/film/trailer.mjs --tall` + `node scripts/film/edit.mjs` | Dikey tanıtım videosu (ve geniş fragman), oyunun kendisinden kare kare (`shots/film/out/`), bkz. [scripts/film/](scripts/film/README.md) |
 
 ## Kod yapısı
 
